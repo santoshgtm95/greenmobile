@@ -17,40 +17,40 @@
  *      and the replacement has been proven to be a readable POS database. If
  *      the restore then fails anyway, the safety copy goes back.
  */
-import Database from 'better-sqlite3';
-import type { Database as Db } from 'better-sqlite3';
-import fs from 'node:fs';
-import path from 'node:path';
-import { logger } from '../utils/logger';
+import Database from "better-sqlite3";
+import type { Database as Db } from "better-sqlite3";
+import fs from "node:fs";
+import path from "node:path";
+import { logger } from "../utils/logger";
 import {
   getDatabase,
   openDatabase,
   closeDatabase,
   checkIntegrity,
   vacuumInto,
-} from '../database/connection';
-import { migrate, currentVersion, latestVersion } from '../database/migrator';
-import { seedReferenceData } from '../database/seed';
-import { getShopSettings, getRaw, setSetting } from './settings.service';
-import { recordAudit } from './audit.service';
-import { errors } from '../../shared/errors';
-import { businessDay, addDays } from '../../shared/datetime';
+} from "../database/connection";
+import { migrate, currentVersion, latestVersion } from "../database/migrator";
+import { seedReferenceData } from "../database/seed";
+import { getShopSettings, getRaw, setSetting } from "./settings.service";
+import { recordAudit } from "./audit.service";
+import { errors } from "../../shared/errors";
+import { businessDay, addDays } from "../../shared/datetime";
 import type {
   BackupFile,
   BackupInspection,
   BackupKind,
   RestoreResult,
-} from '../../shared/backup';
-import type { ShopSettings } from '../../shared/settings';
+} from "../../shared/backup";
+import type { ShopSettings } from "../../shared/settings";
 
-const FILE_PREFIX = 'MobileShopPOS';
+const FILE_PREFIX = "MobileShopPOS";
 
 /** Filename fragment per kind. Read back by classifyBackup(). */
-const KIND_TAG: Record<Exclude<BackupKind, 'UNKNOWN'>, string> = {
-  MANUAL: 'Backup',
-  AUTOMATIC: 'Auto',
-  PRE_MIGRATION: 'PreMigration',
-  SAFETY: 'Safety',
+const KIND_TAG: Record<Exclude<BackupKind, "UNKNOWN">, string> = {
+  MANUAL: "Backup",
+  AUTOMATIC: "Auto",
+  PRE_MIGRATION: "PreMigration",
+  SAFETY: "Safety",
 };
 
 /**
@@ -58,14 +58,17 @@ const KIND_TAG: Record<Exclude<BackupKind, 'UNKNOWN'>, string> = {
  * out the colons an ISO timestamp would bring.
  */
 export function backupStamp(at: Date = new Date()): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
+  const pad = (n: number) => String(n).padStart(2, "0");
   return (
     `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}` +
     `_${pad(at.getHours())}${pad(at.getMinutes())}${pad(at.getSeconds())}`
   );
 }
 
-export function backupFileName(kind: Exclude<BackupKind, 'UNKNOWN'>, at: Date = new Date()): string {
+export function backupFileName(
+  kind: Exclude<BackupKind, "UNKNOWN">,
+  at: Date = new Date(),
+): string {
   return `${FILE_PREFIX}_${KIND_TAG[kind]}_${backupStamp(at)}.db`;
 }
 
@@ -76,18 +79,18 @@ export function backupFileName(kind: Exclude<BackupKind, 'UNKNOWN'>, at: Date = 
  * the tag is matched rather than the whole name.
  */
 export function classifyBackup(fileName: string): BackupKind {
-  if (!fileName.startsWith(`${FILE_PREFIX}_`)) return 'UNKNOWN';
+  if (!fileName.startsWith(`${FILE_PREFIX}_`)) return "UNKNOWN";
   for (const [kind, tag] of Object.entries(KIND_TAG) as Array<
-    [Exclude<BackupKind, 'UNKNOWN'>, string]
+    [Exclude<BackupKind, "UNKNOWN">, string]
   >) {
     if (fileName.startsWith(`${FILE_PREFIX}_${tag}_`)) return kind;
   }
-  return 'UNKNOWN';
+  return "UNKNOWN";
 }
 
 function toBackupFile(
   file: string,
-  folder: 'DEFAULT' | 'CUSTOM',
+  folder: "DEFAULT" | "CUSTOM",
   stats: fs.Stats = fs.statSync(file),
 ): BackupFile {
   const name = path.basename(file);
@@ -105,7 +108,10 @@ function toBackupFile(
 // Listing
 // -----------------------------------------------------------------------------
 
-function listInFolder(dir: string | null, folder: 'DEFAULT' | 'CUSTOM'): BackupFile[] {
+function listInFolder(
+  dir: string | null,
+  folder: "DEFAULT" | "CUSTOM",
+): BackupFile[] {
   if (!dir) return [];
   let entries: fs.Dirent[];
   try {
@@ -117,7 +123,7 @@ function listInFolder(dir: string | null, folder: 'DEFAULT' | 'CUSTOM'): BackupF
 
   const files: BackupFile[] = [];
   for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.db')) continue;
+    if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".db")) continue;
     try {
       files.push(toBackupFile(path.join(dir, entry.name), folder));
     } catch {
@@ -128,12 +134,18 @@ function listInFolder(dir: string | null, folder: 'DEFAULT' | 'CUSTOM'): BackupF
 }
 
 /** Newest first, across both the default folder and the shop's own. */
-export function listBackups(defaultDir: string, customDir: string | null): BackupFile[] {
+export function listBackups(
+  defaultDir: string,
+  customDir: string | null,
+): BackupFile[] {
   const custom =
-    customDir && path.resolve(customDir) !== path.resolve(defaultDir) ? customDir : null;
-  return [...listInFolder(defaultDir, 'DEFAULT'), ...listInFolder(custom, 'CUSTOM')].sort((a, b) =>
-    b.createdAt.localeCompare(a.createdAt),
-  );
+    customDir && path.resolve(customDir) !== path.resolve(defaultDir)
+      ? customDir
+      : null;
+  return [
+    ...listInFolder(defaultDir, "DEFAULT"),
+    ...listInFolder(custom, "CUSTOM"),
+  ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 /** True when a new file can actually be written to `dir`. */
@@ -152,7 +164,10 @@ export function isWritable(dir: string): boolean {
  * reachable, otherwise the application folder. A USB stick that is not plugged
  * in must not stop the shop from taking a backup.
  */
-export function resolveBackupDir(defaultDir: string, configured: string): string {
+export function resolveBackupDir(
+  defaultDir: string,
+  configured: string,
+): string {
   const custom = configured.trim();
   if (!custom) return defaultDir;
   return isWritable(custom) ? custom : defaultDir;
@@ -164,7 +179,7 @@ export function resolveBackupDir(defaultDir: string, configured: string): string
 
 export interface CreateBackupOptions {
   dir: string;
-  kind: Exclude<BackupKind, 'UNKNOWN'>;
+  kind: Exclude<BackupKind, "UNKNOWN">;
   /** Overrides the generated name. Used by the Save As dialog. */
   targetPath?: string;
 }
@@ -189,20 +204,21 @@ export function createBackup(
     if (fs.existsSync(target)) fs.rmSync(target);
     vacuumInto(target, db);
   } catch (err) {
-    logger.error('Backup failed', {
+    logger.error("Backup failed", {
       target,
       error: err instanceof Error ? err.message : String(err),
     });
     throw errors.backupFailed(
-      'The backup file could not be written. Check that the folder exists and has free space.',
+      "The backup file could not be written. Check that the folder exists and has free space.",
     );
   }
 
-  const file = toBackupFile(
-    target,
-    options.targetPath ? 'CUSTOM' : 'DEFAULT',
-  );
-  logger.info('Backup created', { path: target, kind: options.kind, bytes: file.sizeBytes });
+  const file = toBackupFile(target, options.targetPath ? "CUSTOM" : "DEFAULT");
+  logger.info("Backup created", {
+    path: target,
+    kind: options.kind,
+    bytes: file.sizeBytes,
+  });
   return file;
 }
 
@@ -215,8 +231,8 @@ export function createBackup(
  */
 export function pruneAutomaticBackups(dir: string, keep: number): string[] {
   const limit = Math.max(1, keep);
-  const automatic = listInFolder(dir, 'DEFAULT')
-    .filter((file) => file.kind === 'AUTOMATIC')
+  const automatic = listInFolder(dir, "DEFAULT")
+    .filter((file) => file.kind === "AUTOMATIC")
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   const removed: string[] = [];
@@ -225,25 +241,26 @@ export function pruneAutomaticBackups(dir: string, keep: number): string[] {
       fs.rmSync(file.path);
       removed.push(file.path);
     } catch (err) {
-      logger.warn('Could not remove an old automatic backup', {
+      logger.warn("Could not remove an old automatic backup", {
         path: file.path,
         error: err instanceof Error ? err.message : String(err),
       });
     }
   }
-  if (removed.length > 0) logger.info('Old automatic backups removed', { count: removed.length });
+  if (removed.length > 0)
+    logger.info("Old automatic backups removed", { count: removed.length });
   return removed;
 }
 
 /** True when the schedule says a backup is owed today. */
 export function automaticBackupDue(
-  frequency: ShopSettings['autoBackupFrequency'],
+  frequency: ShopSettings["autoBackupFrequency"],
   lastDay: string,
   today: string = businessDay(),
 ): boolean {
-  if (frequency === 'DISABLED') return false;
+  if (frequency === "DISABLED") return false;
   if (!lastDay) return true;
-  if (frequency === 'DAILY') return today > lastDay;
+  if (frequency === "DAILY") return today > lastDay;
   return today >= addDays(lastDay, 7);
 }
 
@@ -261,28 +278,33 @@ export function runAutomaticBackupIfDue(
 
   // Nothing worth backing up before the shop has been set up.
   if (!settings.setupCompleted) return null;
-  if (!automaticBackupDue(settings.autoBackupFrequency, getRaw('lastAutoBackupDay', db))) {
+  if (
+    !automaticBackupDue(
+      settings.autoBackupFrequency,
+      getRaw("lastAutoBackupDay", db),
+    )
+  ) {
     return null;
   }
 
   const dir = resolveBackupDir(defaultDir, settings.backupLocation);
   try {
-    const file = createBackup({ dir, kind: 'AUTOMATIC' }, db);
+    const file = createBackup({ dir, kind: "AUTOMATIC" }, db);
     pruneAutomaticBackups(dir, settings.autoBackupKeep);
     // Stamped after the file exists, so a failure retries on the next start.
-    setSetting('lastAutoBackupDay', businessDay(), null, db);
+    setSetting("lastAutoBackupDay", businessDay(), null, db);
     recordAudit(
       {
         userId: null,
-        action: 'BACKUP',
-        entityName: 'Database',
+        action: "BACKUP",
+        entityName: "Database",
         summary: `Automatic backup (${settings.autoBackupFrequency.toLowerCase()}) written to ${file.path}`,
       },
       db,
     );
     return file;
   } catch (err) {
-    logger.error('Automatic backup did not run', {
+    logger.error("Automatic backup did not run", {
       dir,
       error: err instanceof Error ? err.message : String(err),
     });
@@ -301,7 +323,10 @@ export function runAutomaticBackupIfDue(
  * only moves a schema forward, so it has no way to make sense of a database
  * from the future, and pretending otherwise would corrupt it.
  */
-export function inspectBackup(file: string, migrationsDir: string): BackupInspection {
+export function inspectBackup(
+  file: string,
+  migrationsDir: string,
+): BackupInspection {
   const expectedSchemaVersion = latestVersion(migrationsDir);
   const empty: BackupInspection = {
     ok: false,
@@ -315,19 +340,21 @@ export function inspectBackup(file: string, migrationsDir: string): BackupInspec
   try {
     stats = fs.statSync(file);
   } catch {
-    return { ...empty, problem: 'That file no longer exists.' };
+    return { ...empty, problem: "That file no longer exists." };
   }
 
   let candidate: Db | null = null;
   try {
     candidate = new Database(file, { readonly: true, fileMustExist: true });
 
-    const integrity = candidate.pragma('integrity_check', { simple: true }) as string;
-    if (integrity !== 'ok') {
+    const integrity = candidate.pragma("integrity_check", {
+      simple: true,
+    }) as string;
+    if (integrity !== "ok") {
       return {
         ...empty,
         sizeBytes: stats.size,
-        problem: 'This backup file is damaged and cannot be restored.',
+        problem: "This backup file is damaged and cannot be restored.",
       };
     }
 
@@ -342,11 +369,13 @@ export function inspectBackup(file: string, migrationsDir: string): BackupInspec
       return {
         ...empty,
         sizeBytes: stats.size,
-        problem: 'This is not a Mobile Shop POS backup.',
+        problem: "This is not a Green Mobile POS backup.",
       };
     }
 
-    const schemaVersion = candidate.pragma('user_version', { simple: true }) as number;
+    const schemaVersion = candidate.pragma("user_version", {
+      simple: true,
+    }) as number;
     if (schemaVersion > expectedSchemaVersion) {
       return {
         ...empty,
@@ -355,12 +384,16 @@ export function inspectBackup(file: string, migrationsDir: string): BackupInspec
         problem:
           `This backup was made by a newer version of the application ` +
           `(database version ${schemaVersion}; this version understands ${expectedSchemaVersion}). ` +
-          'Update Mobile Shop POS before restoring it.',
+          "Update Green Mobile POS before restoring it.",
       };
     }
 
     const count = (table: string): number =>
-      (candidate!.prepare(`SELECT COUNT(*) AS n FROM "${table}"`).get() as { n: number }).n;
+      (
+        candidate!.prepare(`SELECT COUNT(*) AS n FROM "${table}"`).get() as {
+          n: number;
+        }
+      ).n;
 
     return {
       ok: true,
@@ -368,21 +401,21 @@ export function inspectBackup(file: string, migrationsDir: string): BackupInspec
       expectedSchemaVersion,
       sizeBytes: stats.size,
       contents: {
-        products: count('Product'),
-        sales: count('Sale'),
-        customers: count('Customer'),
-        services: count('ServiceOrder'),
+        products: count("Product"),
+        sales: count("Sale"),
+        customers: count("Customer"),
+        services: count("ServiceOrder"),
       },
     };
   } catch (err) {
-    logger.warn('Backup inspection failed', {
+    logger.warn("Backup inspection failed", {
       file,
       error: err instanceof Error ? err.message : String(err),
     });
     return {
       ...empty,
       sizeBytes: stats.size,
-      problem: 'This file could not be opened as a database.',
+      problem: "This file could not be opened as a database.",
     };
   } finally {
     candidate?.close();
@@ -395,7 +428,7 @@ export function inspectBackup(file: string, migrationsDir: string): BackupInspec
 
 /** Removes the WAL sidecars, which belong to the file being replaced. */
 function removeSidecars(databaseFile: string): void {
-  for (const suffix of ['-wal', '-shm']) {
+  for (const suffix of ["-wal", "-shm"]) {
     try {
       fs.rmSync(`${databaseFile}${suffix}`, { force: true });
     } catch {
@@ -429,8 +462,8 @@ export function restoreBackup(options: RestoreOptions): RestoreResult {
   }
 
   // Rule 2: the current data is safe before anything is overwritten.
-  const safetyBackup = createBackup({ dir: options.backupDir, kind: 'SAFETY' });
-  logger.info('Restore starting', {
+  const safetyBackup = createBackup({ dir: options.backupDir, kind: "SAFETY" });
+  logger.info("Restore starting", {
     from: options.file,
     safetyBackup: safetyBackup.path,
     fromSchemaVersion: inspection.schemaVersion,
@@ -456,14 +489,14 @@ export function restoreBackup(options: RestoreOptions): RestoreResult {
       schemaVersion: currentVersion(db),
       migrated: migration.applied.length > 0,
     };
-    logger.info('Restore complete', {
+    logger.info("Restore complete", {
       from: options.file,
       schemaVersion: result.schemaVersion,
       migrated: result.migrated,
     });
     return result;
   } catch (err) {
-    logger.error('Restore failed — putting the safety backup back', {
+    logger.error("Restore failed — putting the safety backup back", {
       from: options.file,
       safetyBackup: safetyBackup.path,
       error: err instanceof Error ? err.message : String(err),
@@ -477,7 +510,7 @@ export function restoreBackup(options: RestoreOptions): RestoreResult {
       fs.copyFileSync(safetyBackup.path, options.targetFile);
       openDatabase(options.targetFile);
     } catch (rollbackErr) {
-      logger.error('Rollback after a failed restore also failed', rollbackErr);
+      logger.error("Rollback after a failed restore also failed", rollbackErr);
       throw errors.restoreFailed(
         `The database could not be restored and the original could not be put back. ` +
           `Your data is safe in:\n${safetyBackup.path}`,
@@ -499,16 +532,22 @@ export function restoreBackup(options: RestoreOptions): RestoreResult {
  * a specialist can sometimes recover rows from them — not to produce something
  * the application could open.
  */
-export function quarantineDatabase(databaseFile: string, backupDir: string): string | null {
+export function quarantineDatabase(
+  databaseFile: string,
+  backupDir: string,
+): string | null {
   if (!fs.existsSync(databaseFile)) return null;
   fs.mkdirSync(backupDir, { recursive: true });
-  const target = path.join(backupDir, `${FILE_PREFIX}_Damaged_${backupStamp()}.db`);
+  const target = path.join(
+    backupDir,
+    `${FILE_PREFIX}_Damaged_${backupStamp()}.db`,
+  );
   try {
     fs.copyFileSync(databaseFile, target);
-    logger.info('Damaged database kept', { target });
+    logger.info("Damaged database kept", { target });
     return target;
   } catch (err) {
-    logger.error('Could not keep a copy of the damaged database', {
+    logger.error("Could not keep a copy of the damaged database", {
       databaseFile,
       error: err instanceof Error ? err.message : String(err),
     });
@@ -533,7 +572,7 @@ export function replaceUnopenableDatabase(
   removeSidecars(databaseFile);
   fs.rmSync(databaseFile, { force: true });
   fs.copyFileSync(backupFile, databaseFile);
-  logger.info('Unopenable database replaced from a backup', {
+  logger.info("Unopenable database replaced from a backup", {
     backupFile,
     databaseFile,
     quarantined,
@@ -560,27 +599,31 @@ export function deleteBackup(
     .filter((dir): dir is string => Boolean(dir))
     .some((dir) => path.dirname(resolved) === path.resolve(dir));
 
-  if (!permitted || !resolved.toLowerCase().endsWith('.db')) {
-    logger.warn('Refused to delete a file outside the backup folders', { file });
-    throw errors.validation('That file is not in a backup folder.');
+  if (!permitted || !resolved.toLowerCase().endsWith(".db")) {
+    logger.warn("Refused to delete a file outside the backup folders", {
+      file,
+    });
+    throw errors.validation("That file is not in a backup folder.");
   }
 
   try {
     fs.rmSync(resolved);
   } catch (err) {
-    logger.error('Could not delete backup', {
+    logger.error("Could not delete backup", {
       file: resolved,
       error: err instanceof Error ? err.message : String(err),
     });
-    throw errors.validation('That backup could not be deleted. It may be open in another program.');
+    throw errors.validation(
+      "That backup could not be deleted. It may be open in another program.",
+    );
   }
-  logger.info('Backup deleted', { path: resolved });
+  logger.info("Backup deleted", { path: resolved });
 }
 
 /** Bytes on disk for the live database, including its WAL sidecar. */
 export function databaseSize(databaseFile: string): number {
   let total = 0;
-  for (const suffix of ['', '-wal', '-shm']) {
+  for (const suffix of ["", "-wal", "-shm"]) {
     try {
       total += fs.statSync(`${databaseFile}${suffix}`).size;
     } catch {

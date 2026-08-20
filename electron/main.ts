@@ -143,7 +143,7 @@ if (!app.requestSingleInstanceLock()) {
     .catch((err) => {
       logger.error("Fatal error during startup", err);
       dialog.showErrorBox(
-        "Mobile Shop POS could not start",
+        "Green Mobile POS could not start",
         "The application failed to start. Technical details have been written to the log file in:\n\n" +
           userDataDir() +
           "\\logs",

@@ -5,8 +5,8 @@
  * expects, and turns any failure into the plain restore-or-exit choice the spec
  * requires — never a stack trace in the user's face.
  */
-import { app, dialog } from 'electron';
-import path from 'node:path';
+import { app, dialog } from "electron";
+import path from "node:path";
 import {
   ensureDirectories,
   databaseFile,
@@ -14,36 +14,40 @@ import {
   backupsDir,
   logsDir,
   userDataDir,
-} from './utils/paths';
-import { configureLogger, logger } from './utils/logger';
-import { initializeDatabase, type DatabaseStartupResult } from './database';
-import { DatabaseIntegrityError, closeDatabase } from './database/connection';
-import { MigrationError } from './database/migrator';
+} from "./utils/paths";
+import { configureLogger, logger } from "./utils/logger";
+import { initializeDatabase, type DatabaseStartupResult } from "./database";
+import { DatabaseIntegrityError, closeDatabase } from "./database/connection";
+import { MigrationError } from "./database/migrator";
 import {
   inspectBackup,
   replaceUnopenableDatabase,
   runAutomaticBackupIfDue,
-} from './services/backup.service';
+} from "./services/backup.service";
 
 export interface StartupContext {
   database: DatabaseStartupResult;
 }
 
 /** What the user chose on the fatal-startup dialog. */
-type FatalChoice = 'restore' | 'exit';
+type FatalChoice = "restore" | "exit";
 
-function showFatalDatabaseDialog(title: string, message: string, detail: string): FatalChoice {
+function showFatalDatabaseDialog(
+  title: string,
+  message: string,
+  detail: string,
+): FatalChoice {
   const response = dialog.showMessageBoxSync({
-    type: 'error',
+    type: "error",
     title,
     message,
     detail,
-    buttons: ['Restore from Backup…', 'Exit'],
+    buttons: ["Restore from Backup…", "Exit"],
     defaultId: 0,
     cancelId: 1,
     noLink: true,
   });
-  return response === 0 ? 'restore' : 'exit';
+  return response === 0 ? "restore" : "exit";
 }
 
 /**
@@ -57,7 +61,7 @@ export function startup(): StartupContext | null {
   ensureDirectories();
   configureLogger(logsDir());
   logger.prune();
-  logger.info('Application starting', {
+  logger.info("Application starting", {
     version: app.getVersion(),
     userData: userDataDir(),
     packaged: app.isPackaged,
@@ -77,34 +81,36 @@ export function startup(): StartupContext | null {
     return { database };
   } catch (err) {
     if (err instanceof DatabaseIntegrityError) {
-      logger.error('Startup aborted: database integrity check failed', { details: err.details });
+      logger.error("Startup aborted: database integrity check failed", {
+        details: err.details,
+      });
       const choice = showFatalDatabaseDialog(
-        'Database problem',
-        'Database integrity check failed.\n\nPlease restore from a backup.',
+        "Database problem",
+        "Database integrity check failed.\n\nPlease restore from a backup.",
         `The POS database at:\n${databaseFile()}\n\nis damaged and cannot be opened safely.\n\n` +
           `Your backups are in:\n${backupsDir()}\n\n` +
           'Choosing "Restore from Backup" will let you pick a backup file to restore.',
       );
-      return choice === 'restore' ? handleRestoreAndRetry() : null;
+      return choice === "restore" ? handleRestoreAndRetry() : null;
     }
 
     if (err instanceof MigrationError) {
-      logger.error('Startup aborted: migration failed', {
+      logger.error("Startup aborted: migration failed", {
         migration: err.migration.name,
         backupPath: err.backupPath,
       });
       showFatalDatabaseDialog(
-        'Update problem',
-        'The database could not be updated to the new version.',
+        "Update problem",
+        "The database could not be updated to the new version.",
         `${err.message}\n\nPlease restore that backup, or contact support before using the POS again.`,
       );
       return null;
     }
 
-    logger.error('Startup aborted: unexpected database error', err);
+    logger.error("Startup aborted: unexpected database error", err);
     dialog.showErrorBox(
-      'Mobile Shop POS could not start',
-      'The application could not open its database.\n\n' +
+      "Green Mobile POS could not start",
+      "The application could not open its database.\n\n" +
         `Technical details were written to:\n${logsDir()}`,
     );
     return null;
@@ -122,10 +128,10 @@ export function startup(): StartupContext | null {
  */
 function handleRestoreAndRetry(): StartupContext | null {
   const chosen = dialog.showOpenDialogSync({
-    title: 'Choose a backup to restore',
+    title: "Choose a backup to restore",
     defaultPath: backupsDir(),
-    properties: ['openFile'],
-    filters: [{ name: 'POS backup', extensions: ['db'] }],
+    properties: ["openFile"],
+    filters: [{ name: "POS backup", extensions: ["db"] }],
   });
 
   if (!chosen || chosen.length === 0) return null;
@@ -136,25 +142,25 @@ function handleRestoreAndRetry(): StartupContext | null {
   const inspection = inspectBackup(backupFile, migrationsDir());
   if (!inspection.ok) {
     dialog.showErrorBox(
-      'That backup cannot be used',
-      `${inspection.problem ?? 'The file could not be read.'}\n\n` +
-        'Start Mobile Shop POS again to choose a different one.',
+      "That backup cannot be used",
+      `${inspection.problem ?? "The file could not be read."}\n\n` +
+        "Start Green Mobile POS again to choose a different one.",
     );
     return null;
   }
 
   const confirmed = dialog.showMessageBoxSync({
-    type: 'warning',
-    title: 'Restore this backup?',
-    message: 'Restoring will replace the damaged database.',
+    type: "warning",
+    title: "Restore this backup?",
+    message: "Restoring will replace the damaged database.",
     detail:
       `${path.basename(backupFile)}\n\n` +
       `Contains ${inspection.contents.products} products, ` +
       `${inspection.contents.sales} sales, ` +
       `${inspection.contents.customers} customers and ` +
       `${inspection.contents.services} repair jobs.\n\n` +
-      'A copy of the damaged file will be kept in your backups folder.',
-    buttons: ['Restore', 'Cancel'],
+      "A copy of the damaged file will be kept in your backups folder.",
+    buttons: ["Restore", "Cancel"],
     defaultId: 0,
     cancelId: 1,
     noLink: true,
@@ -167,10 +173,10 @@ function handleRestoreAndRetry(): StartupContext | null {
   try {
     replaceUnopenableDatabase(backupFile, databaseFile(), backupsDir());
   } catch (err) {
-    logger.error('Pre-login restore failed', err);
+    logger.error("Pre-login restore failed", err);
     dialog.showErrorBox(
-      'Restore failed',
-      'The backup could not be put in place. The damaged database has not been changed.\n\n' +
+      "Restore failed",
+      "The backup could not be put in place. The damaged database has not been changed.\n\n" +
         `Technical details were written to:\n${logsDir()}`,
     );
     return null;
@@ -182,21 +188,22 @@ function handleRestoreAndRetry(): StartupContext | null {
       migrationsDir: migrationsDir(),
       backupDir: backupsDir(),
     });
-    logger.info('Pre-login restore succeeded', { backupFile });
+    logger.info("Pre-login restore succeeded", { backupFile });
     dialog.showMessageBoxSync({
-      type: 'info',
-      title: 'Backup restored',
-      message: 'Your backup has been restored.',
-      detail: 'Sign in with the username and password that were in use when the backup was made.',
-      buttons: ['Continue'],
+      type: "info",
+      title: "Backup restored",
+      message: "Your backup has been restored.",
+      detail:
+        "Sign in with the username and password that were in use when the backup was made.",
+      buttons: ["Continue"],
       noLink: true,
     });
     return { database };
   } catch (err) {
-    logger.error('Restored backup would not start either', err);
+    logger.error("Restored backup would not start either", err);
     dialog.showErrorBox(
-      'Restore failed',
-      'The restored backup could not be opened either.\n\n' +
+      "Restore failed",
+      "The restored backup could not be opened either.\n\n" +
         `Your original damaged file was kept in:\n${backupsDir()}`,
     );
     return null;

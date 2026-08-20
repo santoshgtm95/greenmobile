@@ -1,4 +1,4 @@
-# Mobile Shop POS
+# Green Mobile POS
 
 An **offline Windows desktop POS** for a mobile phone sales, accessories and repair shop.
 

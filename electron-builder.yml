@@ -1,5 +1,5 @@
 appId: com.greenmobile.mobileshoppos
-productName: Mobile Shop POS
+productName: Green Mobile POS
 copyright: Copyright © 2026 Green Mobile
 
 directories:
@@ -10,14 +10,14 @@ files:
   - dist/**/*
   - dist-electron/**/*
   - package.json
-  - '!**/*.map'
+  - "!**/*.map"
 
 # Migration SQL is read at runtime, so it ships as a plain (non-asar) resource.
 extraResources:
   - from: prisma/migrations
     to: migrations
     filter:
-      - '**/*.sql'
+      - "**/*.sql"
 
 # better-sqlite3 ships Node-API prebuilt binaries, which are ABI-stable across
 # Node and every Electron version. Rebuilding from source is therefore both
@@ -29,14 +29,14 @@ npmRebuild: false
 # better-sqlite3 is unpacked alongside it.
 asar: true
 asarUnpack:
-  - '**/node_modules/better-sqlite3/**'
+  - "**/node_modules/better-sqlite3/**"
 
 win:
   target:
     - target: nsis
       arch:
         - x64
-  artifactName: MobileShopPOS-Setup.${version}.${ext}
+  artifactName: GreenMobilePOS-Setup.${version}.${ext}
   # Multi-resolution (16-256px), generated from src/assets/logo.png by
   # scripts/build-logo-assets.py. Brands the installer, the desktop and Start
   # Menu shortcuts, the taskbar and the packaged window's title bar.
@@ -48,8 +48,8 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: Mobile Shop POS
-  uninstallDisplayName: Mobile Shop POS ${version}
+  shortcutName: Green Mobile POS
+  uninstallDisplayName: Green Mobile POS ${version}
   # Application data lives in %APPDATA%\MobileShopPOS and is deliberately kept
   # on uninstall so a reinstall or upgrade never destroys shop records.
   deleteAppDataOnUninstall: false
