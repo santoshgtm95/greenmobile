@@ -1,0 +1,11 @@
+node_modules/
+dist/
+dist-electron/
+release/
+*.log
+.vite/
+.env
+.env.local
+prisma/dev.db
+prisma/dev.db-journal
+screenshots/

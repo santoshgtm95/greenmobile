@@ -1,0 +1,705 @@
+// =============================================================================
+// Mobile Shop POS — schema source of truth
+// =============================================================================
+//
+// This file defines the database. It is NOT used at runtime: the application
+// talks to SQLite through better-sqlite3 (see electron/database/). Prisma's job
+// is to be the readable, diffable definition of the schema and to generate the
+// migration SQL that the app applies on startup:
+//
+//     npm run schema:sql
+//
+// CONVENTIONS
+//
+// ids        TEXT UUID (crypto.randomUUID), never auto-increment, so that a
+//            future multi-PC / cloud sync can merge rows without collisions.
+//
+// money      Int holding MINOR UNITS (e.g. 31000 == 310.00). Money is never a
+//            float anywhere in this application. See shared/money.ts.
+//
+// rates      Int holding BASIS POINTS (e.g. 700 == 7.00%).
+//
+// instants   String holding UTC ISO-8601 ("2026-08-10T02:41:56.393Z").
+//            Used for ordering, auditing and future sync.
+//
+// business   String holding the LOCAL business day ("2026-08-10"), computed
+// days       from the shop's own clock at the moment the record was written.
+//            Reports filter and group on these columns so that a "day" always
+//            means the shop's day and is immune to timezone/DST arithmetic.
+//
+// enums      SQLite has no enum type, so these are TEXT columns. The allowed
+//            values are listed above each field and are enforced at the trust
+//            boundary by Zod (shared/validation/) plus TypeScript unions
+//            (shared/domain.ts).
+//
+// deletion   Financial history is never hard-deleted. Rows carry isActive /
+//            isDeleted / status instead, and relations use Restrict.
+// =============================================================================
+
+// Prisma 7 takes the connection URL from prisma.config.ts, not from here.
+// That URL is only ever used by the build-time migration tooling; the shipped
+// application opens %APPDATA%\MobileShopPOS\data\pos.db directly.
+datasource db {
+  provider = "sqlite"
+}
+
+// -----------------------------------------------------------------------------
+// Users & access control
+// -----------------------------------------------------------------------------
+
+model User {
+  id           String  @id
+  username     String  @unique
+  passwordHash String
+  fullName     String
+  phone        String?
+  /// ADMIN | MANAGER | CASHIER
+  role         String
+  isActive     Boolean @default(true)
+  createdAt    String
+  updatedAt    String
+  lastLoginAt  String?
+  createdBy    String?
+  updatedBy    String?
+
+  productsCreated    Product[]              @relation("ProductCreatedBy")
+  productsUpdated    Product[]              @relation("ProductUpdatedBy")
+  sales              Sale[]
+  payments           Payment[]
+  expenses           Expense[]
+  inventoryMovements InventoryTransaction[]
+  serviceOrders      ServiceOrder[]
+  servicePayments    ServicePayment[]
+  saleReturns        SaleReturn[]
+  bankAccounts       BankAccount[]
+  bankTransactions   BankTransaction[]
+  cashCounts         CashCount[]
+  auditLogs          AuditLog[]
+
+  @@index([role])
+  @@index([isActive])
+}
+
+// -----------------------------------------------------------------------------
+// Product master data
+// -----------------------------------------------------------------------------
+
+model Category {
+  id          String  @id
+  name        String  @unique
+  description String?
+  isActive    Boolean @default(true)
+  createdAt   String
+  updatedAt   String
+
+  products Product[]
+
+  @@index([isActive])
+}
+
+model Brand {
+  id          String  @id
+  name        String  @unique
+  description String?
+  isActive    Boolean @default(true)
+  createdAt   String
+  updatedAt   String
+
+  products Product[]
+
+  @@index([isActive])
+}
+
+model Product {
+  id            String  @id
+  sku           String  @unique
+  /// Unique when present; multiple products may leave it NULL.
+  barcode       String? @unique
+  name          String
+  description   String?
+  categoryId    String?
+  brandId       String?
+  /// Minor units. Default cost used when receiving stock.
+  purchasePrice Int     @default(0)
+  /// Minor units.
+  sellingPrice  Int     @default(0)
+  /// Basis points. Overrides the shop default when taxRateOverride is true.
+  taxRate       Int     @default(0)
+  /// True when this product uses its own tax rate instead of the shop default.
+  taxRateOverride Boolean @default(false)
+  /// Derived from InventoryTransaction; never written without one.
+  stockQuantity Int     @default(0)
+  minimumStock  Int     @default(0)
+  unit          String  @default("pcs")
+  /// Serialized products (phones) sell by IMEI/serial via ProductSerial.
+  isSerialized  Boolean @default(false)
+  warrantyMonths Int    @default(0)
+  isActive      Boolean @default(true)
+  createdAt     String
+  updatedAt     String
+  createdBy     String?
+  updatedBy     String?
+
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  brand    Brand?    @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  creator  User?     @relation("ProductCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict)
+  updater  User?     @relation("ProductUpdatedBy", fields: [updatedBy], references: [id], onDelete: Restrict)
+
+  serials            ProductSerial[]
+  saleItems          SaleItem[]
+  serviceItems       ServiceItem[]
+  inventoryMovements InventoryTransaction[]
+  returnItems        SaleReturnItem[]
+
+  @@index([name])
+  @@index([categoryId])
+  @@index([brandId])
+  @@index([isActive])
+  @@index([stockQuantity])
+}
+
+model ProductSerial {
+  id            String  @id
+  productId     String
+  serialNumber  String? @unique
+  imei1         String? @unique
+  imei2         String? @unique
+  /// Minor units. Actual cost of this individual unit.
+  purchasePrice Int     @default(0)
+  /// Minor units. Optional per-unit price override.
+  sellingPrice  Int?
+  /// AVAILABLE | SOLD | RETURNED | DEFECTIVE | RESERVED
+  status        String  @default("AVAILABLE")
+  warrantyStartDate String?
+  warrantyEndDate   String?
+  /// Set when sold; cleared when the sale is refunded or cancelled.
+  saleItemId    String?
+  notes         String?
+  createdAt     String
+  updatedAt     String
+
+  product  Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+  saleItem SaleItem? @relation(fields: [saleItemId], references: [id], onDelete: SetNull)
+
+  inventoryMovements InventoryTransaction[]
+  returnItems        SaleReturnItem[]
+
+  @@index([productId])
+  @@index([status])
+  @@index([productId, status])
+  @@index([saleItemId])
+}
+
+// -----------------------------------------------------------------------------
+// Customers
+// -----------------------------------------------------------------------------
+
+model Customer {
+  id           String  @id
+  customerCode String  @unique
+  name         String
+  phone        String?
+  email        String?
+  address      String?
+  notes        String?
+  isActive     Boolean @default(true)
+  createdAt    String
+  updatedAt    String
+
+  sales         Sale[]
+  serviceOrders ServiceOrder[]
+  saleReturns   SaleReturn[]
+
+  @@index([phone])
+  @@index([name])
+  @@index([isActive])
+}
+
+// -----------------------------------------------------------------------------
+// Sales
+// -----------------------------------------------------------------------------
+
+model Sale {
+  id             String  @id
+  invoiceNumber  String  @unique
+  customerId     String?
+  /// Snapshot of who bought, so the invoice never changes if the customer is edited.
+  customerName   String
+  customerPhone  String?
+  /// UTC instant.
+  saleDate       String
+  /// Local business day (YYYY-MM-DD). All sales reporting groups on this.
+  saleDay        String
+  /// Minor units. Sum of line totals before sale-level discount and tax.
+  subtotal       Int
+  discountAmount Int     @default(0)
+  taxAmount      Int     @default(0)
+  grandTotal     Int
+  amountPaid     Int     @default(0)
+  changeAmount   Int     @default(0)
+  /// Minor units. Sum of quantity * unitCost across items, frozen at sale time.
+  costTotal      Int     @default(0)
+  /// UNPAID | PARTIAL | PAID
+  paymentStatus  String
+  /// COMPLETED | CANCELLED | REFUNDED | PARTIALLY_REFUNDED
+  status         String
+  /// Minor units. Total refunded so far across all returns.
+  refundedAmount Int     @default(0)
+  notes          String?
+  createdBy      String
+  createdAt      String
+  updatedAt      String
+
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  cashier  User      @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  items    SaleItem[]
+  payments Payment[]
+  returns  SaleReturn[]
+
+  @@index([saleDate])
+  @@index([saleDay])
+  @@index([customerId])
+  @@index([status])
+  @@index([createdBy])
+  @@index([customerPhone])
+}
+
+model SaleItem {
+  id              String  @id
+  saleId          String
+  productId       String
+  productSerialId String?
+  /// Historical snapshots — reports must never read today's product row.
+  productName     String
+  sku             String
+  /// Minor units. Cost of goods for this line, frozen at sale time.
+  unitCost        Int
+  /// Minor units. Price actually charged.
+  unitPrice       Int
+  quantity        Int
+  discountAmount  Int     @default(0)
+  taxAmount       Int     @default(0)
+  /// Minor units. (unitPrice * quantity) - discountAmount + taxAmount.
+  totalAmount     Int
+  /// Quantity already given back through SaleReturnItem.
+  returnedQuantity Int    @default(0)
+  createdAt       String
+
+  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  serials     ProductSerial[]
+  returnItems SaleReturnItem[]
+
+  @@index([saleId])
+  @@index([productId])
+  @@index([productSerialId])
+}
+
+model Payment {
+  id              String  @id
+  saleId          String
+  /// Minor units.
+  amount          Int
+  /// CASH | BANK_TRANSFER | CREDIT_CARD | DEBIT_CARD | MOBILE_PAYMENT | OTHER
+  paymentMethod   String
+  referenceNumber String?
+  /// UTC instant.
+  paymentDate     String
+  /// Local business day (YYYY-MM-DD).
+  paymentDay      String
+  notes           String?
+  createdBy       String
+  createdAt       String
+
+  sale    Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  creator User @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@index([saleId])
+  @@index([paymentDay])
+  @@index([paymentMethod])
+}
+
+// -----------------------------------------------------------------------------
+// Sales returns / refunds
+// -----------------------------------------------------------------------------
+
+model SaleReturn {
+  id           String  @id
+  returnNumber String  @unique
+  saleId       String
+  customerId   String?
+  /// UTC instant.
+  returnDate   String
+  /// Local business day (YYYY-MM-DD).
+  returnDay    String
+  reason       String
+  /// Minor units.
+  refundAmount Int
+  /// CASH | BANK_TRANSFER | CREDIT_CARD | DEBIT_CARD | MOBILE_PAYMENT | OTHER
+  refundMethod String  @default("CASH")
+  /// COMPLETED | CANCELLED
+  status       String  @default("COMPLETED")
+  notes        String?
+  createdBy    String
+  createdAt    String
+
+  sale     Sale      @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  creator  User      @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  items SaleReturnItem[]
+
+  @@index([saleId])
+  @@index([returnDay])
+  @@index([customerId])
+}
+
+model SaleReturnItem {
+  id              String  @id
+  returnId        String
+  saleItemId      String
+  productId       String
+  productSerialId String?
+  quantity        Int
+  /// Minor units.
+  refundAmount    Int
+  /// Minor units. Cost restored to inventory, copied from the sale item.
+  unitCost        Int     @default(0)
+  /// True when the item came back damaged and must not re-enter sellable stock.
+  isDefective     Boolean @default(false)
+
+  saleReturn    SaleReturn     @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  saleItem      SaleItem       @relation(fields: [saleItemId], references: [id], onDelete: Restrict)
+  product       Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
+  productSerial ProductSerial? @relation(fields: [productSerialId], references: [id], onDelete: Restrict)
+
+  @@index([returnId])
+  @@index([saleItemId])
+  @@index([productId])
+}
+
+// -----------------------------------------------------------------------------
+// Expenses
+// -----------------------------------------------------------------------------
+
+model ExpenseCategory {
+  id          String  @id
+  name        String  @unique
+  description String?
+  isActive    Boolean @default(true)
+  createdAt   String
+  updatedAt   String
+
+  expenses Expense[]
+
+  @@index([isActive])
+}
+
+model Expense {
+  id              String  @id
+  expenseNumber   String  @unique
+  categoryId      String
+  /// UTC instant.
+  expenseDate     String
+  /// Local business day (YYYY-MM-DD). Expense reporting groups on this.
+  expenseDay      String
+  description     String
+  /// Minor units.
+  amount          Int
+  /// CASH | BANK_TRANSFER | CREDIT_CARD | DEBIT_CARD | MOBILE_PAYMENT | OTHER
+  paymentMethod   String
+  referenceNumber String?
+  notes           String?
+  isDeleted       Boolean @default(false)
+  createdBy       String
+  createdAt       String
+  updatedAt       String
+
+  category ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  creator  User            @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@index([expenseDay])
+  @@index([expenseDate])
+  @@index([categoryId])
+  @@index([isDeleted])
+}
+
+// -----------------------------------------------------------------------------
+// Inventory ledger — every stock change lands here, with a reason
+// -----------------------------------------------------------------------------
+
+model InventoryTransaction {
+  id              String  @id
+  productId       String
+  productSerialId String?
+  /// PURCHASE | SALE | SALE_RETURN | ADJUSTMENT | DAMAGE | SERVICE_USAGE
+  transactionType String
+  /// Signed: positive increases stock, negative decreases it.
+  quantity        Int
+  previousStock   Int
+  newStock        Int
+  /// Minor units.
+  unitCost        Int     @default(0)
+  /// SALE | SALE_RETURN | SERVICE_ORDER | ADJUSTMENT | PURCHASE | IMPORT
+  referenceType   String?
+  referenceId     String?
+  reason          String
+  createdBy       String
+  createdAt       String
+  /// Local business day (YYYY-MM-DD).
+  createdDay      String
+
+  product       Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
+  productSerial ProductSerial? @relation(fields: [productSerialId], references: [id], onDelete: Restrict)
+  creator       User           @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@index([productId])
+  @@index([productId, createdAt])
+  @@index([transactionType])
+  @@index([referenceType, referenceId])
+  @@index([createdDay])
+}
+
+// -----------------------------------------------------------------------------
+// Service / repair
+// -----------------------------------------------------------------------------
+
+model ServiceOrder {
+  id                 String  @id
+  serviceNumber      String  @unique
+  customerId         String?
+  /// Snapshot, so the job sheet stays truthful if the customer record changes.
+  customerName       String
+  customerPhone      String?
+  deviceBrand        String
+  deviceModel        String
+  imei               String?
+  serialNumber       String?
+  problemDescription String
+  initialCondition   String?
+  diagnosis          String?
+  /// Minor units.
+  estimatedCost      Int     @default(0)
+  /// Minor units. Authoritative total once parts and labour are recorded.
+  finalCost          Int     @default(0)
+  /// Minor units. Taken up front, counts towards the total paid.
+  depositAmount      Int     @default(0)
+  /// Minor units. Cost of parts consumed, for service profit reporting.
+  partsCost          Int     @default(0)
+  /// RECEIVED | DIAGNOSING | WAITING_APPROVAL | REPAIRING | WAITING_PARTS | COMPLETED | DELIVERED | CANCELLED
+  status             String  @default("RECEIVED")
+  /// UTC instants.
+  receivedDate       String
+  /// Local business day (YYYY-MM-DD).
+  receivedDay        String
+  expectedDate       String?
+  completedDate      String?
+  deliveredDate      String?
+  notes              String?
+  createdBy          String
+  createdAt          String
+  updatedAt          String
+
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  creator  User      @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  items    ServiceItem[]
+  payments ServicePayment[]
+
+  @@index([customerId])
+  @@index([status])
+  @@index([receivedDay])
+  @@index([imei])
+  @@index([customerPhone])
+}
+
+model ServiceItem {
+  id             String  @id
+  serviceOrderId String
+  /// Set when the line consumes stock from inventory.
+  productId      String?
+  description    String
+  quantity       Int     @default(1)
+  /// Minor units.
+  unitCost       Int     @default(0)
+  /// Minor units. Charged to the customer.
+  sellingPrice   Int     @default(0)
+  /// Minor units. sellingPrice * quantity.
+  total          Int     @default(0)
+  /// PART | LABOR | OTHER
+  type           String
+  createdAt      String
+
+  serviceOrder ServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+  product      Product?     @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([serviceOrderId])
+  @@index([productId])
+}
+
+model ServicePayment {
+  id              String  @id
+  serviceOrderId  String
+  /// Minor units.
+  amount          Int
+  /// CASH | BANK_TRANSFER | CREDIT_CARD | DEBIT_CARD | MOBILE_PAYMENT | OTHER
+  paymentMethod   String
+  referenceNumber String?
+  /// UTC instant.
+  paymentDate     String
+  /// Local business day (YYYY-MM-DD).
+  paymentDay      String
+  /// True for the deposit collected when the device was received.
+  isDeposit       Boolean @default(false)
+  notes           String?
+  createdBy       String
+  createdAt       String
+
+  serviceOrder ServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+  creator      User         @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@index([serviceOrderId])
+  @@index([paymentDay])
+}
+
+// -----------------------------------------------------------------------------
+// Banking — money moved between the shop and its banks / mobile wallets
+// -----------------------------------------------------------------------------
+
+/// A bank or mobile-payment account the shop uses, registered by the shop
+/// itself: "Kanbawza" with the key "Kpay".
+///
+/// The key is the short handle that appears on the transaction list and in
+/// reports, so it is IMMUTABLE once created — changing it would silently rewrite
+/// the label on every past transaction. Retiring an account is done with
+/// isActive; an account with transactions can never be deleted.
+model BankAccount {
+  id          String  @id
+  name        String  @unique
+  /// Short handle, e.g. "Kpay". Set once, never updated.
+  key         String  @unique
+  description String?
+  isActive    Boolean @default(true)
+  createdBy   String
+  createdAt   String
+  updatedAt   String
+
+  creator      User              @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  transfersOut BankTransaction[] @relation("BankTransactionFrom")
+  transfersIn  BankTransaction[] @relation("BankTransactionTo")
+
+  @@index([isActive])
+  @@index([key])
+}
+
+/// One movement of money. TRANSFER is money leaving one of the shop's accounts,
+/// RECEIVE is money arriving into one. The side that is the shop's own account
+/// is always set (enforced in banking.service.ts), which is what makes a per
+/// account balance — received in, less transferred out — add up.
+///
+/// Never hard-deleted: the row is flagged isDeleted so a balance shown last week
+/// stays explainable.
+model BankTransaction {
+  id                String  @id
+  transactionNumber String  @unique
+  /// TRANSFER | RECEIVE
+  type              String
+  /// UTC instant, from the date-and-time picker on the form.
+  transactionDate   String
+  /// Local business day (YYYY-MM-DD). All filtering groups on this.
+  transactionDay    String
+  /// Which registered bank or wallet the money left.
+  fromAccountId     String?
+  /// The specific account or wallet number it left, and whose name is on it.
+  /// Per transaction, not per bank: one "Kpay" serves many account numbers.
+  fromAccountNumber String?
+  fromName          String?
+  /// Which registered bank or wallet the money arrived in.
+  toAccountId       String?
+  toAccountNumber   String?
+  toName            String?
+  /// Minor units.
+  amount            Int
+  notes             String?
+  isDeleted         Boolean @default(false)
+  deletedReason     String?
+  createdBy         String
+  createdAt         String
+  updatedAt         String
+
+  fromAccount BankAccount? @relation("BankTransactionFrom", fields: [fromAccountId], references: [id], onDelete: Restrict)
+  toAccount   BankAccount? @relation("BankTransactionTo", fields: [toAccountId], references: [id], onDelete: Restrict)
+  creator     User         @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@index([transactionDay])
+  @@index([transactionDate])
+  @@index([type])
+  @@index([fromAccountId])
+  @@index([toAccountId])
+  @@index([isDeleted])
+}
+
+/// A counted cash-in-hand figure.
+///
+/// Recorded by the shop rather than calculated: cash also moves through sales,
+/// refunds, expenses and service deposits, so a derived number would be a guess
+/// presented as a fact. Each count is kept, so the figure has a history.
+model CashCount {
+  id         String  @id
+  /// Minor units.
+  amount     Int
+  /// UTC instant the count was taken.
+  countedAt  String
+  /// Local business day of the count.
+  countedDay String
+  notes      String?
+  createdBy  String
+  createdAt  String
+
+  creator User @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@index([countedAt])
+  @@index([countedDay])
+}
+
+// -----------------------------------------------------------------------------
+// Audit trail & settings
+// -----------------------------------------------------------------------------
+
+model AuditLog {
+  id         String  @id
+  userId     String?
+  /// LOGIN | LOGOUT | CREATE | UPDATE | DELETE | CANCEL | REFUND | ADJUST_STOCK |
+  /// RESET_PASSWORD | BACKUP | RESTORE | IMPORT | SETTINGS_UPDATE
+  action     String
+  entityName String
+  entityId   String?
+  /// JSON snapshots. Never contains password hashes.
+  oldValues  String?
+  newValues  String?
+  /// Free-text summary shown in the audit viewer.
+  summary    String?
+  createdAt  String
+  /// Local business day (YYYY-MM-DD).
+  createdDay String
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([entityName, entityId])
+  @@index([createdAt])
+  @@index([createdDay])
+  @@index([action])
+}
+
+model Setting {
+  id        String @id
+  key       String @unique
+  value     String
+  updatedAt String
+  updatedBy String?
+
+  @@index([key])
+}
