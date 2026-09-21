@@ -14,6 +14,7 @@ import {
   zBankTransactionListQuery,
   zCustomerListQuery,
   zExpenseListQuery,
+  zImportPreview,
   zNoPayload,
   zProductListQuery,
   zSaleListQuery,
@@ -132,9 +133,9 @@ export function registerDataIpc(): void {
   handle(
     CHANNELS.data.importPreview,
     { access: 'permission', permission: 'products.import' },
-    z.object({ path: z.string().min(1).max(4096).optional() }),
+    zImportPreview,
     async (input) => {
-      let file = input.path;
+      let file = input?.path;
 
       if (!file) {
         const result = await dialog.showOpenDialog({

@@ -37,6 +37,7 @@ import {
 import { inventoryHistory } from '../electron/services/inventory.service';
 import { businessDay } from '../shared/datetime';
 import { IMPORT_FIELD_LABELS, type ImportPreview, type ImportRow } from '../shared/import';
+import { zImportPreview } from '../shared/validation';
 import type { FirstRunSetupInput } from '../shared/validation';
 
 let ctx: TestDatabase;
@@ -593,6 +594,29 @@ describe('committing the import', () => {
     }
     // The cache is bounded, so the oldest is gone rather than pinned forever.
     expect(() => commitProductImport(first.importId, actor, ctx.db)).toThrowError(/no longer open/i);
+  });
+});
+
+describe('the preview payload', () => {
+  // The Import dialog calls api.data.importPreview() with no argument at all —
+  // the file is chosen in the native dialog the handler opens. Only the build's
+  // smoke test names a path, so this is the shape the shop actually sends and
+  // the one that was rejected before: an absent payload read as an invalid one,
+  // and "Choose file" answered "Please check the highlighted fields".
+  it('accepts no payload, which is how the dialog calls it', () => {
+    expect(zImportPreview.safeParse(undefined).success).toBe(true);
+    expect(zImportPreview.safeParse(null).success).toBe(true);
+    expect(zImportPreview.safeParse({}).success).toBe(true);
+  });
+
+  it('still accepts a named file, which is how the smoke test calls it', () => {
+    const parsed = zImportPreview.safeParse({ path: 'C:\\lists\\supplier.xlsx' });
+    expect(parsed.success && parsed.data?.path).toBe('C:\\lists\\supplier.xlsx');
+  });
+
+  it('refuses a path that is empty or absurdly long', () => {
+    expect(zImportPreview.safeParse({ path: '' }).success).toBe(false);
+    expect(zImportPreview.safeParse({ path: 'x'.repeat(5000) }).success).toBe(false);
   });
 });
 

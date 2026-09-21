@@ -685,6 +685,20 @@ export const zSaleId = z.object({ saleId: zId });
 export const zIdOnly = z.object({ id: zId });
 export const zCodeLookup = z.object({ code: z.string().trim().min(1).max(64) });
 
+/**
+ * Product import preview.
+ *
+ * The whole payload is optional, and that is the normal case: the Import dialog
+ * calls this with no argument at all, because the user picks the file in the
+ * native open dialog the handler puts up. Only the build's smoke test names a
+ * path directly, to keep an automated run from stopping on a modal window. Both
+ * shapes have to validate, so this is `nullish` for the same reason zNoPayload
+ * tolerates null: an absent argument must not read as a bad one.
+ */
+export const zImportPreview = z
+  .object({ path: z.string().min(1).max(4096).optional() })
+  .nullish();
+
 // -----------------------------------------------------------------------------
 // Types
 // -----------------------------------------------------------------------------

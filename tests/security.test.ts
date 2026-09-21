@@ -42,7 +42,9 @@ import {
 import { setSessionUser, getSessionUser, requirePermission } from '../electron/session';
 import { deleteBackup } from '../electron/services/backup.service';
 import { AppError } from '../shared/errors';
+import * as validation from '../shared/validation';
 import type { FirstRunSetupInput } from '../shared/validation';
+import type { z } from 'zod';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 
@@ -665,6 +667,63 @@ describe('input validation', () => {
     expect(saleItem).toContain('quantity');
     expect(saleItem).not.toContain('unitPrice');
     expect(saleItem).not.toContain('totalAmount');
+  });
+
+  it('accepts an absent payload on every channel the UI calls with no argument', () => {
+    // The mirror image of the checks above, and a real bug this caught: the
+    // Import dialog calls api.data.importPreview() with no argument, because the
+    // user picks the file in the native open dialog the handler puts up. The
+    // handler validated with a plain z.object({...}), which in Zod rejects
+    // undefined outright — so pressing "Choose file" answered "Please check the
+    // highlighted fields" and the feature could not be used at all. Nothing
+    // failed, because the smoke test always passed a path to avoid stopping on a
+    // modal window, so the one call path the UI uses was never exercised.
+    //
+    // Sending no argument is not a validation failure, so any channel the
+    // renderer calls bare must accept undefined. The schema is imported and
+    // actually asked rather than read as text, which is the whole point: the
+    // first version of this check pattern-matched the source and passed on the
+    // broken schema, because `z.object({ path: z.string().optional() })` ends in
+    // ".optional()" too — on the field, not on the object. Only running it can
+    // tell those apart. So a channel the UI calls bare must name its schema in
+    // shared/validation.ts, where both sides of the bridge can see it.
+    const bare = new Set<string>();
+    for (const file of sourceFiles('src')) {
+      const text = stripComments(fs.readFileSync(file, 'utf8'));
+      for (const [, ns, method] of text.matchAll(/\bapi\.(\w+)\.(\w+)\(\s*\)/g)) {
+        bare.add(`${ns}.${method}`);
+      }
+    }
+    // If this ever finds nothing the test has stopped testing anything.
+    expect(bare.size).toBeGreaterThan(10);
+
+    const ipc = sourceFiles('electron/ipc')
+      .map((f) => stripComments(fs.readFileSync(f, 'utf8')))
+      .join('\n');
+
+    for (const call of [...bare].sort()) {
+      // handle(CHANNELS.ns.method, { access }, <schema>, handler)
+      const registration = new RegExp(
+        `handle\\(\\s*CHANNELS\\.${call.replace('.', '\\.')}\\s*,\\s*\\{[^}]*\\}\\s*,\\s*([^,]+?)\\s*,`,
+      ).exec(ipc);
+      expect(registration, `no handler found for ${call}`).not.toBeNull();
+
+      const schema = registration![1].trim();
+      const named = (validation as Record<string, unknown>)[schema] as z.ZodTypeAny | undefined;
+
+      expect(
+        typeof named?.safeParse === 'function',
+        `${call} is called with no argument, so its schema must be a named export of ` +
+          `shared/validation.ts and not the inline "${schema}" — a schema that is only ` +
+          `an expression here cannot be run by this test, and reading it as text is what ` +
+          `let the importPreview bug through.`,
+      ).toBe(true);
+
+      expect(
+        named!.safeParse(undefined).success,
+        `${call} is called with no argument, but ${schema} rejects undefined`,
+      ).toBe(true);
+    }
   });
 
   it('caps every unbounded input', () => {

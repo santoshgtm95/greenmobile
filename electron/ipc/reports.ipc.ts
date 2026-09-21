@@ -9,7 +9,7 @@ import { shell } from 'electron';
 import { z } from 'zod';
 import { handle } from './registry';
 import { CHANNELS } from '../../shared/channels';
-import { zDayRange } from '../../shared/validation';
+import { zDayRange, zNoPayload } from '../../shared/validation';
 import { REPORT_KINDS, EXPORT_FORMATS } from '../../shared/report';
 import { dashboard, profitAndLoss, salesSummary } from '../services/report.service';
 import { buildReport } from '../services/report-builder.service';
@@ -92,7 +92,7 @@ export function registerReportsIpc(): void {
   );
 
   /** Opens the exports folder in Windows Explorer. */
-  handle(CHANNELS.reports.openExportsFolder, { access: 'permission', permission: 'reports.view' }, z.undefined().or(z.null()), async () => {
+  handle(CHANNELS.reports.openExportsFolder, { access: 'permission', permission: 'reports.view' }, zNoPayload, async () => {
     const folder = exportsDir();
     const error = await shell.openPath(folder);
     if (error) logger.warn('Could not open the exports folder', { folder, error });
