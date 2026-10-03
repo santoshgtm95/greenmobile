@@ -15,6 +15,7 @@ import {
   SERVICE_ITEM_TYPES,
   SALE_STATUSES,
   SERIAL_STATUSES,
+  BANK_FEE_DIRECTIONS,
   BANK_TRANSACTION_TYPES,
 } from './domain';
 import { DATE_PRESETS, LOCAL_DATE_TIME_PATTERN } from './datetime';
@@ -569,6 +570,17 @@ export const zCreateBankTransaction = z
     toAccountNumber: zAccountNumber,
     toName: zAccountHolder,
     amount: zMinor.refine((v) => v > 0, 'Amount must be more than zero'),
+    /**
+     * The fee on this movement as basis points of the amount: 50 == 0.5%.
+     *
+     * zBasisPoints is already capped at 10,000, which is 100% — the ceiling the
+     * form offers. Note what is NOT here: the fee in money. The renderer shows a
+     * running figure while the user types, but the stored one is worked out in
+     * the main process from the amount and this rate, for the same reason a
+     * cart never sends a price (§68).
+     */
+    feeBasisPoints: zBasisPoints.default(0),
+    feeDirection: z.enum(BANK_FEE_DIRECTIONS).default('RECEIVE'),
     notes: zOptionalText,
   })
   // The shop's own account is on the side the money moved, so that per-account

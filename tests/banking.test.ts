@@ -29,7 +29,8 @@ import {
 } from '../electron/services/banking.service';
 import { AppError } from '../shared/errors';
 import { businessDay, addDays, nowLocalDateTime, localDateTimeToInstant } from '../shared/datetime';
-import { roleHasPermission } from '../shared/domain';
+import { roleHasPermission, type BankFeeDirection } from '../shared/domain';
+import { formatMoney } from '../shared/money';
 import { zCreateBankTransaction, type FirstRunSetupInput } from '../shared/validation';
 
 let ctx: TestDatabase;
@@ -84,7 +85,14 @@ function at(day: string = businessDay(), time = '10:30'): string {
 
 function receive(
   amount: number,
-  overrides: Partial<{ to: string; from: string; day: string; fromName: string }> = {},
+  overrides: Partial<{
+    to: string;
+    from: string;
+    day: string;
+    fromName: string;
+    feeBasisPoints: number;
+    feeDirection: BankFeeDirection;
+  }> = {},
 ) {
   return createBankTransaction(
     {
@@ -97,6 +105,8 @@ function receive(
       toAccountNumber: '001-22-3333',
       toName: 'Green Mobile',
       amount,
+      feeBasisPoints: overrides.feeBasisPoints ?? 0,
+      feeDirection: overrides.feeDirection ?? 'RECEIVE',
       notes: undefined,
     },
     actor,
@@ -106,7 +116,14 @@ function receive(
 
 function transfer(
   amount: number,
-  overrides: Partial<{ from: string; to: string; day: string; toName: string }> = {},
+  overrides: Partial<{
+    from: string;
+    to: string;
+    day: string;
+    toName: string;
+    feeBasisPoints: number;
+    feeDirection: BankFeeDirection;
+  }> = {},
 ) {
   return createBankTransaction(
     {
@@ -119,6 +136,8 @@ function transfer(
       toAccountNumber: '09-333-4444',
       toName: overrides.toName ?? 'A supplier',
       amount,
+      feeBasisPoints: overrides.feeBasisPoints ?? 0,
+      feeDirection: overrides.feeDirection ?? 'RECEIVE',
       notes: undefined,
     },
     actor,
@@ -301,6 +320,8 @@ describe('recording transactions', () => {
         toAccountNumber: '001-22-3333',
         toName: 'Green Mobile',
         amount: 10_000,
+        feeBasisPoints: 0,
+        feeDirection: 'RECEIVE',
         notes: undefined,
       },
       actor,
@@ -333,6 +354,8 @@ describe('recording transactions', () => {
           toAccountNumber: '2',
           toName: 'Somebody else',
           amount: 1_000,
+          feeBasisPoints: 0,
+          feeDirection: 'RECEIVE',
           notes: undefined,
         },
         actor,
@@ -354,6 +377,8 @@ describe('recording transactions', () => {
           toAccountNumber: '2',
           toName: 'Somebody else',
           amount: 1_000,
+          feeBasisPoints: 0,
+          feeDirection: 'RECEIVE',
           notes: undefined,
         },
         actor,
@@ -426,6 +451,177 @@ describe('recording transactions', () => {
 
   it('refuses an account that does not exist', () => {
     expect(captureError(() => receive(1_000, { to: 'no-such-account' })).code).toBe('NOT_FOUND');
+  });
+});
+
+// -----------------------------------------------------------------------------
+// Fees
+// -----------------------------------------------------------------------------
+
+describe('the fee on a movement', () => {
+  /**
+   * The figure the form promises.
+   *
+   * Amounts here are minor units, so 1,000,000.00 is 100,000,000 and the fee
+   * 5,000.00 is 500,000. Written out because a percentage of a percentage of a
+   * scaled integer is exactly the kind of arithmetic that looks right and is not.
+   */
+  it('works out 0.5% of 1,000,000 as 5,000', () => {
+    const row = receive(100_000_000, { feeBasisPoints: 50 });
+
+    expect(row.feeBasisPoints).toBe(50);
+    expect(row.feeAmount).toBe(500_000);
+    expect(formatMoney(row.feeAmount)).toBe('5,000.00');
+  });
+
+  it('records which way the fee went', () => {
+    const earned = receive(100_000_000, { feeBasisPoints: 50, feeDirection: 'RECEIVE' });
+    const charged = transfer(100_000_000, { feeBasisPoints: 50, feeDirection: 'PAY' });
+
+    expect(earned.feeDirection).toBe('RECEIVE');
+    expect(charged.feeDirection).toBe('PAY');
+    // Same rate, same amount — only the direction differs. The fee is not
+    // negated in storage; which way it went is a separate column so that a
+    // report can total the two sides independently.
+    expect(charged.feeAmount).toBe(earned.feeAmount);
+  });
+
+  it('is zero when no percentage was entered', () => {
+    const row = receive(100_000_000);
+    expect(row.feeBasisPoints).toBe(0);
+    expect(row.feeAmount).toBe(0);
+  });
+
+  it('calculates the fee itself rather than trusting what it is sent', () => {
+    // The channel payload carries the RATE, never the money — the same rule the
+    // cart follows for prices (§68). If feeAmount were ever accepted from the
+    // renderer, this object would set it and the stored row would disagree with
+    // the arithmetic.
+    const sent = { feeAmount: 999_999_999 } as Record<string, unknown>;
+    expect(Object.keys(zCreateBankTransaction.shape)).not.toContain('feeAmount');
+
+    const row = createBankTransaction(
+      {
+        type: 'RECEIVE',
+        transactionAt: at(),
+        fromAccountId: undefined,
+        fromAccountNumber: '09-111-2222',
+        fromName: 'Ma Hla',
+        toAccountId: kpay,
+        toAccountNumber: '001-22-3333',
+        toName: 'Green Mobile',
+        amount: 100_000_000,
+        feeBasisPoints: 50,
+        feeDirection: 'RECEIVE',
+        notes: undefined,
+        ...sent,
+      },
+      actor,
+      ctx.db,
+    );
+
+    expect(row.feeAmount).toBe(500_000);
+  });
+
+  it('rounds a fee that does not divide evenly, rather than truncating', () => {
+    // 333.33 at 7.5% is 24.99975 — a quarter of a satang short of 25.00.
+    const row = receive(33_333, { feeBasisPoints: 750 });
+    expect(row.feeAmount).toBe(2_500);
+  });
+
+  it('refuses a rate above 100%', () => {
+    const tooHigh = zCreateBankTransaction.safeParse({
+      type: 'RECEIVE',
+      transactionAt: at(),
+      fromAccountNumber: '09-111-2222',
+      fromName: 'Ma Hla',
+      toAccountId: kpay,
+      toAccountNumber: '001-22-3333',
+      toName: 'Green Mobile',
+      amount: 100_000,
+      feeBasisPoints: 10_001,
+      feeDirection: 'RECEIVE',
+    });
+    expect(tooHigh.success).toBe(false);
+  });
+
+  it('defaults to no fee when the payload omits it, so old callers still work', () => {
+    const parsed = zCreateBankTransaction.parse({
+      type: 'RECEIVE',
+      transactionAt: at(),
+      fromAccountNumber: '09-111-2222',
+      fromName: 'Ma Hla',
+      toAccountId: kpay,
+      toAccountNumber: '001-22-3333',
+      toName: 'Green Mobile',
+      amount: 100_000,
+    });
+    expect(parsed.feeBasisPoints).toBe(0);
+    expect(parsed.feeDirection).toBe('RECEIVE');
+  });
+
+  it('totals fees by the direction of the fee, not the type of the movement', () => {
+    // The distinction that makes this worth a test: the fee PAID here sits on a
+    // RECEIVE row. Splitting fees by the row's type would file it under money
+    // earned; splitting by the fee's own direction — which is what the shop
+    // actually chose on the form — files it correctly under money paid out.
+    receive(100_000_000, { feeBasisPoints: 50, feeDirection: 'RECEIVE' });
+    receive(100_000, { feeBasisPoints: 100, feeDirection: 'PAY' });
+    transfer(400_000, { feeBasisPoints: 25, feeDirection: 'RECEIVE' });
+
+    const { totals } = bankingOverview(ALL_TIME, ctx.db);
+
+    expect(totals.feeReceived).toBe(500_000 + 1_000);
+    expect(totals.feePaid).toBe(1_000);
+  });
+
+  it('adds fees into the actual total on the side each one belongs to', () => {
+    receive(100_000_000, { feeBasisPoints: 50, feeDirection: 'RECEIVE' });
+    receive(100_000, { feeBasisPoints: 100, feeDirection: 'PAY' });
+    transfer(550_000);
+
+    const { totals } = bankingOverview(ALL_TIME, ctx.db);
+
+    expect(totals.received).toBe(100_100_000);
+    expect(totals.transferred).toBe(550_000);
+    expect(totals.net).toBe(99_550_000);
+    // net + fees earned - fees paid. Written out because getting the paid fee on
+    // the wrong side of this is an easy and invisible mistake: it was wrong by
+    // twice the fee when this figure was first described.
+    expect(totals.netAfterFees).toBe(99_550_000 + 500_000 - 1_000);
+  });
+
+  it('reports no fees rather than nothing when none were charged', () => {
+    receive(100_000);
+    const { totals } = bankingOverview(ALL_TIME, ctx.db);
+
+    expect(totals.feeReceived).toBe(0);
+    expect(totals.feePaid).toBe(0);
+    expect(totals.netAfterFees).toBe(totals.net);
+  });
+
+  it('keeps a deleted movement out of the fee totals', () => {
+    const kept = receive(100_000_000, { feeBasisPoints: 50, feeDirection: 'RECEIVE' });
+    const removed = receive(100_000_000, { feeBasisPoints: 50, feeDirection: 'RECEIVE' });
+    deleteBankTransaction(removed.id, 'Recorded twice', actor, ctx.db);
+
+    const { totals } = bankingOverview(ALL_TIME, ctx.db);
+    expect(totals.feeReceived).toBe(500_000);
+    expect(kept.feeAmount).toBe(500_000);
+  });
+
+  it('leaves the balances alone', () => {
+    // What the shop asked for: the fee is recorded beside the movement, not
+    // folded into it. 1,000,000 received with a 5,000 fee still moves exactly
+    // 1,000,000 into the account. Changing this is a decision about the books,
+    // not a detail — so it is pinned here rather than left to drift.
+    receive(100_000_000, { feeBasisPoints: 50, feeDirection: 'RECEIVE' });
+
+    const overview = bankingOverview(ALL_TIME, ctx.db);
+    const account = overview.accounts.find((a) => a.accountId === kpay)!;
+
+    expect(account.balance).toBe(100_000_000);
+    expect(overview.totals.received).toBe(100_000_000);
   });
 });
 
@@ -694,7 +890,17 @@ describe('balances', () => {
       expect(account.balance).toBe(0);
     }
     expect(overview.bankBalance).toBe(0);
-    expect(overview.totals).toEqual({ received: 0, transferred: 0, net: 0, count: 0 });
+    // Exhaustive on purpose: a new total added without a zero case is a card
+    // that reads "undefined" on the day a shop opens.
+    expect(overview.totals).toEqual({
+      received: 0,
+      transferred: 0,
+      net: 0,
+      feeReceived: 0,
+      feePaid: 0,
+      netAfterFees: 0,
+      count: 0,
+    });
   });
 });
 

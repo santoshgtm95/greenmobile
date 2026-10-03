@@ -12,7 +12,9 @@
 import type { Database as Db } from 'better-sqlite3';
 import { getDatabase } from '../database/connection';
 import { formatBusinessDay } from '../../shared/datetime';
+import { amountAfterFee, formatRate } from '../../shared/money';
 import {
+  BANK_FEE_DIRECTION_LABELS,
   BANK_TRANSACTION_TYPE_LABELS,
   PAYMENT_METHOD_LABELS,
   SALE_STATUS_LABELS,
@@ -361,6 +363,11 @@ function bankTransactionList(query: BankTransactionListQuery, db: Db): Body {
       .filter(Boolean)
       .join(' · ');
 
+  // Every fee on the sheet, whichever way it went. Summed across both
+  // directions on purpose: this answers "how much did fees come to", not "what
+  // did the shop clear on them", and netting the two would hide the gross.
+  const feeTotal = sum(rows, (r) => r.feeAmount);
+
   return {
     periodLabel: describeFilters([
       dayRangeLabel(query.from, query.to),
@@ -378,6 +385,7 @@ function bankTransactionList(query: BankTransactionListQuery, db: Db): Body {
         type: 'money',
         emphasis: true,
       },
+      { label: 'Fees', value: feeTotal, type: 'money' },
     ],
     tables: [
       {
@@ -390,6 +398,10 @@ function bankTransactionList(query: BankTransactionListQuery, db: Db): Body {
           { key: 'from', label: 'From', type: 'text', width: 34 },
           { key: 'to', label: 'To', type: 'text', width: 34 },
           { key: 'amount', label: 'Amount', type: 'money', width: 16 },
+          { key: 'feeRate', label: 'Fee %', type: 'text', width: 9 },
+          { key: 'feeAmount', label: 'Fee', type: 'money', width: 14 },
+          { key: 'feeDirectionLabel', label: 'Fee is', type: 'text', width: 11 },
+          { key: 'actualAmount', label: 'Actual amount', type: 'money', width: 16 },
           { key: 'notes', label: 'Notes', type: 'text', width: 30 },
           { key: 'createdByName', label: 'Recorded by', type: 'text', width: 18 },
           { key: 'state', label: 'State', type: 'text', width: 11 },
@@ -406,11 +418,22 @@ function bankTransactionList(query: BankTransactionListQuery, db: Db): Body {
           ),
           to: side(row.toAccountName, row.toAccountKey, row.toAccountNumber, row.toName),
           amount: row.amount,
+          // Blank rather than "0%" / 0.00 on a movement that carried no fee, so
+          // a column of real fees is not buried in zeroes when the sheet is
+          // read beside a statement.
+          feeRate: row.feeBasisPoints > 0 ? formatRate(row.feeBasisPoints) : null,
+          feeAmount: row.feeAmount > 0 ? row.feeAmount : null,
+          feeDirectionLabel:
+            row.feeAmount > 0 ? BANK_FEE_DIRECTION_LABELS[row.feeDirection] : null,
+          // Always filled, even with no fee: this is the column reconciled
+          // against a bank statement, and a blank cell there reads as missing
+          // data rather than as "same as the amount".
+          actualAmount: amountAfterFee(row.amount, row.feeAmount, row.feeDirection),
           notes: row.notes,
           createdByName: row.createdByName,
           state: row.isDeleted ? 'Deleted' : 'Recorded',
         })),
-        totals: { amount: transferTotal + receiveTotal },
+        totals: { amount: transferTotal + receiveTotal, feeAmount: feeTotal },
         emptyMessage: 'No bank transactions match these filters.',
       },
     ],

@@ -10,6 +10,7 @@
  * Only the display layer converts to a decimal string, and only at the very
  * last step (formatMoney).
  */
+import type { BankFeeDirection } from './domain';
 
 /** Number of decimal places a currency is quoted in. */
 export const CURRENCY_DECIMALS: Record<string, number> = {
@@ -138,6 +139,29 @@ export function taxFromInclusive(gross: number, basisPoints: number): { net: num
 /** Percentage discount on an amount, as basis points. */
 export function percentageDiscount(minor: number, basisPoints: number): number {
   return rateOf(minor, basisPoints);
+}
+
+/**
+ * What actually changed hands once the fee is taken into account.
+ *
+ * A fee RECEIVED is on top of the amount, so more money moved than the amount
+ * says; a fee PAID comes out of it, so less did. Both figures matter to a shop
+ * and neither can be worked out from the other without knowing which way the
+ * fee went — which is why the direction is recorded rather than the fee being
+ * stored as a signed number.
+ *
+ *   1,000,000 with a 5,000 fee received → 1,005,000
+ *   1,000,000 with a 5,000 fee paid     →   995,000
+ *
+ * Derived, never stored: both operands are already on the row, so there is
+ * nothing here that could drift out of step with them.
+ */
+export function amountAfterFee(
+  amount: number,
+  fee: number,
+  direction: BankFeeDirection,
+): number {
+  return direction === 'RECEIVE' ? addMoney(amount, fee) : subtractMoney(amount, fee);
 }
 
 /**

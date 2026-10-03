@@ -28,6 +28,8 @@ import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import CallMadeIcon from '@mui/icons-material/CallMade';
 import CallReceivedIcon from '@mui/icons-material/CallReceived';
 import PaymentsIcon from '@mui/icons-material/Payments';
+import PercentIcon from '@mui/icons-material/Percent';
+import CalculateOutlinedIcon from '@mui/icons-material/CalculateOutlined';
 import EditIcon from '@mui/icons-material/Edit';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
@@ -40,10 +42,12 @@ import BankTransactionDialog from '../components/BankTransactionDialog';
 import CashCountDialog from '../components/CashCountDialog';
 import { PosApiError } from '@shared/errors';
 import {
+  BANK_FEE_DIRECTION_LABELS,
   BANK_TRANSACTION_TYPES,
   BANK_TRANSACTION_TYPE_LABELS,
   type BankTransactionType,
 } from '@shared/domain';
+import { amountAfterFee, formatRate } from '@shared/money';
 import {
   DATE_PRESETS,
   DATE_PRESET_LABELS,
@@ -204,8 +208,26 @@ export default function BankingPage() {
         </Alert>
       )}
 
-      {/* Period totals and what the shop holds. */}
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+      {/*
+        Period totals and what the shop holds.
+
+        A grid rather than a wrapping row. With seven cards a flex row wraps by
+        whatever happens to fit — it landed as five and then two cards stretched
+        to half the screen each, which read as more important than the five above
+        them. Fixed columns keep every card the same size and leave the gap at
+        the end, where it says nothing.
+      */}
+      <Box
+        sx={{
+          display: 'grid',
+          gap: 2,
+          gridTemplateColumns: {
+            xs: '1fr',
+            sm: 'repeat(2, 1fr)',
+            lg: 'repeat(4, 1fr)',
+          },
+        }}
+      >
         <SummaryCard
           label="Transferred out"
           value={signed(overview.data?.totals.transferred ?? 0)}
@@ -219,6 +241,31 @@ export default function BankingPage() {
           caption={`${overview.data?.totals.count ?? 0} transaction(s) in this period`}
           icon={<CallReceivedIcon fontSize="small" />}
           tone="success"
+        />
+        {/*
+          Fees are split by the direction of the FEE, not by the type of the
+          movement carrying it: a commission earned on a transfer belongs with
+          the money the shop made, not with the money it sent.
+        */}
+        <SummaryCard
+          label="Fees received"
+          value={signed(overview.data?.totals.feeReceived ?? 0)}
+          caption="Commission the shop earned this period"
+          icon={<PercentIcon fontSize="small" />}
+          tone="success"
+        />
+        <SummaryCard
+          label="Fees paid"
+          value={signed(overview.data?.totals.feePaid ?? 0)}
+          caption="Charges taken by the banks and wallets"
+          icon={<PercentIcon fontSize="small" />}
+          tone="error"
+        />
+        <SummaryCard
+          label="Total actual"
+          value={signed(overview.data?.totals.netAfterFees ?? 0)}
+          caption="Received less transferred, fees included"
+          icon={<CalculateOutlinedIcon fontSize="small" />}
         />
         <SummaryCard
           label="In the banks"
@@ -245,7 +292,7 @@ export default function BankingPage() {
             ) : undefined
           }
         />
-      </Stack>
+      </Box>
 
       {/* Per-account position. */}
       {positions.length > 0 && (
@@ -389,15 +436,26 @@ export default function BankingPage() {
       {/* History. */}
       <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
         <TableContainer>
-          <Table size="small" stickyHeader>
+          {/*
+            Twelve columns, so the padding is tightened rather than a column
+            dropped. At the default spacing the row demanded more width than the
+            page had, and the first thing pushed off the edge was the Actions
+            column — which put the delete button behind a horizontal scroll for
+            the one role allowed to use it. Cheaper to buy the width back here.
+          */}
+          <Table size="small" stickyHeader sx={{ '& th, & td': { px: 1.25 } }}>
             <TableHead>
               <TableRow>
-                <TableCell>Number</TableCell>
+                <TableCell sx={{ whiteSpace: 'nowrap' }}>Number</TableCell>
                 <TableCell>Date and time</TableCell>
                 <TableCell>Type</TableCell>
                 <TableCell>From</TableCell>
                 <TableCell>To</TableCell>
+                {/* Left to right, these four read as the calculation itself. */}
                 <TableCell align="right">Amount</TableCell>
+                <TableCell align="right">Percent</TableCell>
+                <TableCell align="right">Fee</TableCell>
+                <TableCell align="right">Actual</TableCell>
                 <TableCell>Notes</TableCell>
                 <TableCell>Recorded by</TableCell>
                 {can('banking.delete') && <TableCell align="right">Actions</TableCell>}
@@ -406,7 +464,7 @@ export default function BankingPage() {
             <TableBody>
               {transactions.isLoading && (
                 <TableRow>
-                  <TableCell colSpan={9} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                  <TableCell colSpan={12} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                     Loading…
                   </TableCell>
                 </TableRow>
@@ -414,7 +472,7 @@ export default function BankingPage() {
 
               {!transactions.isLoading && rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={9} align="center" sx={{ py: 5, color: 'text.secondary' }}>
+                  <TableCell colSpan={12} align="center" sx={{ py: 5, color: 'text.secondary' }}>
                     No transactions in this period.
                   </TableCell>
                 </TableRow>
@@ -422,7 +480,10 @@ export default function BankingPage() {
 
               {rows.map((row) => (
                 <TableRow key={row.id} hover>
-                  <TableCell sx={{ fontFamily: 'monospace' }}>{row.transactionNumber}</TableCell>
+                  {/* One token, never broken across three lines. */}
+                  <TableCell sx={{ fontFamily: 'monospace', whiteSpace: 'nowrap', fontSize: 12.5 }}>
+                    {row.transactionNumber}
+                  </TableCell>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>
                     {formatInstant(row.transactionDate)}
                   </TableCell>
@@ -462,6 +523,67 @@ export default function BankingPage() {
                     sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, whiteSpace: 'nowrap' }}
                   >
                     {money(row.amount)}
+                  </TableCell>
+                  <TableCell
+                    align="right"
+                    sx={{
+                      fontVariantNumeric: 'tabular-nums',
+                      whiteSpace: 'nowrap',
+                      color: row.feeBasisPoints === 0 ? 'text.disabled' : 'text.secondary',
+                    }}
+                  >
+                    {row.feeBasisPoints === 0 ? '—' : formatRate(row.feeBasisPoints)}
+                  </TableCell>
+                  {/*
+                    The fee carries its direction in the colour and the sign, the
+                    way the summary cards do: green and unsigned when the shop
+                    earned it, red and negative when the shop was charged. A
+                    movement with no fee shows a dash rather than a zero, so the
+                    eye skips it.
+                  */}
+                  <TableCell
+                    align="right"
+                    sx={{
+                      fontVariantNumeric: 'tabular-nums',
+                      whiteSpace: 'nowrap',
+                      color:
+                        row.feeAmount === 0
+                          ? 'text.disabled'
+                          : row.feeDirection === 'RECEIVE'
+                            ? 'success.main'
+                            : 'error.main',
+                    }}
+                  >
+                    {row.feeAmount === 0 ? (
+                      '—'
+                    ) : (
+                      <Tooltip
+                        title={`Fee ${BANK_FEE_DIRECTION_LABELS[row.feeDirection].toLowerCase()}`}
+                      >
+                        <span>
+                          {row.feeDirection === 'PAY'
+                            ? signed(-row.feeAmount)
+                            : signed(row.feeAmount)}
+                        </span>
+                      </Tooltip>
+                    )}
+                  </TableCell>
+                  {/*
+                    What actually changed hands: the amount plus a fee received,
+                    or less a fee paid. Shown in full even with no fee — unlike
+                    the two columns before it, this is never blank, because it is
+                    the figure to reconcile against a statement.
+                  */}
+                  <TableCell
+                    align="right"
+                    sx={{
+                      fontVariantNumeric: 'tabular-nums',
+                      whiteSpace: 'nowrap',
+                      fontWeight: row.feeAmount === 0 ? 400 : 600,
+                      color: row.feeAmount === 0 ? 'text.secondary' : 'text.primary',
+                    }}
+                  >
+                    {money(amountAfterFee(row.amount, row.feeAmount, row.feeDirection))}
                   </TableCell>
                   {/*
                     Notes wrap rather than truncate, and the column is capped so a
@@ -588,10 +710,9 @@ function SummaryCard({
         p: 2,
         border: '1px solid',
         borderColor: 'divider',
-        // Four cards that share the row evenly and never squeeze a currency
-        // figure onto two lines.
-        flex: '1 1 200px',
-        minWidth: 200,
+        // The grid decides the width now; minWidth 0 lets a long figure shrink
+        // its column rather than pushing the whole row wider than the page.
+        minWidth: 0,
       }}
     >
       {/*

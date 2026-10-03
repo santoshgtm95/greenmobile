@@ -3,6 +3,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  amountAfterFee,
   parseMoney,
   toMinor,
   toMajor,
@@ -105,6 +106,39 @@ describe('tax', () => {
 
   it('treats a zero rate as a no-op', () => {
     expect(taxFromInclusive(12345, 0)).toEqual({ net: 12345, tax: 0 });
+  });
+});
+
+describe('the amount after a fee', () => {
+  /*
+    Minor units, so 1,000,000.00 is 100,000,000 and the 5,000.00 fee is 500,000.
+    These are the two cases the Banking form shows in its "Actual amount" box,
+    written out here so the box and the arithmetic cannot part company.
+  */
+  const MILLION = 100_000_000;
+  const FIVE_THOUSAND = 500_000;
+
+  it('adds a fee that was received', () => {
+    expect(amountAfterFee(MILLION, FIVE_THOUSAND, 'RECEIVE')).toBe(100_500_000);
+    expect(formatMoney(amountAfterFee(MILLION, FIVE_THOUSAND, 'RECEIVE'))).toBe('1,005,000.00');
+  });
+
+  it('subtracts a fee that was paid', () => {
+    expect(amountAfterFee(MILLION, FIVE_THOUSAND, 'PAY')).toBe(99_500_000);
+    expect(formatMoney(amountAfterFee(MILLION, FIVE_THOUSAND, 'PAY'))).toBe('995,000.00');
+  });
+
+  it('leaves the amount alone when there is no fee', () => {
+    expect(amountAfterFee(MILLION, 0, 'RECEIVE')).toBe(MILLION);
+    expect(amountAfterFee(MILLION, 0, 'PAY')).toBe(MILLION);
+  });
+
+  it('cannot go below zero, because a fee is capped at the whole amount', () => {
+    // 100% is the ceiling the form offers, so the worst case is exactly nothing
+    // left — never a negative figure the shop would have to interpret.
+    const whole = rateOf(MILLION, 10_000);
+    expect(whole).toBe(MILLION);
+    expect(amountAfterFee(MILLION, whole, 'PAY')).toBe(0);
   });
 });
 

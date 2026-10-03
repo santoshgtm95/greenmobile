@@ -622,6 +622,15 @@ model BankTransaction {
   toName            String?
   /// Minor units.
   amount            Int
+  /// The fee charged on this movement, as basis points of the amount:
+  /// 50 == 0.5%. Zero on a movement that carried no fee.
+  feeBasisPoints    Int     @default(0)
+  /// The fee in minor units. Stored rather than derived: it is calculated in the
+  /// main process from the amount and the rate, and a rate the shop later edits
+  /// must not silently restate what an old movement actually cost.
+  feeAmount         Int     @default(0)
+  /// RECEIVE | PAY — whether the shop earned that fee or was charged it.
+  feeDirection      String  @default("RECEIVE")
   notes             String?
   isDeleted         Boolean @default(false)
   deletedReason     String?

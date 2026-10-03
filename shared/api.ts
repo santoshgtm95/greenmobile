@@ -9,6 +9,7 @@
  * keeps the exposed surface deliberate and reviewable.
  */
 import type {
+  BankFeeDirection,
   BankTransactionType,
   Permission,
   SerialStatus,
@@ -385,6 +386,12 @@ export interface BankTransaction {
   toName: string | null;
   /** Minor units. */
   amount: number;
+  /** The fee rate as basis points of the amount: 50 == 0.5%. */
+  feeBasisPoints: number;
+  /** What that rate came to, in minor units. Calculated in the main process. */
+  feeAmount: number;
+  /** Whether the shop earned the fee or was charged it. */
+  feeDirection: BankFeeDirection;
   notes: string | null;
   isDeleted: SqliteBool;
   deletedReason: string | null;
@@ -423,7 +430,20 @@ export interface CashInHand {
 export interface BankingOverview {
   accounts: BankAccountPosition[];
   /** Every account's period figures added up. */
-  totals: { received: number; transferred: number; net: number; count: number };
+  totals: {
+    received: number;
+    transferred: number;
+    net: number;
+    /** Fees the shop earned over the period, and fees it was charged. */
+    feeReceived: number;
+    feePaid: number;
+    /**
+     * net + feeReceived - feePaid: what the shop is up once fees are counted.
+     * Not the sum of the list's Actual column, which adds money in to money out.
+     */
+    netAfterFees: number;
+    count: number;
+  };
   /** All accounts' balances added up — the money the shop holds in banks. */
   bankBalance: number;
   cashInHand: CashInHand;

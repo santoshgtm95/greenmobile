@@ -219,6 +219,101 @@ async function captureScreens(win: BrowserWindow, outDir: string): Promise<Check
     console.log(`[smoke] screenshot ${dialog.name} -> ${file}`);
   }
 
+  /*
+    The new-transaction form with figures actually typed into it.
+
+    The empty dialog above shows that the boxes exist; it cannot show that they
+    calculate. This fills in the shop's own example — 1,000,000 at 0.5% — and
+    reads the two derived boxes back out of the DOM, so "Fees" and "Actual
+    amount" are asserted through the real React component rather than trusted
+    because the arithmetic is unit-tested somewhere else.
+
+    Both directions are checked from the one filled form, because the difference
+    between them IS the feature: the same fee added when it is received and
+    subtracted when it is paid.
+  */
+  await win.webContents.executeJavaScript(`window.location.hash = '#/banking'`);
+  await win.webContents.reload();
+  await new Promise<void>((resolve) => win.webContents.once('did-finish-load', () => resolve()));
+  await new Promise((resolve) => setTimeout(resolve, 1600));
+
+  const filled = (await win.webContents.executeJavaScript(
+    `(async () => {
+       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+       const open = [...document.querySelectorAll('button')]
+         .find((b) => b.textContent.includes('New Transaction'));
+       if (!open) return { error: 'no New Transaction button' };
+       open.click();
+       await wait(700);
+
+       const dialog = document.querySelector('[role="dialog"]');
+       if (!dialog) return { error: 'dialog did not open' };
+
+       // React tracks the previous value on the DOM node, so assigning .value
+       // directly is swallowed. The native setter is what a real keystroke goes
+       // through, which is why this is not just input.value = x.
+       const setter = Object.getOwnPropertyDescriptor(
+         window.HTMLInputElement.prototype, 'value').set;
+       const field = (label) => {
+         const found = [...dialog.querySelectorAll('label')]
+           .find((l) => l.textContent.trim().replace(/\\s*\\*$/, '') === label);
+         return found && found.control;
+       };
+       const type = (label, value) => {
+         const input = field(label);
+         if (!input) return false;
+         setter.call(input, value);
+         input.dispatchEvent(new Event('input', { bubbles: true }));
+         return true;
+       };
+
+       if (!type('Amount', '1000000')) return { error: 'no Amount field' };
+       if (!type('Percentage', '0.5')) return { error: 'no Percentage field' };
+       await wait(400);
+
+       const read = (label) => { const i = field(label); return i ? i.value : null; };
+       const received = { fee: read('Fees'), actual: read('Actual amount') };
+
+       const pay = dialog.querySelector('input[type="radio"][value="PAY"]');
+       if (!pay) return { error: 'no Pay radio' };
+       pay.click();
+       await wait(400);
+       const paid = { fee: read('Fees'), actual: read('Actual amount') };
+
+       return { received, paid };
+     })()`,
+  )) as {
+    error?: string;
+    received?: { fee: string | null; actual: string | null };
+    paid?: { fee: string | null; actual: string | null };
+  };
+
+  checks.push({
+    name: 'the form works the fee out as you type — 0.5% of 1,000,000 is 5,000',
+    pass: filled.received?.fee === '5,000.00',
+    detail: filled.error ?? `fee ${filled.received?.fee}`,
+  });
+  checks.push({
+    name: 'a fee received is added — actual amount 1,005,000',
+    pass: filled.received?.actual === '1,005,000.00',
+    detail: filled.error ?? `actual ${filled.received?.actual}`,
+  });
+  checks.push({
+    name: 'a fee paid is subtracted — actual amount 995,000',
+    pass: filled.paid?.actual === '995,000.00',
+    detail: filled.error ?? `actual ${filled.paid?.actual}`,
+  });
+  checks.push({
+    name: 'switching direction does not change the fee itself',
+    pass: filled.paid?.fee === '5,000.00',
+    detail: filled.error ?? `fee ${filled.paid?.fee}`,
+  });
+
+  const filledShot = await win.webContents.capturePage();
+  const filledFile = path.join(outDir, 'banking-new-transaction-filled.png');
+  fs.writeFileSync(filledFile, filledShot.toPNG());
+  console.log(`[smoke] screenshot banking-new-transaction-filled -> ${filledFile}`);
+
   // Last, because it signs out: the sign-in screen is the first thing a shop
   // sees and carries the shop logo (spec §29), so it is worth looking at too.
   await win.webContents.executeJavaScript('window.posBridge.auth.logout()');
@@ -738,6 +833,57 @@ const SCRIPT = `
   }));
   add('a deleted transaction is still on record', bankWithDeleted?.total === 4,
       String(bankWithDeleted?.total));
+
+  // The fee: the rate crosses the bridge, the money is worked out in the main
+  // process. 1,000,000.00 at 0.5% is 5,000.00 — the figure the form shows while
+  // the user types, proved here end to end against a real database.
+  const withFee = ok(await b.banking.createTransaction({
+    type: 'RECEIVE', transactionAt: bankAt, toAccountId: kbz.id,
+    fromAccountNumber: '09-111-2222', fromName: 'A customer',
+    toAccountNumber: '001-22-3333', toName: 'Green Mobile',
+    amount: 100000000, feeBasisPoints: 50, feeDirection: 'RECEIVE',
+  }));
+  add('0.5% of 1,000,000 is stored as a 5,000 fee',
+      withFee?.feeAmount === 500000 && withFee?.feeBasisPoints === 50,
+      'fee ' + withFee?.feeAmount + ' at ' + withFee?.feeBasisPoints + 'bp');
+  add('the fee direction is kept', withFee?.feeDirection === 'RECEIVE', withFee?.feeDirection);
+
+  // Sent a fee in money rather than a rate: it must be ignored, not stored.
+  const feeNotTrusted = ok(await b.banking.createTransaction({
+    type: 'RECEIVE', transactionAt: bankAt, toAccountId: kbz.id,
+    fromAccountNumber: '09-111-2222', fromName: 'A customer',
+    toAccountNumber: '001-22-3333', toName: 'Green Mobile',
+    amount: 100000, feeBasisPoints: 100, feeDirection: 'PAY',
+    feeAmount: 99999999,
+  }));
+  add('a fee sent as money is ignored and recalculated',
+      feeNotTrusted?.feeAmount === 1000, String(feeNotTrusted?.feeAmount));
+
+  const feeTooHigh = err(await b.banking.createTransaction({
+    type: 'RECEIVE', transactionAt: bankAt, toAccountId: kbz.id,
+    fromAccountNumber: '09-111-2222', fromName: 'A customer',
+    toAccountNumber: '001-22-3333', toName: 'Green Mobile',
+    amount: 100000, feeBasisPoints: 10001, feeDirection: 'PAY',
+  }));
+  add('a fee rate above 100% is refused', feeTooHigh?.code === 'VALIDATION', feeTooHigh?.code);
+
+  /*
+    The three fee figures on the summary strip.
+
+    By this point the shop has a 5,000 fee received (on the 1,000,000 receipt)
+    and a 1,000 fee paid (on the 100,000 receipt). Note that the PAID one sits on
+    a RECEIVE row: totalling fees by the row's type instead of the fee's own
+    direction would file it as money earned, which is the mistake these pin.
+  */
+  const withFees = ok(await b.banking.overview({ from: todayDay, to: todayDay }));
+  add('fees earned are totalled on their own',
+      withFees?.totals?.feeReceived === 500000, String(withFees?.totals?.feeReceived));
+  add('a fee paid on a receipt counts as paid, not earned',
+      withFees?.totals?.feePaid === 1000, String(withFees?.totals?.feePaid));
+  add('the actual total is the net with fees on the right side',
+      withFees?.totals?.netAfterFees ===
+        (withFees?.totals?.net ?? 0) + 500000 - 1000,
+      withFees?.totals?.net + ' net -> ' + withFees?.totals?.netAfterFees + ' actual');
 
   // --- Service / repair ------------------------------------------------------
 

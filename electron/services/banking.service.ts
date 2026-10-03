@@ -44,7 +44,13 @@ import { errors } from '../../shared/errors';
 import { recordAudit } from './audit.service';
 import { nextNumber } from './sequence.service';
 import type { SessionUser } from '../session';
-import { BANK_TRANSACTION_TYPE_LABELS, type BankTransactionType } from '../../shared/domain';
+import {
+  BANK_FEE_DIRECTION_LABELS,
+  BANK_TRANSACTION_TYPE_LABELS,
+  type BankFeeDirection,
+  type BankTransactionType,
+} from '../../shared/domain';
+import { rateOf } from '../../shared/money';
 import type {
   BankTransactionListQuery,
   CreateBankTransactionInput,
@@ -281,6 +287,11 @@ export interface BankTransactionRow {
   toAccountNumber: string | null;
   toName: string | null;
   amount: number;
+  /** Basis points of the amount: 50 == 0.5%. */
+  feeBasisPoints: number;
+  /** Minor units, worked out here and stored — never recomputed on read. */
+  feeAmount: number;
+  feeDirection: BankFeeDirection;
   notes: string | null;
   isDeleted: number;
   deletedReason: string | null;
@@ -295,7 +306,8 @@ const BANK_TRANSACTION_SELECT = `
          t.fromAccountNumber, t.fromName,
          t.toAccountId, o.name AS toAccountName, o.key AS toAccountKey,
          t.toAccountNumber, t.toName,
-         t.amount, t.notes, t.isDeleted, t.deletedReason,
+         t.amount, t.feeBasisPoints, t.feeAmount, t.feeDirection,
+         t.notes, t.isDeleted, t.deletedReason,
          t.createdBy, u.fullName AS createdByName, t.createdAt
     FROM "BankTransaction" t
     LEFT JOIN "BankAccount" f ON f.id = t.fromAccountId
@@ -441,11 +453,18 @@ export function createBankTransaction(
     const transactionDate = localDateTimeToInstant(input.transactionAt);
     const transactionDay = localDateTimeToDay(input.transactionAt);
 
+    // The fee is calculated HERE, from the amount and the rate, and never taken
+    // from the renderer — the same rule the cart follows for prices (§68). The
+    // form shows a running figure with this exact function, so what the user saw
+    // and what is stored cannot drift apart.
+    const feeAmount = rateOf(input.amount, input.feeBasisPoints);
+
     db.prepare(
       `INSERT INTO "BankTransaction" (id, transactionNumber, type, transactionDate, transactionDay,
          fromAccountId, fromAccountNumber, fromName, toAccountId, toAccountNumber, toName,
-         amount, notes, isDeleted, deletedReason, createdBy, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
+         amount, feeBasisPoints, feeAmount, feeDirection,
+         notes, isDeleted, deletedReason, createdBy, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
     ).run(
       id,
       number,
@@ -459,6 +478,9 @@ export function createBankTransaction(
       input.toAccountNumber,
       input.toName,
       input.amount,
+      input.feeBasisPoints,
+      feeAmount,
+      input.feeDirection,
       input.notes ?? null,
       actor.id,
       now,
@@ -482,8 +504,13 @@ export function createBankTransaction(
         action: 'CREATE',
         entityName: 'BankTransaction',
         entityId: id,
-        summary: `${BANK_TRANSACTION_TYPE_LABELS[input.type]} ${number} — ${input.amount}, ${route}`,
-        newValues: input,
+        summary:
+          `${BANK_TRANSACTION_TYPE_LABELS[input.type]} ${number} — ${input.amount}, ${route}` +
+          (feeAmount > 0
+            ? ` (fee ${feeAmount} ${BANK_FEE_DIRECTION_LABELS[input.feeDirection].toLowerCase()})`
+            : ''),
+        // The calculated fee too, not just the rate that was sent in.
+        newValues: { ...input, feeAmount },
       },
       db,
     );
@@ -610,7 +637,17 @@ export interface BankAccountPositionRow {
 
 export interface BankingOverviewResult {
   accounts: BankAccountPositionRow[];
-  totals: { received: number; transferred: number; net: number; count: number };
+  totals: {
+    received: number;
+    transferred: number;
+    net: number;
+    /** Fees the shop earned, and fees it was charged, over the period. */
+    feeReceived: number;
+    feePaid: number;
+    /** net + feeReceived - feePaid. */
+    netAfterFees: number;
+    count: number;
+  };
   bankBalance: number;
   cashInHand: CashInHandRow;
   range: { from: string; to: string };
@@ -701,15 +738,46 @@ export function bankingOverview(
     .prepare(
       `SELECT COUNT(*) AS count,
               COALESCE(SUM(CASE WHEN type = 'RECEIVE' THEN amount ELSE 0 END), 0) AS received,
-              COALESCE(SUM(CASE WHEN type = 'TRANSFER' THEN amount ELSE 0 END), 0) AS transferred
+              COALESCE(SUM(CASE WHEN type = 'TRANSFER' THEN amount ELSE 0 END), 0) AS transferred,
+              -- Fees split by the DIRECTION OF THE FEE, not by the type of the
+              -- movement carrying it. A commission the shop earned is money in
+              -- whether it came with a receipt or a transfer, and a charge the
+              -- wallet took is money out on the same footing. Splitting these by
+              -- the row's type instead would put a fee the shop was charged on a
+              -- receipt into the "earned" column.
+              COALESCE(SUM(CASE WHEN feeDirection = 'RECEIVE' THEN feeAmount ELSE 0 END), 0)
+                AS feeReceived,
+              COALESCE(SUM(CASE WHEN feeDirection = 'PAY' THEN feeAmount ELSE 0 END), 0)
+                AS feePaid
          FROM "BankTransaction"
         WHERE isDeleted = 0 AND transactionDay BETWEEN ? AND ?`,
     )
-    .get(range.from, range.to) as { count: number; received: number; transferred: number };
+    .get(range.from, range.to) as {
+    count: number;
+    received: number;
+    transferred: number;
+    feeReceived: number;
+    feePaid: number;
+  };
+
+  const net = totals.received - totals.transferred;
 
   return {
     accounts: positions,
-    totals: { ...totals, net: totals.received - totals.transferred },
+    totals: {
+      ...totals,
+      net,
+      /**
+       * What the shop is up over the period once fees are taken into account:
+       * money in, less money out, plus commissions earned, less charges paid.
+       *
+       * NOT the sum of the Actual column in the list. That column sums money in
+       * and money out together, which is the mistake this screen already made
+       * once with its received/transferred split. This keeps the directions
+       * apart and folds the fees in on the side each one belongs to.
+       */
+      netAfterFees: net + totals.feeReceived - totals.feePaid,
+    },
     bankBalance: positions.reduce((total, account) => total + account.balance, 0),
     cashInHand: cashInHand(db),
     range: { from: range.from, to: range.to },

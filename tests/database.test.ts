@@ -180,6 +180,25 @@ describe('migrations', () => {
 
       // The new tables arrived...
       expect(tableNames(upgraded.db)).toEqual(EXPECTED_TABLES);
+      /*
+        ...including columns added to a table by a later delta. Table names alone
+        would not catch a missed ALTER TABLE: the table would be present and the
+        first query against the new column would fail at runtime instead, on the
+        upgraded shop only. Each of these must also carry a default, or the
+        movements recorded before the upgrade could not be read back.
+      */
+      const feeColumns = (
+        upgraded.db.prepare(`PRAGMA table_info("BankTransaction")`).all() as {
+          name: string;
+          dflt_value: string | null;
+        }[]
+      ).filter((c) => c.name.startsWith('fee'));
+      expect(feeColumns.map((c) => c.name).sort()).toEqual([
+        'feeAmount',
+        'feeBasisPoints',
+        'feeDirection',
+      ]);
+      expect(feeColumns.every((c) => c.dflt_value !== null)).toBe(true);
       // ...the existing data is untouched...
       const kept = upgraded.db
         .prepare(`SELECT name FROM "ExpenseCategory" WHERE id = 'keep-me'`)

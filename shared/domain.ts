@@ -161,6 +161,22 @@ export const BANK_TRANSACTION_TYPE_LABELS: Record<BankTransactionType, string> =
   RECEIVE: 'Receive',
 };
 
+/**
+ * Which way the fee on a movement went.
+ *
+ * An agent shop is on both sides of this at different times: it earns a
+ * commission for handling a customer's transfer (RECEIVE), and it is charged by
+ * the wallet for moving its own money (PAY). The fee is recorded either way so
+ * the figure is not silently assumed.
+ */
+export const BANK_FEE_DIRECTIONS = ['RECEIVE', 'PAY'] as const;
+export type BankFeeDirection = (typeof BANK_FEE_DIRECTIONS)[number];
+
+export const BANK_FEE_DIRECTION_LABELS: Record<BankFeeDirection, string> = {
+  RECEIVE: 'Received',
+  PAY: 'Pay',
+};
+
 // -----------------------------------------------------------------------------
 // Sales
 // -----------------------------------------------------------------------------
