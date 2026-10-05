@@ -148,6 +148,7 @@ async function captureScreens(win: BrowserWindow, outDir: string): Promise<Check
     { name: 'services', hash: '#/services' },
     { name: 'expenses', hash: '#/expenses' },
     { name: 'banking', hash: '#/banking' },
+    { name: 'banking-advances', hash: '#/banking/advances' },
     { name: 'customers', hash: '#/customers' },
     { name: 'inventory', hash: '#/inventory' },
     { name: 'inventory-movements', hash: '#/inventory/movements' },
@@ -313,6 +314,88 @@ async function captureScreens(win: BrowserWindow, outDir: string): Promise<Check
   const filledFile = path.join(outDir, 'banking-new-transaction-filled.png');
   fs.writeFileSync(filledFile, filledShot.toPNG());
   console.log(`[smoke] screenshot banking-new-transaction-filled -> ${filledFile}`);
+
+  /*
+    An advance, opened from the Advances tab: the detail with its running
+    figure, then the withdraw form reached from it.
+
+    The withdraw form is checked rather than just photographed, because its
+    whole job is to save the counter typing: it should arrive with the customer
+    already on the To side, and "Withdraw all" should put exactly what is left in
+    the amount. Both are things a screenshot can look right for while being
+    wrong by a digit.
+  */
+  await win.webContents.executeJavaScript(`window.location.hash = '#/banking/advances'`);
+  await win.webContents.reload();
+  await new Promise<void>((resolve) => win.webContents.once('did-finish-load', () => resolve()));
+  await new Promise((resolve) => setTimeout(resolve, 1600));
+
+  const detailOpened = (await win.webContents.executeJavaScript(
+    `(async () => {
+       const row = document.querySelector('tbody tr[class*="MuiTableRow-hover"]');
+       if (!row) return 'no advance row';
+       row.click();
+       await new Promise((r) => setTimeout(r, 900));
+       const dialog = document.querySelector('[role="dialog"]');
+       return dialog ? dialog.textContent : 'no dialog';
+     })()`,
+  )) as string;
+  checks.push({
+    name: 'an advance opens to its history',
+    pass: detailOpened.includes('Advance BNK-') && detailOpened.includes('Withdrawn'),
+    detail: detailOpened.slice(0, 80),
+  });
+  const detailShot = await win.webContents.capturePage();
+  fs.writeFileSync(path.join(outDir, 'banking-advance-detail.png'), detailShot.toPNG());
+  console.log(`[smoke] screenshot banking-advance-detail -> ${path.join(outDir, 'banking-advance-detail.png')}`);
+
+  const withdrawForm = (await win.webContents.executeJavaScript(
+    `(async () => {
+       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+       const go = [...document.querySelectorAll('[role="dialog"] button')]
+         .find((b) => b.textContent.trim() === 'Withdraw');
+       if (!go) return { error: 'no Withdraw button in the detail' };
+       go.click();
+       await wait(900);
+
+       const dialog = document.querySelector('[role="dialog"]');
+       if (!dialog || !dialog.textContent.includes('Withdraw from advance')) {
+         return { error: 'withdraw form did not open' };
+       }
+       const labelled = (label, nth) => [...dialog.querySelectorAll('label')]
+         .filter((l) => l.textContent.trim().replace(/\\s*\\*$/, '') === label)
+         .map((l) => l.control)[nth];
+
+       // The second "Account name" is the To side: who receives the money.
+       const toName = labelled('Account name', 1)?.value ?? null;
+
+       const all = [...dialog.querySelectorAll('button')]
+         .find((b) => b.textContent.trim() === 'Withdraw all');
+       if (!all) return { error: 'no Withdraw all button', toName };
+       all.click();
+       await wait(400);
+
+       return {
+         toName,
+         amount: labelled('Amount', 0)?.value ?? null,
+         settles: dialog.textContent.includes('This settles the advance'),
+       };
+     })()`,
+  )) as { error?: string; toName?: string | null; amount?: string | null; settles?: boolean };
+
+  checks.push({
+    name: 'a withdrawal starts out paying the customer back',
+    pass: withdrawForm.toName === 'U Aung',
+    detail: withdrawForm.error ?? `to ${withdrawForm.toName}`,
+  });
+  checks.push({
+    name: '"Withdraw all" fills in exactly what is left',
+    pass: withdrawForm.amount === '2000000.00' && withdrawForm.settles === true,
+    detail: withdrawForm.error ?? `amount ${withdrawForm.amount}, settles ${withdrawForm.settles}`,
+  });
+  const withdrawShot = await win.webContents.capturePage();
+  fs.writeFileSync(path.join(outDir, 'banking-advance-withdraw.png'), withdrawShot.toPNG());
+  console.log(`[smoke] screenshot banking-advance-withdraw -> ${path.join(outDir, 'banking-advance-withdraw.png')}`);
 
   // Last, because it signs out: the sign-in screen is the first thing a shop
   // sees and carries the shop logo (spec §29), so it is worth looking at too.
@@ -884,6 +967,79 @@ const SCRIPT = `
       withFees?.totals?.netAfterFees ===
         (withFees?.totals?.net ?? 0) + 500000 - 1000,
       withFees?.totals?.net + ' net -> ' + withFees?.totals?.netAfterFees + ' actual');
+
+  // --- Customer advances: the shop's own example, end to end --------------------
+  //
+  // 3,000,000 in, 1,000,000 collected, 2,000,000 left. Kept OPEN at the end on
+  // purpose, so the screenshot pass has a live advance to show rather than an
+  // empty table.
+  const opening = await b.banking.openAdvance({
+    transactionAt: bankAt, toAccountId: kbz.id,
+    fromAccountNumber: '09-555-0001', fromName: 'U Aung',
+    toAccountNumber: '001-22-3333', toName: 'Green Mobile',
+    amount: 300000000,
+  });
+  const advance = ok(opening);
+  add('an advance opens with everything still to collect',
+      advance?.remaining === 300000000 && advance?.status === 'OPEN' && advance?.type === 'RECEIVE',
+      advance
+        ? advance.transactionNumber + ' ' + advance.remaining + ' ' + advance.status
+        : JSON.stringify(err(opening)));
+
+  const collected = ok(await b.banking.withdrawAdvance({
+    advanceId: advance?.id, transactionAt: todayDay + 'T11:00', fromAccountId: kbz.id,
+    fromAccountNumber: '001-22-3333', fromName: 'Green Mobile',
+    toAccountNumber: '09-555-0001', toName: 'U Aung',
+    amount: 100000000,
+  }));
+  add('collecting 1,000,000 of 3,000,000 leaves 2,000,000',
+      collected?.advance?.remaining === 200000000 && collected?.advance?.status === 'OPEN',
+      String(collected?.advance?.remaining));
+  add('the withdrawal is a transfer tied to its deposit',
+      collected?.withdrawals?.[0]?.type === 'TRANSFER' &&
+        collected?.withdrawals?.[0]?.advanceDepositId === advance?.id);
+
+  const overdrawn = err(await b.banking.withdrawAdvance({
+    advanceId: advance?.id, transactionAt: todayDay + 'T11:30', fromAccountId: kbz.id,
+    fromAccountNumber: '001-22-3333', fromName: 'Green Mobile',
+    toAccountNumber: '09-555-0001', toName: 'U Aung',
+    amount: 200000001,
+  }));
+  add('cannot collect more than is left', overdrawn?.code === 'VALIDATION', overdrawn?.message);
+
+  const depositInUse = err(await b.banking.deleteTransaction({ id: advance?.id, reason: 'Smoke' }));
+  add('a deposit cannot be deleted while withdrawals draw on it',
+      depositInUse?.code === 'INVALID_STATE', depositInUse?.code);
+
+  // A second advance, taken all the way to settled.
+  const small = ok(await b.banking.openAdvance({
+    transactionAt: bankAt, toAccountId: kbz.id,
+    fromAccountNumber: '09-555-0002', fromName: 'Daw Hla',
+    toAccountNumber: '001-22-3333', toName: 'Green Mobile',
+    amount: 50000000,
+  }));
+  const smallSettled = ok(await b.banking.withdrawAdvance({
+    advanceId: small?.id, transactionAt: todayDay + 'T12:00', fromAccountId: kbz.id,
+    fromAccountNumber: '001-22-3333', fromName: 'Green Mobile',
+    toAccountNumber: '09-555-0002', toName: 'Daw Hla',
+    amount: 50000000,
+  }));
+  add('collecting the rest settles it',
+      smallSettled?.advance?.remaining === 0 && smallSettled?.advance?.status === 'SETTLED',
+      smallSettled?.advance?.status);
+  const afterSettled = err(await b.banking.withdrawAdvance({
+    advanceId: small?.id, transactionAt: todayDay + 'T12:30', fromAccountId: kbz.id,
+    fromAccountNumber: '001-22-3333', fromName: 'Green Mobile',
+    toAccountNumber: '09-555-0002', toName: 'Daw Hla',
+    amount: 1,
+  }));
+  add('nothing more comes out of a settled advance',
+      afterSettled?.code === 'INVALID_STATE', afterSettled?.code);
+
+  const held = ok(await b.banking.listAdvances({ status: 'OPEN' }));
+  add('held for customers is what every open advance still owes',
+      held?.heldTotal === 200000000 && held?.openCount === 1 && held?.rows?.length === 1,
+      held?.heldTotal + ' held across ' + held?.openCount);
 
   // --- Service / repair ------------------------------------------------------
 

@@ -45,15 +45,21 @@ import { recordAudit } from './audit.service';
 import { nextNumber } from './sequence.service';
 import type { SessionUser } from '../session';
 import {
+  BANK_ADVANCE_ROLE_LABELS,
   BANK_FEE_DIRECTION_LABELS,
   BANK_TRANSACTION_TYPE_LABELS,
+  type BankAdvanceRole,
+  type BankAdvanceStatus,
   type BankFeeDirection,
   type BankTransactionType,
 } from '../../shared/domain';
-import { rateOf } from '../../shared/money';
+import { formatMoney, rateOf } from '../../shared/money';
 import type {
+  BankAdvanceListQuery,
   BankTransactionListQuery,
   CreateBankTransactionInput,
+  OpenBankAdvanceInput,
+  WithdrawBankAdvanceInput,
   DayRangeInput,
   SaveBankAccountInput,
   SaveCashCountInput,
@@ -292,6 +298,10 @@ export interface BankTransactionRow {
   /** Minor units, worked out here and stored — never recomputed on read. */
   feeAmount: number;
   feeDirection: BankFeeDirection;
+  /** Set when this movement is part of a customer advance. */
+  advanceRole: BankAdvanceRole | null;
+  /** On a withdrawal, the deposit it draws down. */
+  advanceDepositId: string | null;
   notes: string | null;
   isDeleted: number;
   deletedReason: string | null;
@@ -307,6 +317,7 @@ const BANK_TRANSACTION_SELECT = `
          t.toAccountId, o.name AS toAccountName, o.key AS toAccountKey,
          t.toAccountNumber, t.toName,
          t.amount, t.feeBasisPoints, t.feeAmount, t.feeDirection,
+         t.advanceRole, t.advanceDepositId,
          t.notes, t.isDeleted, t.deletedReason,
          t.createdBy, u.fullName AS createdByName, t.createdAt
     FROM "BankTransaction" t
@@ -423,7 +434,36 @@ export function createBankTransaction(
   actor: SessionUser,
   db: Db = getDatabase(),
 ): BankTransactionRow {
-  return transaction(() => {
+  // An ordinary movement is never part of an advance. The link is set only by
+  // openBankAdvance and withdrawFromBankAdvance, which is why it is a parameter
+  // of the internal writer and not a field the renderer could send.
+  return transaction(() => insertMovement(input, null, actor, db), db);
+}
+
+/** How a movement belongs to a customer advance, when it does. */
+interface AdvanceLink {
+  role: BankAdvanceRole;
+  /** The deposit a withdrawal draws down; null on the deposit itself. */
+  depositId: string | null;
+  /** Shown in the audit line, so the trail reads as one story. */
+  depositNumber?: string;
+}
+
+/**
+ * Writes one movement. Runs inside the caller's database transaction.
+ *
+ * Separate from createBankTransaction so that the advance functions can do
+ * their own checks — what is still owed on a deposit — inside the SAME
+ * transaction as the write, rather than reading a figure in one and writing
+ * against it in another.
+ */
+function insertMovement(
+  input: CreateBankTransactionInput,
+  advance: AdvanceLink | null,
+  actor: SessionUser,
+  db: Db,
+): BankTransactionRow {
+  {
     // Checked here as well as at the IPC boundary, because the balances in
     // bankingOverview are only arithmetic that adds up while this holds — and
     // this function is also reachable directly from tests and future callers.
@@ -462,9 +502,9 @@ export function createBankTransaction(
     db.prepare(
       `INSERT INTO "BankTransaction" (id, transactionNumber, type, transactionDate, transactionDay,
          fromAccountId, fromAccountNumber, fromName, toAccountId, toAccountNumber, toName,
-         amount, feeBasisPoints, feeAmount, feeDirection,
+         amount, feeBasisPoints, feeAmount, feeDirection, advanceRole, advanceDepositId,
          notes, isDeleted, deletedReason, createdBy, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
     ).run(
       id,
       number,
@@ -481,6 +521,8 @@ export function createBankTransaction(
       input.feeBasisPoints,
       feeAmount,
       input.feeDirection,
+      advance?.role ?? null,
+      advance?.depositId ?? null,
       input.notes ?? null,
       actor.id,
       now,
@@ -505,18 +547,20 @@ export function createBankTransaction(
         entityName: 'BankTransaction',
         entityId: id,
         summary:
-          `${BANK_TRANSACTION_TYPE_LABELS[input.type]} ${number} — ${input.amount}, ${route}` +
+          `${advance ? BANK_ADVANCE_ROLE_LABELS[advance.role] : BANK_TRANSACTION_TYPE_LABELS[input.type]}` +
+          ` ${number} — ${input.amount}, ${route}` +
+          (advance?.depositNumber ? ` (from ${advance.depositNumber})` : '') +
           (feeAmount > 0
             ? ` (fee ${feeAmount} ${BANK_FEE_DIRECTION_LABELS[input.feeDirection].toLowerCase()})`
             : ''),
         // The calculated fee too, not just the rate that was sent in.
-        newValues: { ...input, feeAmount },
+        newValues: { ...input, feeAmount, advanceRole: advance?.role ?? null },
       },
       db,
     );
 
     return getBankTransaction(id, db);
-  }, db);
+  }
 }
 
 /**
@@ -535,6 +579,21 @@ export function deleteBankTransaction(
     const before = getBankTransaction(id, db);
     if (before.isDeleted) return;
 
+    // A deposit that withdrawals still draw on cannot go first: the withdrawals
+    // would then be paying out of nothing, and what the customer is owed would
+    // read as negative. Deleting a WITHDRAWAL is always allowed — its money
+    // simply goes back on the advance, which is worked out on read.
+    if (before.advanceRole === 'DEPOSIT') {
+      const live = liveWithdrawalCount(id, db);
+      if (live > 0) {
+        const one = live === 1;
+        throw errors.invalidState(
+          `${before.transactionNumber} is an advance with ${live} withdrawal${one ? '' : 's'} ` +
+            `recorded against it. Delete ${one ? 'that withdrawal' : 'those withdrawals'} first.`,
+        );
+      }
+    }
+
     db.prepare(
       `UPDATE "BankTransaction" SET isDeleted = 1, deletedReason = ?, updatedAt = ? WHERE id = ?`,
     ).run(reason, nowInstant(), id);
@@ -551,6 +610,246 @@ export function deleteBankTransaction(
       db,
     );
   }, db);
+}
+
+// -----------------------------------------------------------------------------
+// Customer advances
+// -----------------------------------------------------------------------------
+
+/**
+ * One advance: the deposit that opened it, and what has happened since.
+ *
+ * It IS the deposit row — same number, same accounts, same fee — with the
+ * running figures added. The customer is the deposit's From side: the name and
+ * number on the account the money came from.
+ *
+ * WHAT IS OWED IS THE AMOUNT, NOT THE AMOUNT AFTER FEES. A deposit of 3,000,000
+ * leaves 3,000,000 to collect whatever fee was charged on the way in, and a
+ * withdrawal of 1,000,000 takes exactly 1,000,000 off it. Fees are the shop's
+ * own income and costs, recorded on each movement and totalled on the Banking
+ * strip; letting them move the customer's balance as well would make what a
+ * customer is owed depend on a percentage typed on a different day.
+ */
+export interface BankAdvanceRow extends BankTransactionRow {
+  /** Live withdrawals, added up. */
+  withdrawn: number;
+  /** amount - withdrawn. What the shop still holds for this customer. */
+  remaining: number;
+  withdrawalCount: number;
+  lastWithdrawalDate: string | null;
+  status: BankAdvanceStatus;
+}
+
+/**
+ * Every live deposit with its withdrawals summed alongside.
+ *
+ * Built on BANK_TRANSACTION_SELECT rather than beside it, so an advance carries
+ * exactly the columns a transaction does and the two cannot drift. A deleted
+ * withdrawal does not count — its money is back on the advance — and a deleted
+ * deposit is not an advance at all.
+ */
+const BANK_ADVANCE_SELECT = `
+  SELECT a.*, a.amount - a.withdrawn AS remaining
+    FROM (
+      SELECT d.*,
+             COALESCE((SELECT SUM(w.amount) FROM "BankTransaction" w
+                        WHERE w.advanceDepositId = d.id AND w.advanceRole = 'WITHDRAWAL'
+                          AND w.isDeleted = 0), 0) AS withdrawn,
+             (SELECT COUNT(*) FROM "BankTransaction" w
+               WHERE w.advanceDepositId = d.id AND w.advanceRole = 'WITHDRAWAL'
+                 AND w.isDeleted = 0) AS withdrawalCount,
+             (SELECT MAX(w.transactionDate) FROM "BankTransaction" w
+               WHERE w.advanceDepositId = d.id AND w.advanceRole = 'WITHDRAWAL'
+                 AND w.isDeleted = 0) AS lastWithdrawalDate
+        FROM (${BANK_TRANSACTION_SELECT}
+               WHERE t.advanceRole = 'DEPOSIT' AND t.isDeleted = 0) d
+    ) a
+`;
+
+function withStatus(row: Omit<BankAdvanceRow, 'status'>): BankAdvanceRow {
+  return { ...row, status: row.remaining > 0 ? 'OPEN' : 'SETTLED' };
+}
+
+function liveWithdrawalCount(depositId: string, db: Db): number {
+  return (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM "BankTransaction"
+          WHERE advanceDepositId = ? AND advanceRole = 'WITHDRAWAL' AND isDeleted = 0`,
+      )
+      .get(depositId) as { n: number }
+  ).n;
+}
+
+export function listBankAdvances(
+  query: BankAdvanceListQuery,
+  db: Db = getDatabase(),
+): {
+  rows: BankAdvanceRow[];
+  total: number;
+  /**
+   * Everything still owed to customers, across EVERY open advance — not just
+   * the ones the search matches. It answers "how much of the money in my
+   * accounts is not mine", which a search box must not be able to shrink.
+   */
+  heldTotal: number;
+  openCount: number;
+} {
+  const where: string[] = [];
+  const params: unknown[] = [];
+
+  if (query.status === 'OPEN') where.push('a.remaining > 0');
+  if (query.status === 'SETTLED') where.push('a.remaining <= 0');
+
+  if (query.search) {
+    where.push(
+      `(a.transactionNumber LIKE ? COLLATE NOCASE OR a.fromName LIKE ? COLLATE NOCASE
+        OR a.fromAccountNumber LIKE ? OR a.notes LIKE ? COLLATE NOCASE
+        OR a.toAccountName LIKE ? COLLATE NOCASE OR a.toAccountKey LIKE ? COLLATE NOCASE)`,
+    );
+    const like = `%${query.search}%`;
+    params.push(like, like, like, like, like, like);
+  }
+
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+  const total = (
+    db
+      .prepare(`SELECT COUNT(*) AS n FROM (${BANK_ADVANCE_SELECT}) a ${whereSql}`)
+      .get(...params) as { n: number }
+  ).n;
+
+  const rows = (
+    db
+      .prepare(
+        `SELECT * FROM (${BANK_ADVANCE_SELECT}) a ${whereSql}
+          ORDER BY a.transactionDate DESC, a.createdAt DESC LIMIT ? OFFSET ?`,
+      )
+      .all(...params, query.pageSize, query.page * query.pageSize) as Array<
+      Omit<BankAdvanceRow, 'status'>
+    >
+  ).map(withStatus);
+
+  const held = db
+    .prepare(
+      `SELECT COALESCE(SUM(a.remaining), 0) AS heldTotal, COUNT(*) AS openCount
+         FROM (${BANK_ADVANCE_SELECT}) a WHERE a.remaining > 0`,
+    )
+    .get() as { heldTotal: number; openCount: number };
+
+  return { rows, total, heldTotal: held.heldTotal, openCount: held.openCount };
+}
+
+/** One advance with its withdrawals, oldest first — the order they happened in. */
+export function getBankAdvance(
+  id: string,
+  db: Db = getDatabase(),
+): { advance: BankAdvanceRow; withdrawals: BankTransactionRow[] } {
+  const row = db.prepare(`SELECT * FROM (${BANK_ADVANCE_SELECT}) a WHERE a.id = ?`).get(id) as
+    | Omit<BankAdvanceRow, 'status'>
+    | undefined;
+  if (!row) throw errors.notFound('advance');
+
+  const withdrawals = db
+    .prepare(
+      `${BANK_TRANSACTION_SELECT}
+        WHERE t.advanceDepositId = ? AND t.advanceRole = 'WITHDRAWAL' AND t.isDeleted = 0
+        ORDER BY t.transactionDate ASC, t.createdAt ASC`,
+    )
+    .all(id) as BankTransactionRow[];
+
+  return { advance: withStatus(row), withdrawals };
+}
+
+/**
+ * A customer's money arriving, to be collected later. Always a RECEIVE into one
+ * of the shop's accounts, so it counts in that account's balance from today —
+ * which is where the money actually is.
+ */
+export function openBankAdvance(
+  input: OpenBankAdvanceInput,
+  actor: SessionUser,
+  db: Db = getDatabase(),
+): BankAdvanceRow {
+  return transaction(() => {
+    const deposit = insertMovement(
+      { ...input, type: 'RECEIVE' },
+      { role: 'DEPOSIT', depositId: null },
+      actor,
+      db,
+    );
+    return getBankAdvance(deposit.id, db).advance;
+  }, db);
+}
+
+/**
+ * Pays some or all of an advance back out — a TRANSFER from one of the shop's
+ * accounts.
+ *
+ * What is left is worked out INSIDE this transaction, immediately before the
+ * write. Reading it earlier — on the form, or in a separate query — is how two
+ * withdrawals that each fit on their own end up paying out more than was ever
+ * deposited.
+ */
+export function withdrawFromBankAdvance(
+  input: WithdrawBankAdvanceInput,
+  actor: SessionUser,
+  db: Db = getDatabase(),
+): { advance: BankAdvanceRow; withdrawals: BankTransactionRow[] } {
+  return transaction(() => {
+    const { advanceId, ...movement } = input;
+
+    const deposit = getBankTransaction(advanceId, db);
+    if (deposit.advanceRole !== 'DEPOSIT') {
+      throw errors.invalidState(`${deposit.transactionNumber} is not an advance.`);
+    }
+    if (deposit.isDeleted) {
+      throw errors.invalidState(
+        `${deposit.transactionNumber} has been deleted, so nothing can be withdrawn from it.`,
+      );
+    }
+
+    const remaining = deposit.amount - withdrawnFrom(deposit.id, db);
+    if (remaining <= 0) {
+      throw errors.invalidState(
+        `${deposit.transactionNumber} is settled — the whole amount has already been withdrawn.`,
+      );
+    }
+    if (movement.amount > remaining) {
+      throw errors.validation(
+        `Only ${formatMoney(remaining)} is left on ${deposit.transactionNumber}.`,
+        { amount: `At most ${formatMoney(remaining)}` },
+      );
+    }
+
+    // The money cannot leave before it arrived. Compared as instants, so a
+    // withdrawal later the same day is fine and one the day before is not.
+    if (localDateTimeToInstant(movement.transactionAt) < deposit.transactionDate) {
+      throw errors.validation('A withdrawal cannot be dated before the deposit it draws on.', {
+        transactionAt: 'Before the deposit',
+      });
+    }
+
+    insertMovement(
+      { ...movement, type: 'TRANSFER' },
+      { role: 'WITHDRAWAL', depositId: deposit.id, depositNumber: deposit.transactionNumber },
+      actor,
+      db,
+    );
+
+    return getBankAdvance(deposit.id, db);
+  }, db);
+}
+
+function withdrawnFrom(depositId: string, db: Db): number {
+  return (
+    db
+      .prepare(
+        `SELECT COALESCE(SUM(amount), 0) AS n FROM "BankTransaction"
+          WHERE advanceDepositId = ? AND advanceRole = 'WITHDRAWAL' AND isDeleted = 0`,
+      )
+      .get(depositId) as { n: number }
+  ).n;
 }
 
 // -----------------------------------------------------------------------------

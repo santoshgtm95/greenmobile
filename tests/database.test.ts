@@ -199,6 +199,28 @@ describe('migrations', () => {
         'feeDirection',
       ]);
       expect(feeColumns.every((c) => c.dflt_value !== null)).toBe(true);
+
+      // The advance link, with the foreign key that keeps a withdrawal pointing
+      // at a row that exists. Nullable with no default: every movement from
+      // before the upgrade is simply not part of an advance.
+      const advanceColumns = (
+        upgraded.db.prepare(`PRAGMA table_info("BankTransaction")`).all() as {
+          name: string;
+          notnull: number;
+        }[]
+      ).filter((c) => c.name.startsWith('advance'));
+      expect(advanceColumns.map((c) => c.name).sort()).toEqual([
+        'advanceDepositId',
+        'advanceRole',
+      ]);
+      expect(advanceColumns.every((c) => c.notnull === 0)).toBe(true);
+      const selfReference = (
+        upgraded.db.prepare(`PRAGMA foreign_key_list("BankTransaction")`).all() as {
+          table: string;
+          from: string;
+        }[]
+      ).find((fk) => fk.from === 'advanceDepositId');
+      expect(selfReference?.table).toBe('BankTransaction');
       // ...the existing data is untouched...
       const kept = upgraded.db
         .prepare(`SELECT name FROM "ExpenseCategory" WHERE id = 'keep-me'`)

@@ -22,16 +22,24 @@ import {
   deleteBankAccount,
   deleteBankTransaction,
   getBankAccount,
+  getBankAdvance,
   listBankAccounts,
+  listBankAdvances,
   listBankTransactions,
+  openBankAdvance,
   saveBankAccount,
   saveCashCount,
+  withdrawFromBankAdvance,
 } from '../electron/services/banking.service';
 import { AppError } from '../shared/errors';
 import { businessDay, addDays, nowLocalDateTime, localDateTimeToInstant } from '../shared/datetime';
 import { roleHasPermission, type BankFeeDirection } from '../shared/domain';
 import { formatMoney } from '../shared/money';
-import { zCreateBankTransaction, type FirstRunSetupInput } from '../shared/validation';
+import {
+  zCreateBankTransaction,
+  zWithdrawBankAdvance,
+  type FirstRunSetupInput,
+} from '../shared/validation';
 
 let ctx: TestDatabase;
 let actor: SessionUser;
@@ -955,6 +963,231 @@ describe('cash in hand', () => {
 // -----------------------------------------------------------------------------
 // Audit
 // -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+// Customer advances
+// -----------------------------------------------------------------------------
+
+describe('customer advances', () => {
+  /** A customer's money arriving into the shop's Kpay, to collect later. */
+  function openAdvance(
+    amount: number,
+    overrides: Partial<{
+      day: string;
+      time: string;
+      feeBasisPoints: number;
+      feeDirection: BankFeeDirection;
+      customer: string;
+    }> = {},
+  ) {
+    return openBankAdvance(
+      {
+        transactionAt: at(overrides.day, overrides.time),
+        fromAccountId: undefined,
+        fromAccountNumber: '09-555-0001',
+        fromName: overrides.customer ?? 'U Aung',
+        toAccountId: kpay,
+        toAccountNumber: '001-22-3333',
+        toName: 'Green Mobile',
+        amount,
+        feeBasisPoints: overrides.feeBasisPoints ?? 0,
+        feeDirection: overrides.feeDirection ?? 'RECEIVE',
+        notes: undefined,
+      },
+      actor,
+      ctx.db,
+    );
+  }
+
+  /** Paying some of it back out of the shop's Kpay to the customer. */
+  function withdraw(
+    advanceId: string,
+    amount: number,
+    overrides: Partial<{ day: string; time: string; feeBasisPoints: number }> = {},
+  ) {
+    return withdrawFromBankAdvance(
+      {
+        advanceId,
+        transactionAt: at(overrides.day, overrides.time),
+        fromAccountId: kpay,
+        fromAccountNumber: '001-22-3333',
+        fromName: 'Green Mobile',
+        toAccountId: undefined,
+        toAccountNumber: '09-555-0001',
+        toName: 'U Aung',
+        amount,
+        feeBasisPoints: overrides.feeBasisPoints ?? 0,
+        feeDirection: 'RECEIVE',
+        notes: undefined,
+      },
+      actor,
+      ctx.db,
+    );
+  }
+
+  const MILLION = 100_000_000; // 1,000,000.00 in minor units
+
+  it('follows the shop’s own example: 3,000,000 in, 1,000,000 out, then the rest', () => {
+    // 03/10/2026: the customer transfers 3,000,000 in.
+    const opened = openAdvance(3 * MILLION, { day: '2026-10-03' });
+    expect(opened.amount).toBe(3 * MILLION);
+    expect(opened.remaining).toBe(3 * MILLION);
+    expect(opened.status).toBe('OPEN');
+    expect(opened.type).toBe('RECEIVE');
+    expect(opened.advanceRole).toBe('DEPOSIT');
+
+    // 10/10/2026: collects 1,000,000. Two million left.
+    const partly = withdraw(opened.id, MILLION, { day: '2026-10-10' });
+    expect(partly.advance.withdrawn).toBe(MILLION);
+    expect(partly.advance.remaining).toBe(2 * MILLION);
+    expect(partly.advance.status).toBe('OPEN');
+    expect(partly.withdrawals).toHaveLength(1);
+    expect(partly.withdrawals[0].type).toBe('TRANSFER');
+    expect(partly.withdrawals[0].advanceDepositId).toBe(opened.id);
+
+    // Another day: the remaining 2,000,000. Nothing left, and settled.
+    const done = withdraw(opened.id, 2 * MILLION, { day: '2026-10-15' });
+    expect(done.advance.remaining).toBe(0);
+    expect(done.advance.status).toBe('SETTLED');
+    expect(done.advance.withdrawalCount).toBe(2);
+  });
+
+  it('refuses to pay out more than is left', () => {
+    const opened = openAdvance(3 * MILLION);
+    withdraw(opened.id, MILLION);
+
+    const tooMuch = captureError(() => withdraw(opened.id, 2 * MILLION + 1));
+    expect(tooMuch.code).toBe('VALIDATION');
+    expect(tooMuch.message).toContain('2,000,000.00');
+    // And nothing was written by the refused attempt.
+    expect(getBankAdvance(opened.id, ctx.db).advance.remaining).toBe(2 * MILLION);
+  });
+
+  it('refuses any withdrawal once settled', () => {
+    const opened = openAdvance(MILLION);
+    withdraw(opened.id, MILLION);
+    expect(captureError(() => withdraw(opened.id, 1)).code).toBe('INVALID_STATE');
+  });
+
+  it('refuses a withdrawal dated before the deposit', () => {
+    const opened = openAdvance(MILLION, { day: '2026-10-10', time: '12:00' });
+    expect(
+      captureError(() => withdraw(opened.id, 1_000, { day: '2026-10-09' })).code,
+    ).toBe('VALIDATION');
+    // Later the same day is fine.
+    expect(withdraw(opened.id, 1_000, { day: '2026-10-10', time: '15:00' }).advance.withdrawn).toBe(
+      1_000,
+    );
+  });
+
+  it('only draws on an advance, never on an ordinary receipt', () => {
+    const ordinary = receive(MILLION);
+    expect(captureError(() => withdraw(ordinary.id, 1_000)).code).toBe('INVALID_STATE');
+  });
+
+  it('puts the money back when a withdrawal is deleted', () => {
+    const opened = openAdvance(MILLION);
+    const after = withdraw(opened.id, MILLION);
+    expect(after.advance.status).toBe('SETTLED');
+
+    deleteBankTransaction(after.withdrawals[0].id, 'Entered on the wrong advance', actor, ctx.db);
+
+    const restored = getBankAdvance(opened.id, ctx.db);
+    expect(restored.advance.remaining).toBe(MILLION);
+    expect(restored.advance.status).toBe('OPEN');
+    expect(restored.withdrawals).toHaveLength(0);
+  });
+
+  it('will not delete a deposit that withdrawals still draw on', () => {
+    const opened = openAdvance(MILLION);
+    withdraw(opened.id, 1_000);
+
+    const refused = captureError(() =>
+      deleteBankTransaction(opened.id, 'Mistake', actor, ctx.db),
+    );
+    expect(refused.code).toBe('INVALID_STATE');
+    expect(refused.message).toContain('withdrawal');
+  });
+
+  it('can delete a deposit nothing has been drawn from, and the advance goes with it', () => {
+    const opened = openAdvance(MILLION);
+    deleteBankTransaction(opened.id, 'Recorded twice', actor, ctx.db);
+
+    expect(captureError(() => getBankAdvance(opened.id, ctx.db)).code).toBe('NOT_FOUND');
+    expect(
+      listBankAdvances({ page: 0, pageSize: 50 }, ctx.db).rows.map((r) => r.id),
+    ).not.toContain(opened.id);
+  });
+
+  it('tracks what is owed on the amount, never on the fee', () => {
+    // A 0.5% fee on the way in is the shop's income. The customer still has
+    // 3,000,000 to collect — not 3,015,000, and not 2,985,000.
+    const opened = openAdvance(3 * MILLION, { feeBasisPoints: 50, feeDirection: 'RECEIVE' });
+    expect(opened.feeAmount).toBe(1_500_000);
+    expect(opened.remaining).toBe(3 * MILLION);
+
+    // A fee on a withdrawal does not take more off what is owed either.
+    const after = withdraw(opened.id, MILLION, { feeBasisPoints: 100 });
+    expect(after.withdrawals[0].feeAmount).toBe(1_000_000);
+    expect(after.advance.remaining).toBe(2 * MILLION);
+  });
+
+  it('counts in the balances like any other movement, because the money really moved', () => {
+    const opened = openAdvance(3 * MILLION);
+    withdraw(opened.id, MILLION);
+
+    const { totals, accounts } = bankingOverview(ALL_TIME, ctx.db);
+    expect(totals.received).toBe(3 * MILLION);
+    expect(totals.transferred).toBe(MILLION);
+    expect(accounts.find((a) => a.accountId === kpay)!.balance).toBe(2 * MILLION);
+  });
+
+  it('totals what is held across every open advance, whatever the search', () => {
+    const first = openAdvance(3 * MILLION, { customer: 'U Aung' });
+    openAdvance(MILLION, { customer: 'Daw Hla' });
+    const settled = openAdvance(500_000, { customer: 'Ko Min' });
+    withdraw(first.id, MILLION);
+    withdraw(settled.id, 500_000);
+
+    const all = listBankAdvances({ page: 0, pageSize: 50 }, ctx.db);
+    expect(all.total).toBe(3);
+    expect(all.heldTotal).toBe(2 * MILLION + MILLION);
+    expect(all.openCount).toBe(2);
+
+    // Filters narrow the rows but must not shrink what the shop is holding.
+    const searched = listBankAdvances({ search: 'Hla', page: 0, pageSize: 50 }, ctx.db);
+    expect(searched.rows.map((r) => r.fromName)).toEqual(['Daw Hla']);
+    expect(searched.heldTotal).toBe(all.heldTotal);
+
+    const open = listBankAdvances({ status: 'OPEN', page: 0, pageSize: 50 }, ctx.db);
+    expect(open.rows).toHaveLength(2);
+    const done = listBankAdvances({ status: 'SETTLED', page: 0, pageSize: 50 }, ctx.db);
+    expect(done.rows.map((r) => r.fromName)).toEqual(['Ko Min']);
+  });
+
+  it('marks advance movements in the ordinary history', () => {
+    const opened = openAdvance(MILLION);
+    withdraw(opened.id, 1_000);
+
+    const { rows } = listBankTransactions(
+      { ...ALL_TIME, includeDeleted: false, page: 0, pageSize: 50 },
+      ctx.db,
+    );
+    expect(rows.map((r) => r.advanceRole).sort()).toEqual(['DEPOSIT', 'WITHDRAWAL']);
+    // And an ordinary movement is never part of one.
+    expect(receive(1_000).advanceRole).toBeNull();
+  });
+
+  it('accepts no advance link from the ordinary transaction channel', () => {
+    // The link is set only by openBankAdvance / withdrawFromBankAdvance. If the
+    // ordinary channel took it, a plain transfer could be filed as a withdrawal
+    // against any customer's money without the remaining-balance check.
+    const keys = Object.keys(zCreateBankTransaction.shape);
+    expect(keys).not.toContain('advanceRole');
+    expect(keys).not.toContain('advanceDepositId');
+    expect(Object.keys(zWithdrawBankAdvance.shape)).toContain('advanceId');
+  });
+});
 
 describe('audit trail', () => {
   it('records every banking action against the user who took it', () => {

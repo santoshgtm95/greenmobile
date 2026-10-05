@@ -40,8 +40,12 @@ import ExportMenu from '../components/ExportMenu';
 import BankAccountsDialog from '../components/BankAccountsDialog';
 import BankTransactionDialog from '../components/BankTransactionDialog';
 import CashCountDialog from '../components/CashCountDialog';
+import SummaryCard from '../components/SummaryCard';
+import BankingTabs from '../components/BankingTabs';
+import AccountSide from '../components/AccountSide';
 import { PosApiError } from '@shared/errors';
 import {
+  BANK_ADVANCE_ROLE_LABELS,
   BANK_FEE_DIRECTION_LABELS,
   BANK_TRANSACTION_TYPES,
   BANK_TRANSACTION_TYPE_LABELS,
@@ -185,6 +189,8 @@ export default function BankingPage() {
           </>
         )}
       </Stack>
+
+      <BankingTabs active="transactions" />
 
       {error && (
         <Alert severity="error" onClose={() => setError(null)}>
@@ -501,9 +507,28 @@ export default function BankingPage() {
                       }
                       label={BANK_TRANSACTION_TYPE_LABELS[row.type] ?? row.type}
                     />
+                    {/*
+                      An advance movement is a real receipt or transfer and is
+                      counted like one — but the shop needs to see at a glance
+                      that the money belongs to a customer, or a deposit reads as
+                      takings and a withdrawal as an unexplained payment.
+
+                      Allowed to wrap under the chip. On one line it widened the
+                      Type column just enough to push the table into a scroll
+                      again, with the delete buttons at the far edge.
+                    */}
+                    {row.advanceRole && (
+                      <Typography
+                        variant="caption"
+                        color="warning.main"
+                        sx={{ display: 'block', mt: 0.5, fontWeight: 600, lineHeight: 1.3 }}
+                      >
+                        {BANK_ADVANCE_ROLE_LABELS[row.advanceRole]}
+                      </Typography>
+                    )}
                   </TableCell>
                   <TableCell>
-                    <Side
+                    <AccountSide
                       accountName={row.fromAccountName}
                       accountKey={row.fromAccountKey}
                       accountNumber={row.fromAccountNumber}
@@ -511,7 +536,7 @@ export default function BankingPage() {
                     />
                   </TableCell>
                   <TableCell>
-                    <Side
+                    <AccountSide
                       accountName={row.toAccountName}
                       accountKey={row.toAccountKey}
                       accountNumber={row.toAccountNumber}
@@ -689,62 +714,6 @@ export default function BankingPage() {
 }
 
 /** One of the four figures across the top. */
-function SummaryCard({
-  label,
-  value,
-  caption,
-  icon,
-  tone,
-  action,
-}: {
-  label: string;
-  value: string;
-  caption: string;
-  icon: React.ReactNode;
-  tone?: 'success' | 'error';
-  action?: React.ReactNode;
-}) {
-  return (
-    <Paper
-      sx={{
-        p: 2,
-        border: '1px solid',
-        borderColor: 'divider',
-        // The grid decides the width now; minWidth 0 lets a long figure shrink
-        // its column rather than pushing the whole row wider than the page.
-        minWidth: 0,
-      }}
-    >
-      {/*
-        Fixed height, because the card carrying an IconButton has a taller header
-        than the three that do not — which pushed its figure a few pixels down and
-        broke the baseline across the row.
-      */}
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', height: 30 }}>
-        <Box sx={{ color: tone ? `${tone}.main` : 'text.secondary', display: 'flex' }}>{icon}</Box>
-        <Typography variant="caption" color="text.secondary" sx={{ flexGrow: 1 }}>
-          {label}
-        </Typography>
-        {action}
-      </Stack>
-      <Typography
-        variant="h5"
-        sx={{
-          fontWeight: 700,
-          fontVariantNumeric: 'tabular-nums',
-          color: tone ? `${tone}.main` : 'text.primary',
-          mt: 0.5,
-        }}
-      >
-        {value}
-      </Typography>
-      <Typography variant="caption" color="text.secondary">
-        {caption}
-      </Typography>
-    </Paper>
-  );
-}
-
 function AccountRow({
   account,
   format,
@@ -801,45 +770,3 @@ function AccountRow({
  * when scanning the list, and the number is what it checks against a statement, so
  * both are shown — the number in a monospace face, since it is read digit by digit.
  */
-function Side({
-  accountName,
-  accountKey,
-  accountNumber,
-  typedName,
-}: {
-  accountName: string | null;
-  accountKey: string | null;
-  accountNumber: string | null;
-  typedName: string | null;
-}) {
-  return (
-    <Stack spacing={0.25}>
-      <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
-        <Typography
-          variant="body2"
-          sx={{ fontWeight: 600 }}
-          color={typedName ? 'text.primary' : 'text.disabled'}
-        >
-          {typedName ?? '—'}
-        </Typography>
-        {accountKey && (
-          <Chip
-            size="small"
-            variant="outlined"
-            label={accountKey}
-            sx={{ fontFamily: 'monospace', height: 20, fontSize: 11 }}
-          />
-        )}
-      </Stack>
-      {(accountNumber || accountName) && (
-        <Typography variant="caption" color="text.secondary">
-          <Box component="span" sx={{ fontFamily: 'monospace' }}>
-            {accountNumber}
-          </Box>
-          {accountNumber && accountName ? ' · ' : ''}
-          {accountName}
-        </Typography>
-      )}
-    </Stack>
-  );
-}

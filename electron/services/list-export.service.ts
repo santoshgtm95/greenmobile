@@ -14,6 +14,7 @@ import { getDatabase } from '../database/connection';
 import { formatBusinessDay } from '../../shared/datetime';
 import { amountAfterFee, formatRate } from '../../shared/money';
 import {
+  BANK_ADVANCE_ROLE_LABELS,
   BANK_FEE_DIRECTION_LABELS,
   BANK_TRANSACTION_TYPE_LABELS,
   PAYMENT_METHOD_LABELS,
@@ -394,7 +395,7 @@ function bankTransactionList(query: BankTransactionListQuery, db: Db): Body {
         columns: [
           { key: 'transactionNumber', label: 'Number', type: 'text', width: 18 },
           { key: 'transactionDate', label: 'Date and time', type: 'instant', width: 18 },
-          { key: 'typeLabel', label: 'Type', type: 'text', width: 11 },
+          { key: 'typeLabel', label: 'Type', type: 'text', width: 30 },
           { key: 'from', label: 'From', type: 'text', width: 34 },
           { key: 'to', label: 'To', type: 'text', width: 34 },
           { key: 'amount', label: 'Amount', type: 'money', width: 16 },
@@ -409,7 +410,12 @@ function bankTransactionList(query: BankTransactionListQuery, db: Db): Body {
         rows: rows.map((row) => ({
           transactionNumber: row.transactionNumber,
           transactionDate: row.transactionDate,
-          typeLabel: BANK_TRANSACTION_TYPE_LABELS[row.type] ?? row.type,
+          // An advance step is still a receive or a transfer, and says which
+          // part of an advance it was — otherwise a customer's deposit reads as
+          // takings in the sheet.
+          typeLabel: row.advanceRole
+            ? `${BANK_TRANSACTION_TYPE_LABELS[row.type]} (${BANK_ADVANCE_ROLE_LABELS[row.advanceRole].toLowerCase()})`
+            : (BANK_TRANSACTION_TYPE_LABELS[row.type] ?? row.type),
           from: side(
             row.fromAccountName,
             row.fromAccountKey,

@@ -15,6 +15,7 @@ import {
   SERVICE_ITEM_TYPES,
   SALE_STATUSES,
   SERIAL_STATUSES,
+  BANK_ADVANCE_STATUSES,
   BANK_FEE_DIRECTIONS,
   BANK_TRANSACTION_TYPES,
 } from './domain';
@@ -555,48 +556,88 @@ export const zSaveBankAccount = z.object({
 
 export const zBankTransactionType = z.enum(BANK_TRANSACTION_TYPES);
 
+/**
+ * Everything one movement of money carries, whatever it is part of.
+ *
+ * Shared by an ordinary transaction, the deposit that opens a customer advance,
+ * and every withdrawal from one — so the three forms cannot drift apart on what
+ * an account number may look like or how a fee is sent.
+ */
+const bankMovementFields = {
+  /** Local wall-clock date and time from the picker: "2026-08-18T14:30". */
+  transactionAt: z
+    .string()
+    .trim()
+    .regex(LOCAL_DATE_TIME_PATTERN, 'Use the date and time picker'),
+  fromAccountId: zId.optional(),
+  fromAccountNumber: zAccountNumber,
+  fromName: zAccountHolder,
+  toAccountId: zId.optional(),
+  toAccountNumber: zAccountNumber,
+  toName: zAccountHolder,
+  amount: zMinor.refine((v) => v > 0, 'Amount must be more than zero'),
+  /**
+   * The fee on this movement as basis points of the amount: 50 == 0.5%.
+   *
+   * zBasisPoints is already capped at 10,000, which is 100% — the ceiling the
+   * form offers. Note what is NOT here: the fee in money. The renderer shows a
+   * running figure while the user types, but the stored one is worked out in
+   * the main process from the amount and this rate, for the same reason a
+   * cart never sends a price (§68).
+   */
+  feeBasisPoints: zBasisPoints.default(0),
+  feeDirection: z.enum(BANK_FEE_DIRECTIONS).default('RECEIVE'),
+  notes: zOptionalText,
+};
+
+const OWN_ACCOUNT_LEFT = {
+  message: 'Choose which of your accounts the money left',
+  path: ['fromAccountId'],
+};
+const OWN_ACCOUNT_ARRIVED = {
+  message: 'Choose which of your accounts the money arrived in',
+  path: ['toAccountId'],
+};
+
 export const zCreateBankTransaction = z
-  .object({
-    type: zBankTransactionType,
-    /** Local wall-clock date and time from the picker: "2026-08-18T14:30". */
-    transactionAt: z
-      .string()
-      .trim()
-      .regex(LOCAL_DATE_TIME_PATTERN, 'Use the date and time picker'),
-    fromAccountId: zId.optional(),
-    fromAccountNumber: zAccountNumber,
-    fromName: zAccountHolder,
-    toAccountId: zId.optional(),
-    toAccountNumber: zAccountNumber,
-    toName: zAccountHolder,
-    amount: zMinor.refine((v) => v > 0, 'Amount must be more than zero'),
-    /**
-     * The fee on this movement as basis points of the amount: 50 == 0.5%.
-     *
-     * zBasisPoints is already capped at 10,000, which is 100% — the ceiling the
-     * form offers. Note what is NOT here: the fee in money. The renderer shows a
-     * running figure while the user types, but the stored one is worked out in
-     * the main process from the amount and this rate, for the same reason a
-     * cart never sends a price (§68).
-     */
-    feeBasisPoints: zBasisPoints.default(0),
-    feeDirection: z.enum(BANK_FEE_DIRECTIONS).default('RECEIVE'),
-    notes: zOptionalText,
-  })
+  .object({ type: zBankTransactionType, ...bankMovementFields })
   // The shop's own account is on the side the money moved, so that per-account
   // balances and the headline totals can never tell different stories. The main
   // process checks this too; here it puts the message on the right field.
-  .refine((v) => v.type !== 'TRANSFER' || Boolean(v.fromAccountId), {
-    message: 'Choose which of your accounts the money left',
-    path: ['fromAccountId'],
-  })
-  .refine((v) => v.type !== 'RECEIVE' || Boolean(v.toAccountId), {
-    message: 'Choose which of your accounts the money arrived in',
-    path: ['toAccountId'],
-  });
+  .refine((v) => v.type !== 'TRANSFER' || Boolean(v.fromAccountId), OWN_ACCOUNT_LEFT)
+  .refine((v) => v.type !== 'RECEIVE' || Boolean(v.toAccountId), OWN_ACCOUNT_ARRIVED);
 // Both sides may be the SAME account. A shop moving money within one wallet, or
 // correcting a figure inside it, is a real movement worth recording; it nets to
 // zero against that account's balance, which is the honest result.
+
+/**
+ * Opens a customer advance: the customer's money arriving in one of the shop's
+ * accounts, to be collected later. Always a RECEIVE, so there is no type here
+ * for the renderer to get wrong.
+ */
+export const zOpenBankAdvance = z
+  .object(bankMovementFields)
+  .refine((v) => Boolean(v.toAccountId), OWN_ACCOUNT_ARRIVED);
+
+/**
+ * Pays some or all of an advance back out. Always a TRANSFER out of one of the
+ * shop's accounts.
+ *
+ * Whether the amount fits in what is left is NOT checked here: that figure is
+ * only true inside the database transaction that writes the withdrawal, and a
+ * check made against a number read earlier is how two withdrawals both fit.
+ */
+export const zWithdrawBankAdvance = z
+  .object({ advanceId: zId, ...bankMovementFields })
+  .refine((v) => Boolean(v.fromAccountId), OWN_ACCOUNT_LEFT);
+
+export const zBankAdvanceListQuery = z.object({
+  search: zShortText,
+  /** Omitted for every advance, open or settled. */
+  status: z.enum(BANK_ADVANCE_STATUSES).optional(),
+  page: z.number().int().min(0).max(100_000).default(0),
+  pageSize: z.number().int().min(1).max(200).default(50),
+});
 
 export const zDeleteBankTransaction = z.object({
   id: zId,
@@ -809,6 +850,11 @@ export type CreateBankTransactionInput = z.output<typeof zCreateBankTransaction>
 
 export type DeleteBankTransactionInput = z.output<typeof zDeleteBankTransaction>;
 export type BankTransactionListQuery = z.output<typeof zBankTransactionListQuery>;
+
+export type OpenBankAdvanceInput = z.output<typeof zOpenBankAdvance>;
+export type WithdrawBankAdvanceInput = z.output<typeof zWithdrawBankAdvance>;
+export type BankAdvanceListQuery = z.output<typeof zBankAdvanceListQuery>;
+export type BankAdvanceListQueryInput = z.input<typeof zBankAdvanceListQuery>;
 
 export type SaveCashCountFormValues = z.input<typeof zSaveCashCount>;
 export type SaveCashCountInput = z.output<typeof zSaveCashCount>;

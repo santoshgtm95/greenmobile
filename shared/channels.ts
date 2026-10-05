@@ -92,6 +92,10 @@ export const CHANNELS = {
     listTransactions: 'banking:listTransactions',
     createTransaction: 'banking:createTransaction',
     deleteTransaction: 'banking:deleteTransaction',
+    listAdvances: 'banking:listAdvances',
+    getAdvance: 'banking:getAdvance',
+    openAdvance: 'banking:openAdvance',
+    withdrawAdvance: 'banking:withdrawAdvance',
     saveCashCount: 'banking:saveCashCount',
   },
   backup: {

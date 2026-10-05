@@ -40,8 +40,8 @@ import {
   parseRate,
   rateOf,
 } from "@shared/money";
-import { nowLocalDateTime } from "@shared/datetime";
-import type { BankAccount } from "@shared/api";
+import { formatInstant, nowLocalDateTime } from "@shared/datetime";
+import type { BankAccount, BankAdvance } from "@shared/api";
 
 /** 100%, the ceiling the form offers. Basis points, so 100% is 10,000. */
 const MAX_FEE_BASIS_POINTS = 10_000;
@@ -50,6 +50,39 @@ const MAX_FEE_BASIS_POINTS = 10_000;
 function formatPercent(basisPoints: number | null): string {
   if (basisPoints === null) return "";
   return formatRate(basisPoints).replace("%", "");
+}
+
+/**
+ * What the form is recording.
+ *
+ *   transaction  an ordinary transfer or receipt — the user picks which
+ *   advance      a customer's money arriving, to collect later (always a receipt)
+ *   withdraw     paying some or all of an advance back out (always a transfer)
+ *
+ * One form for all three, so a deposit and a withdrawal carry exactly the same
+ * accounts, amount and fee fields as any other movement — which is what they
+ * are — and a change to how a fee is entered cannot reach one and miss another.
+ */
+export type BankMovementMode =
+  | { kind: "transaction" }
+  | { kind: "advance" }
+  | { kind: "withdraw"; advance: BankAdvance };
+
+const TITLES: Record<BankMovementMode["kind"], string> = {
+  transaction: "New transaction",
+  advance: "New advance",
+  withdraw: "Withdraw from advance",
+};
+
+const SAVE_LABELS: Record<BankMovementMode["kind"], string> = {
+  transaction: "Record transaction",
+  advance: "Record advance",
+  withdraw: "Record withdrawal",
+};
+
+/** An account id worth pre-selecting: only one the dropdown can actually show. */
+function selectable(id: string | null, accounts: BankAccount[]): string {
+  return id && accounts.some((account) => account.id === id) ? id : "";
 }
 
 /**
@@ -62,22 +95,42 @@ function formatPercent(basisPoints: number | null): string {
  */
 export default function BankTransactionDialog({
   accounts,
+  mode = { kind: "transaction" },
   onClose,
   onSaved,
 }: {
   accounts: BankAccount[];
+  mode?: BankMovementMode;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [type, setType] = useState<BankTransactionType>("TRANSFER");
+  /*
+    A withdrawal is the deposit run backwards, so it starts with the sides
+    swapped: out of the shop account the money went into, back to the
+    customer's account it came from. Every field stays editable — a customer
+    may well ask for it to go somewhere else.
+  */
+  const reverse = mode.kind === "withdraw" ? mode.advance : null;
+
+  const [type, setType] = useState<BankTransactionType>(
+    mode.kind === "advance" ? "RECEIVE" : "TRANSFER",
+  );
   // Default to now, so the common case is one field the user never touches.
   const [transactionAt, setTransactionAt] = useState(nowLocalDateTime());
-  const [fromAccountId, setFromAccountId] = useState("");
-  const [fromAccountNumber, setFromAccountNumber] = useState("");
-  const [fromName, setFromName] = useState("");
-  const [toAccountId, setToAccountId] = useState("");
-  const [toAccountNumber, setToAccountNumber] = useState("");
-  const [toName, setToName] = useState("");
+  const [fromAccountId, setFromAccountId] = useState(
+    selectable(reverse?.toAccountId ?? null, accounts),
+  );
+  const [fromAccountNumber, setFromAccountNumber] = useState(
+    reverse?.toAccountNumber ?? "",
+  );
+  const [fromName, setFromName] = useState(reverse?.toName ?? "");
+  const [toAccountId, setToAccountId] = useState(
+    selectable(reverse?.fromAccountId ?? null, accounts),
+  );
+  const [toAccountNumber, setToAccountNumber] = useState(
+    reverse?.fromAccountNumber ?? "",
+  );
+  const [toName, setToName] = useState(reverse?.fromName ?? "");
   const [amount, setAmount] = useState(0);
   // The percentage is held as the TEXT being typed, like MoneyField does, so
   // that "0." on the way to "0.5" is not snapped back to "0" mid-keystroke.
@@ -117,10 +170,22 @@ export default function BankTransactionDialog({
   // 1,000,000 with a 5,000 fee: 1,005,000 received, 995,000 paid.
   const actualAmount = amountAfterFee(amount, feeAmount, feeDirection);
 
+  /*
+    What a withdrawal may take. Checked here so the user sees it while typing,
+    and again in the main process inside the transaction that writes — this
+    copy of the figure was read when the dialog opened and can be stale.
+  */
+  const remaining = reverse ? reverse.remaining : null;
+  const overRemaining = remaining !== null && amount > remaining;
+  const amountError =
+    fieldErrors.amount ??
+    (overRemaining ? `At most ${formatMoney(remaining, currency)}` : null);
+
+  // The three channels answer with different shapes; the caller only needs to
+  // know it worked, and refetches what it shows.
   const save = useMutation({
-    mutationFn: () =>
-      api.banking.createTransaction({
-        type,
+    mutationFn: (): Promise<unknown> => {
+      const movement = {
         transactionAt,
         fromAccountId: fromAccountId || undefined,
         fromAccountNumber: fromAccountNumber.trim(),
@@ -133,7 +198,18 @@ export default function BankTransactionDialog({
         feeBasisPoints: feeBasisPoints ?? 0,
         feeDirection,
         notes: notes.trim() || undefined,
-      }),
+      };
+      // No type is sent for an advance or a withdrawal: each channel fixes its
+      // own, so the renderer cannot record a "withdrawal" that is a receipt.
+      if (mode.kind === "advance") return api.banking.openAdvance(movement);
+      if (mode.kind === "withdraw") {
+        return api.banking.withdrawAdvance({
+          advanceId: mode.advance.id,
+          ...movement,
+        });
+      }
+      return api.banking.createTransaction({ type, ...movement });
+    },
     onSuccess: onSaved,
     onError: (err) => {
       if (err instanceof PosApiError) {
@@ -168,7 +244,7 @@ export default function BankTransactionDialog({
   return (
     // Wider than the other dialogs: each side of the movement carries three fields.
     <Dialog open fullWidth maxWidth="md" onClose={onClose}>
-      <DialogTitle>New transaction</DialogTitle>
+      <DialogTitle>{TITLES[mode.kind]}</DialogTitle>
       <DialogContent dividers>
         <Stack spacing={2.5} sx={{ pt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -180,26 +256,57 @@ export default function BankTransactionDialog({
             </Alert>
           )}
 
-          <ToggleButtonGroup
-            exclusive
-            fullWidth
-            color="primary"
-            value={type}
-            onChange={(_e, next: BankTransactionType | null) => {
-              if (!next) return;
-              setType(next);
-              setFieldErrors({});
-            }}
-          >
-            <ToggleButton value="TRANSFER">
-              <CallMadeIcon fontSize="small" sx={{ mr: 1 }} />
-              {BANK_TRANSACTION_TYPE_LABELS.TRANSFER}
-            </ToggleButton>
-            <ToggleButton value="RECEIVE">
-              <CallReceivedIcon fontSize="small" sx={{ mr: 1 }} />
-              {BANK_TRANSACTION_TYPE_LABELS.RECEIVE}
-            </ToggleButton>
-          </ToggleButtonGroup>
+          {mode.kind === "advance" && (
+            <Alert severity="info">
+              Money a customer sends you to hold. They can collect it all at
+              once or in parts — each withdrawal is recorded from the Advances
+              tab.
+            </Alert>
+          )}
+
+          {reverse && (
+            <Alert
+              severity="info"
+              action={
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => setAmount(reverse.remaining)}
+                >
+                  Withdraw all
+                </Button>
+              }
+            >
+              <strong>{reverse.transactionNumber}</strong> · {reverse.fromName}{" "}
+              deposited {formatMoney(reverse.amount, currency)} on{" "}
+              {formatInstant(reverse.transactionDate)}.{" "}
+              <strong>{formatMoney(reverse.remaining, currency)}</strong> left
+              to collect.
+            </Alert>
+          )}
+
+          {mode.kind === "transaction" && (
+            <ToggleButtonGroup
+              exclusive
+              fullWidth
+              color="primary"
+              value={type}
+              onChange={(_e, next: BankTransactionType | null) => {
+                if (!next) return;
+                setType(next);
+                setFieldErrors({});
+              }}
+            >
+              <ToggleButton value="TRANSFER">
+                <CallMadeIcon fontSize="small" sx={{ mr: 1 }} />
+                {BANK_TRANSACTION_TYPE_LABELS.TRANSFER}
+              </ToggleButton>
+              <ToggleButton value="RECEIVE">
+                <CallReceivedIcon fontSize="small" sx={{ mr: 1 }} />
+                {BANK_TRANSACTION_TYPE_LABELS.RECEIVE}
+              </ToggleButton>
+            </ToggleButtonGroup>
+          )}
 
           <Typography variant="caption" color="text.secondary">
             {isTransfer
@@ -347,8 +454,8 @@ export default function BankTransactionDialog({
                 required
                 value={amount}
                 onChange={setAmount}
-                error={Boolean(fieldErrors.amount)}
-                helperText={fieldErrors.amount ?? " "}
+                error={Boolean(amountError)}
+                helperText={amountError ?? " "}
                 sx={{ width: { xs: "100%", sm: 190 } }}
               />
               <TextField
@@ -462,6 +569,26 @@ export default function BankTransactionDialog({
                 </Typography>
               )}
             </Stack>
+
+            {/*
+              What the customer is owed moves by the AMOUNT only. Said on the
+              form, because with a fee box right above it the natural guess is
+              that the fee comes off the customer's money too — and it does not.
+            */}
+            {mode.kind === "advance" && amount > 0 && (
+              <Typography variant="caption" color="text.secondary">
+                The customer will have {formatMoney(amount, currency)} to
+                collect. Any fee is the shop&apos;s own and does not change
+                that.
+              </Typography>
+            )}
+            {reverse && amount > 0 && !overRemaining && (
+              <Typography variant="caption" color="text.secondary">
+                {amount === reverse.remaining
+                  ? "This settles the advance — nothing will be left to collect."
+                  : `Leaves ${formatMoney(reverse.remaining - amount, currency)} to collect.`}
+              </Typography>
+            )}
           </Stack>
 
           <TextField
@@ -485,6 +612,7 @@ export default function BankTransactionDialog({
           disabled={
             save.isPending ||
             amount <= 0 ||
+            overRemaining ||
             feeBasisPoints === null ||
             ownSideMissing ||
             !transactionAt ||
@@ -494,7 +622,7 @@ export default function BankTransactionDialog({
             !toName.trim()
           }
         >
-          {save.isPending ? "Saving…" : "Record transaction"}
+          {save.isPending ? "Saving…" : SAVE_LABELS[mode.kind]}
         </Button>
       </DialogActions>
     </Dialog>

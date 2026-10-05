@@ -177,6 +177,33 @@ export const BANK_FEE_DIRECTION_LABELS: Record<BankFeeDirection, string> = {
   PAY: 'Pay',
 };
 
+/**
+ * Money a customer leaves with the shop to collect later — all at once or in
+ * parts.
+ *
+ * Not a separate ledger: the deposit is an ordinary RECEIVE and each withdrawal
+ * an ordinary TRANSFER, so every step carries its own accounts, amount and fee,
+ * and the money shows in the account balances exactly where it really is. The
+ * role is what ties the steps together, and what is still owed is worked out
+ * from them rather than stored, so it cannot drift from the movements.
+ */
+export const BANK_ADVANCE_ROLES = ['DEPOSIT', 'WITHDRAWAL'] as const;
+export type BankAdvanceRole = (typeof BANK_ADVANCE_ROLES)[number];
+
+export const BANK_ADVANCE_ROLE_LABELS: Record<BankAdvanceRole, string> = {
+  DEPOSIT: 'Advance deposit',
+  WITHDRAWAL: 'Advance withdrawal',
+};
+
+/** Derived from what is left, never stored: OPEN while anything remains. */
+export const BANK_ADVANCE_STATUSES = ['OPEN', 'SETTLED'] as const;
+export type BankAdvanceStatus = (typeof BANK_ADVANCE_STATUSES)[number];
+
+export const BANK_ADVANCE_STATUS_LABELS: Record<BankAdvanceStatus, string> = {
+  OPEN: 'Open',
+  SETTLED: 'Settled',
+};
+
 // -----------------------------------------------------------------------------
 // Sales
 // -----------------------------------------------------------------------------

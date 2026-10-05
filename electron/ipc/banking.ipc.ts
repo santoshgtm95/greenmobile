@@ -14,24 +14,31 @@
 import { handle } from './registry';
 import { CHANNELS } from '../../shared/channels';
 import {
+  zBankAdvanceListQuery,
   zBankTransactionListQuery,
   zCreateBankTransaction,
   zDeleteBankTransaction,
   zDayRange,
   zIdOnly,
   zLookupQuery,
+  zOpenBankAdvance,
   zSaveBankAccount,
   zSaveCashCount,
+  zWithdrawBankAdvance,
 } from '../../shared/validation';
 import {
   bankingOverview,
   createBankTransaction,
   deleteBankAccount,
   deleteBankTransaction,
+  getBankAdvance,
   listBankAccounts,
+  listBankAdvances,
   listBankTransactions,
+  openBankAdvance,
   saveBankAccount,
   saveCashCount,
+  withdrawFromBankAdvance,
 } from '../services/banking.service';
 import { requireUser } from '../session';
 
@@ -82,6 +89,40 @@ export function registerBankingIpc(): void {
     ({ id, reason }) => {
       deleteBankTransaction(id, reason, requireUser());
     },
+  );
+
+  /*
+    Customer advances. Same three permissions as every other movement, because
+    that is what they are: opening one or paying one out records money moving
+    (manage), reading them is reading the ledger (view), and removing either
+    side goes through deleteTransaction like anything else (delete, admin only).
+  */
+  handle(
+    CHANNELS.banking.listAdvances,
+    { access: 'permission', permission: 'banking.view' },
+    zBankAdvanceListQuery,
+    (query) => listBankAdvances(query),
+  );
+
+  handle(
+    CHANNELS.banking.getAdvance,
+    { access: 'permission', permission: 'banking.view' },
+    zIdOnly,
+    ({ id }) => getBankAdvance(id),
+  );
+
+  handle(
+    CHANNELS.banking.openAdvance,
+    { access: 'permission', permission: 'banking.manage' },
+    zOpenBankAdvance,
+    (input) => openBankAdvance(input, requireUser()),
+  );
+
+  handle(
+    CHANNELS.banking.withdrawAdvance,
+    { access: 'permission', permission: 'banking.manage' },
+    zWithdrawBankAdvance,
+    (input) => withdrawFromBankAdvance(input, requireUser()),
   );
 
   handle(

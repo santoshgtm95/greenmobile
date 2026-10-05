@@ -9,6 +9,8 @@
  * keeps the exposed surface deliberate and reviewable.
  */
 import type {
+  BankAdvanceRole,
+  BankAdvanceStatus,
   BankFeeDirection,
   BankTransactionType,
   Permission,
@@ -36,8 +38,11 @@ import type {
   ExpenseListQuery,
   UpdateExpenseInput,
   BankTransactionListQuery,
+  BankAdvanceListQueryInput,
   CreateBankTransactionInput,
   DeleteBankTransactionInput,
+  OpenBankAdvanceInput,
+  WithdrawBankAdvanceInput,
   SaveBankAccountInput,
   SaveCashCountInput,
   AddServiceItemInput,
@@ -392,12 +397,38 @@ export interface BankTransaction {
   feeAmount: number;
   /** Whether the shop earned the fee or was charged it. */
   feeDirection: BankFeeDirection;
+  /** DEPOSIT or WITHDRAWAL when this movement is part of a customer advance. */
+  advanceRole: BankAdvanceRole | null;
+  /** On a withdrawal, the deposit it draws down. */
+  advanceDepositId: string | null;
   notes: string | null;
   isDeleted: SqliteBool;
   deletedReason: string | null;
   createdBy: string;
   createdByName: string | null;
   createdAt: string;
+}
+
+/**
+ * A customer advance: the deposit that opened it, plus what has happened since.
+ *
+ * It is the deposit row itself, so its number, accounts and fee are the
+ * deposit's. The customer is the From side. `remaining` is the deposit's AMOUNT
+ * less its withdrawals' amounts — fees are the shop's own and never change what
+ * a customer is owed.
+ */
+export interface BankAdvance extends BankTransaction {
+  withdrawn: number;
+  remaining: number;
+  withdrawalCount: number;
+  lastWithdrawalDate: string | null;
+  status: BankAdvanceStatus;
+}
+
+export interface BankAdvanceDetail {
+  advance: BankAdvance;
+  /** Oldest first — the order they happened in. */
+  withdrawals: BankTransaction[];
 }
 
 /** One row of the per-account strip at the top of the Banking screen. */
@@ -763,8 +794,26 @@ export interface PosApi {
       query: BankTransactionListQuery,
     ): Promise<Page<BankTransaction> & { transferTotal: number; receiveTotal: number }>;
     createTransaction(input: CreateBankTransactionInput): Promise<BankTransaction>;
-    /** Administrators only. Soft delete, so past balances stay explainable. */
+    /**
+     * Administrators only. Soft delete, so past balances stay explainable.
+     * Refused for an advance deposit while withdrawals still draw on it.
+     */
     deleteTransaction(input: DeleteBankTransactionInput): Promise<void>;
+    /**
+     * heldTotal and openCount cover EVERY open advance, whatever the search —
+     * they answer how much of the money in the accounts belongs to customers.
+     */
+    listAdvances(query: BankAdvanceListQueryInput): Promise<{
+      rows: BankAdvance[];
+      total: number;
+      heldTotal: number;
+      openCount: number;
+    }>;
+    getAdvance(input: { id: string }): Promise<BankAdvanceDetail>;
+    /** A customer's money arriving, to collect later. Always a receive. */
+    openAdvance(input: OpenBankAdvanceInput): Promise<BankAdvance>;
+    /** Refused if the amount is more than is left, or the advance is settled. */
+    withdrawAdvance(input: WithdrawBankAdvanceInput): Promise<BankAdvanceDetail>;
     /** Records a counted cash-in-hand figure. */
     saveCashCount(input: SaveCashCountInput): Promise<CashInHand>;
   };

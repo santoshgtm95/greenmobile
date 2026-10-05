@@ -771,6 +771,7 @@ describe('database security', () => {
       'EXPENSE_SELECT',
       'SERVICE_SELECT',
       'BANK_TRANSACTION_SELECT',
+      'BANK_ADVANCE_SELECT',
       'BANK_ACCOUNT_USE_COUNT',
       'NET_LINES',
       'table',

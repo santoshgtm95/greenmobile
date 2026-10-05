@@ -631,6 +631,12 @@ model BankTransaction {
   feeAmount         Int     @default(0)
   /// RECEIVE | PAY — whether the shop earned that fee or was charged it.
   feeDirection      String  @default("RECEIVE")
+  /// DEPOSIT | WITHDRAWAL when this movement is part of a customer advance:
+  /// money a customer left with the shop to collect later. Null otherwise.
+  advanceRole       String?
+  /// On a WITHDRAWAL, the DEPOSIT it draws down. What is still owed on an
+  /// advance is the deposit less its live withdrawals — derived, never stored.
+  advanceDepositId  String?
   notes             String?
   isDeleted         Boolean @default(false)
   deletedReason     String?
@@ -642,12 +648,19 @@ model BankTransaction {
   toAccount   BankAccount? @relation("BankTransactionTo", fields: [toAccountId], references: [id], onDelete: Restrict)
   creator     User         @relation(fields: [createdBy], references: [id], onDelete: Restrict)
 
+  /// A withdrawal points at its deposit. Restrict, because a deposit is never
+  /// hard-deleted — and must not be while anything still draws on it.
+  advanceDeposit     BankTransaction?  @relation("BankAdvanceWithdrawals", fields: [advanceDepositId], references: [id], onDelete: Restrict)
+  advanceWithdrawals BankTransaction[] @relation("BankAdvanceWithdrawals")
+
   @@index([transactionDay])
   @@index([transactionDate])
   @@index([type])
   @@index([fromAccountId])
   @@index([toAccountId])
   @@index([isDeleted])
+  @@index([advanceRole])
+  @@index([advanceDepositId])
 }
 
 /// A counted cash-in-hand figure.
