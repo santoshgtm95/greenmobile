@@ -34,6 +34,7 @@ import ExpenseDialog from '../components/ExpenseDialog';
 import ExpenseCategoriesDialog from '../components/ExpenseCategoriesDialog';
 import { PosApiError } from '@shared/errors';
 import ExportMenu from '../components/ExportMenu';
+import DeleteReasonDialog from '../components/DeleteReasonDialog';
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABELS, type PaymentMethod } from '@shared/domain';
 import {
   DATE_PRESETS,
@@ -99,15 +100,15 @@ export default function ExpensesPage() {
     queryFn: () => api.expenses.summary(range),
   });
 
+  // A refusal is shown by DeleteReasonDialog, which is the only caller.
   const remove = useMutation({
     mutationFn: (input: { id: string; reason: string }) => api.expenses.delete(input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['expenses'] });
       void queryClient.invalidateQueries({ queryKey: ['expenseSummary'] });
     },
-    onError: (err) =>
-      setError(err instanceof PosApiError ? err.message : 'Unable to delete that expense.'),
   });
+  const [deleting, setDeleting] = useState<{ id: string; expenseNumber: string } | null>(null);
 
   const rows = expenses.data?.rows ?? [];
   const topCategories = (summary.data?.byCategory ?? []).slice(0, 5);
@@ -376,15 +377,7 @@ export default function ExpensesPage() {
                         <Tooltip title="Delete">
                           <IconButton
                             size="small"
-                            onClick={() => {
-                              const reason = window.prompt(
-                                `Delete expense ${expense.expenseNumber}?\n\nIt stays in the records but stops counting towards reports. Give a reason:`,
-                              );
-                              if (reason && reason.trim()) {
-                                setError(null);
-                                remove.mutate({ id: expense.id, reason: reason.trim() });
-                              }
-                            }}
+                            onClick={() => setDeleting(expense)}
                           >
                             <DeleteOutlineIcon fontSize="small" />
                           </IconButton>
@@ -432,6 +425,15 @@ export default function ExpensesPage() {
             void queryClient.invalidateQueries({ queryKey: ['expenseCategories'] });
             void queryClient.invalidateQueries({ queryKey: ['expenses'] });
           }}
+        />
+      )}
+
+      {deleting && (
+        <DeleteReasonDialog
+          title={`Delete expense ${deleting.expenseNumber}?`}
+          message="It stays in the records, marked deleted, but stops counting towards reports."
+          onConfirm={(reason) => remove.mutateAsync({ id: deleting.id, reason })}
+          onClose={() => setDeleting(null)}
         />
       )}
     </Stack>

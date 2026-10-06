@@ -41,6 +41,7 @@ import BankAccountsDialog from '../components/BankAccountsDialog';
 import BankTransactionDialog from '../components/BankTransactionDialog';
 import CashCountDialog from '../components/CashCountDialog';
 import SummaryCard from '../components/SummaryCard';
+import DeleteReasonDialog from '../components/DeleteReasonDialog';
 import BankingTabs from '../components/BankingTabs';
 import AccountSide from '../components/AccountSide';
 import { PosApiError } from '@shared/errors';
@@ -143,15 +144,15 @@ export default function BankingPage() {
     void queryClient.invalidateQueries({ queryKey: ['bankAccounts'] });
   };
 
+  // A refusal is shown by DeleteReasonDialog, which is the only caller.
   const remove = useMutation({
     mutationFn: (input: { id: string; reason: string }) => api.banking.deleteTransaction(input),
     onSuccess: () => {
       setToast('The transaction was removed from the balances.');
       refresh();
     },
-    onError: (err) =>
-      setError(err instanceof PosApiError ? err.message : 'Unable to delete that transaction.'),
   });
+  const [deleting, setDeleting] = useState<BankTransaction | null>(null);
 
   const rows = transactions.data?.rows ?? [];
   const positions = overview.data?.accounts ?? [];
@@ -631,15 +632,7 @@ export default function BankingPage() {
                         <IconButton
                           size="small"
                           disabled={remove.isPending}
-                          onClick={() => {
-                            const reason = window.prompt(
-                              `Delete ${row.transactionNumber}?\n\nIt stays in the records but stops counting towards the balances. Give a reason:`,
-                            );
-                            if (reason && reason.trim()) {
-                              setError(null);
-                              remove.mutate({ id: row.id, reason: reason.trim() });
-                            }
-                          }}
+                          onClick={() => setDeleting(row)}
                         >
                           <DeleteOutlinedIcon fontSize="small" />
                         </IconButton>
@@ -700,6 +693,15 @@ export default function BankingPage() {
             setToast('Cash in hand updated.');
             refresh();
           }}
+        />
+      )}
+
+      {deleting && (
+        <DeleteReasonDialog
+          title={`Delete ${deleting.transactionNumber}?`}
+          message="It stays in the records, marked deleted, but stops counting towards the balances."
+          onConfirm={(reason) => remove.mutateAsync({ id: deleting.id, reason })}
+          onClose={() => setDeleting(null)}
         />
       )}
 

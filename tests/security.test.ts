@@ -669,6 +669,20 @@ describe('input validation', () => {
     expect(saleItem).not.toContain('totalAmount');
   });
 
+  it('never asks the user for input with window.prompt', () => {
+    // Electron does not implement prompt(): it returns null at once and shows
+    // nothing. The Banking and Expenses delete buttons asked for their reason
+    // this way, so clicking them did nothing at all — while every test passed,
+    // because the tests called the delete channel directly. confirm() and
+    // alert() do work in Electron; prompt() is the one that silently does not.
+    for (const file of sourceFiles('src')) {
+      const text = stripComments(fs.readFileSync(file, 'utf8'));
+      expect(text, `${path.relative(REPO_ROOT, file)} calls prompt()`).not.toMatch(
+        /(^|[^\w.])(window\.)?prompt\s*\(/m,
+      );
+    }
+  });
+
   it('accepts an absent payload on every channel the UI calls with no argument', () => {
     // The mirror image of the checks above, and a real bug this caught: the
     // Import dialog calls api.data.importPreview() with no argument, because the

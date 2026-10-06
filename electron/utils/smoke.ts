@@ -397,6 +397,101 @@ async function captureScreens(win: BrowserWindow, outDir: string): Promise<Check
   fs.writeFileSync(path.join(outDir, 'banking-advance-withdraw.png'), withdrawShot.toPNG());
   console.log(`[smoke] screenshot banking-advance-withdraw -> ${path.join(outDir, 'banking-advance-withdraw.png')}`);
 
+  /*
+    The delete buttons, clicked for real.
+
+    These used window.prompt() for the reason, which Electron does not
+    implement — it returns null and shows nothing — so the buttons did nothing
+    at all. Every test still passed, because the tests went straight to the
+    delete channel. So this goes through the button: open the dialog, type a
+    reason, press Delete, and confirm the row actually left the list.
+
+    The advance deposit is tried first because it must be REFUSED (a withdrawal
+    still draws on it), and the refusal must appear in the dialog where the
+    user is looking, not on the page behind it.
+  */
+  const deleteThrough = async (hash: string, rowText: string, buttonLabel: string) => {
+    await win.webContents.executeJavaScript(`window.location.hash = ${JSON.stringify(hash)}`);
+    await win.webContents.reload();
+    await new Promise<void>((resolve) => win.webContents.once('did-finish-load', () => resolve()));
+    await new Promise((resolve) => setTimeout(resolve, 1600));
+
+    return (await win.webContents.executeJavaScript(
+      `(async () => {
+         const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+         const rows = () => [...document.querySelectorAll('tbody tr')]
+           .filter((r) => r.querySelector('button[aria-label^=${JSON.stringify(buttonLabel)}]'));
+         const before = rows().length;
+         const row = rows().find((r) => r.textContent.includes(${JSON.stringify(rowText)}));
+         if (!row) return { error: 'no deletable row containing ' + ${JSON.stringify(rowText)} };
+         row.querySelector('button[aria-label^=${JSON.stringify(buttonLabel)}]').click();
+         await wait(600);
+
+         const dialog = document.querySelector('[role="dialog"]');
+         if (!dialog) return { error: 'clicking delete opened nothing' };
+         const input = dialog.querySelector('input');
+         const setter = Object.getOwnPropertyDescriptor(
+           window.HTMLInputElement.prototype, 'value').set;
+         setter.call(input, 'Smoke test');
+         input.dispatchEvent(new Event('input', { bubbles: true }));
+         await wait(200);
+
+         const go = [...dialog.querySelectorAll('button')]
+           .find((b) => b.textContent.trim() === 'Delete');
+         if (!go || go.disabled) return { error: 'Delete button missing or disabled' };
+         go.click();
+         await wait(1200);
+
+         const still = document.querySelector('[role="dialog"]');
+         return {
+           before,
+           after: rows().length,
+           dialogOpen: Boolean(still),
+           message: still ? (still.querySelector('[role="alert"]')?.textContent ?? '') : '',
+         };
+       })()`,
+    )) as { error?: string; before?: number; after?: number; dialogOpen?: boolean; message?: string };
+  };
+
+  const refused = await deleteThrough('#/banking', 'Advance deposit', 'Delete');
+  checks.push({
+    name: 'a refused delete says why, inside the dialog',
+    pass: refused.dialogOpen === true && (refused.message ?? '').includes('withdrawal'),
+    detail: refused.error ?? refused.message,
+  });
+  const refusedShot = await win.webContents.capturePage();
+  fs.writeFileSync(path.join(outDir, 'banking-delete-refused.png'), refusedShot.toPNG());
+
+  const bankDeleted = await deleteThrough('#/banking', 'A supplier', 'Delete');
+  checks.push({
+    name: 'the Banking delete button deletes',
+    pass: bankDeleted.dialogOpen === false && bankDeleted.after === (bankDeleted.before ?? 0) - 1,
+    detail: bankDeleted.error ?? `${bankDeleted.before} rows -> ${bankDeleted.after}`,
+  });
+
+  // The run's only expense was deleted earlier through the bridge, so record a
+  // fresh one to click on — through the bridge too, since what is under test
+  // here is the delete button, not the expense form.
+  await win.webContents.executeJavaScript(
+    `(async () => {
+       const b = window.posBridge;
+       const cats = await b.expenseCategories.list({ includeInactive: false });
+       const day = new Date();
+       const pad = (n) => String(n).padStart(2, '0');
+       await b.expenses.create({
+         categoryId: cats.data[0].id,
+         expenseDay: day.getFullYear() + '-' + pad(day.getMonth() + 1) + '-' + pad(day.getDate()),
+         description: 'Smoke delete button', amount: 10000, paymentMethod: 'CASH',
+       });
+     })()`,
+  );
+  const expenseDeleted = await deleteThrough('#/expenses', 'Smoke delete button', 'Delete');
+  checks.push({
+    name: 'the Expenses delete button deletes',
+    pass: expenseDeleted.dialogOpen === false && expenseDeleted.after === (expenseDeleted.before ?? 0) - 1,
+    detail: expenseDeleted.error ?? `${expenseDeleted.before} rows -> ${expenseDeleted.after}`,
+  });
+
   // Last, because it signs out: the sign-in screen is the first thing a shop
   // sees and carries the shop logo (spec §29), so it is worth looking at too.
   await win.webContents.executeJavaScript('window.posBridge.auth.logout()');
