@@ -29,6 +29,7 @@ import {
   openBankAdvance,
   saveBankAccount,
   saveCashCount,
+  saveBankBalances,
   withdrawFromBankAdvance,
 } from '../electron/services/banking.service';
 import { AppError } from '../shared/errors';
@@ -958,6 +959,144 @@ describe('cash in hand', () => {
     saveCashCount({ amount: 275_000, notes: undefined }, actor, ctx.db);
     expect(bankingOverview(TODAY, ctx.db).cashInHand.amount).toBe(275_000);
   });
+
+  it('Account Receive (Cash Out) + Fee Received: actual is amount - fee and subtracts from cash in hand', () => {
+    saveCashCount({ amount: 1_000_000, notes: 'Morning till' }, actor, ctx.db);
+    // Amount: 500,000, Fee Received: 2,500 (50 bps) -> Actual: 497,500
+    receive(500_000, { feeBasisPoints: 50, feeDirection: 'RECEIVE' });
+    expect(cashInHand(ctx.db).amount).toBe(502_500); // 1,000,000 - 497,500
+  });
+
+  it('Account Receive (Cash Out) + Fee Pay: actual is amount + fee and subtracts from cash in hand', () => {
+    saveCashCount({ amount: 1_000_000, notes: 'Morning till' }, actor, ctx.db);
+    // Amount: 500,000, Fee Pay: 2,500 (50 bps) -> Actual: 502,500
+    receive(500_000, { feeBasisPoints: 50, feeDirection: 'PAY' });
+    expect(cashInHand(ctx.db).amount).toBe(497_500); // 1,000,000 - 502,500
+  });
+
+  it('Account Transfer (Cash In) + Fee Pay: actual is amount - fee and adds to cash in hand', () => {
+    saveCashCount({ amount: 500_000, notes: 'Morning till' }, actor, ctx.db);
+    // Amount: 1,000,000, Fee Pay: 1,000 (10 bps) -> Actual: 999,000
+    transfer(1_000_000, { feeBasisPoints: 10, feeDirection: 'PAY' });
+    expect(cashInHand(ctx.db).amount).toBe(1_499_000); // 500,000 + 999,000
+  });
+
+  it('Account Transfer (Cash In) + Fee Received: actual is amount + fee and adds to cash in hand', () => {
+    saveCashCount({ amount: 500_000, notes: 'Morning till' }, actor, ctx.db);
+    // Amount: 1,000,000, Fee Received: 1,000 (10 bps) -> Actual: 1,001,000
+    transfer(1_000_000, { feeBasisPoints: 10, feeDirection: 'RECEIVE' });
+    expect(cashInHand(ctx.db).amount).toBe(1_501_000); // 500,000 + 1,001,000
+  });
+
+  it('reverses cash in hand adjustment when an ordinary transaction is deleted', () => {
+    saveCashCount({ amount: 500_000, notes: 'Morning till' }, actor, ctx.db);
+    const movement = transfer(1_000_000, { feeBasisPoints: 10, feeDirection: 'RECEIVE' });
+    expect(cashInHand(ctx.db).amount).toBe(1_501_000);
+    deleteBankTransaction(movement.id, 'Entered by mistake', actor, ctx.db);
+    expect(cashInHand(ctx.db).amount).toBe(500_000);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// In the banks / bank balances
+// -----------------------------------------------------------------------------
+
+describe('editing in the banks / bank balances', () => {
+  it('increases an account balance by creating a receive adjustment and updates overview bankBalance without touching cash in hand', () => {
+    saveCashCount({ amount: 500_000, notes: 'Morning till' }, actor, ctx.db);
+    expect(cashInHand(ctx.db).amount).toBe(500_000);
+    expect(bankingOverview(TODAY, ctx.db).bankBalance).toBe(0);
+
+    const res = saveBankBalances(
+      { balances: [{ accountId: kpay, balance: 350_000 }], notes: 'Opening bank balance' },
+      actor,
+      ctx.db,
+    );
+    expect(res.count).toBe(1);
+
+    const overview = bankingOverview(TODAY, ctx.db);
+    expect(overview.bankBalance).toBe(350_000);
+    const kpayPos = overview.accounts.find((a) => a.accountId === kpay);
+    expect(kpayPos?.balance).toBe(350_000);
+
+    // Cash in hand is untouched!
+    expect(cashInHand(ctx.db).amount).toBe(500_000);
+  });
+
+  it('decreases an account balance by creating a transfer adjustment without touching cash in hand', () => {
+    saveBankBalances(
+      { balances: [{ accountId: kpay, balance: 500_000 }] },
+      actor,
+      ctx.db,
+    );
+    expect(bankingOverview(TODAY, ctx.db).bankBalance).toBe(500_000);
+
+    saveCashCount({ amount: 200_000, notes: undefined }, actor, ctx.db);
+
+    const res = saveBankBalances(
+      { balances: [{ accountId: kpay, balance: 300_000 }] },
+      actor,
+      ctx.db,
+    );
+    expect(res.count).toBe(1);
+
+    const overview = bankingOverview(TODAY, ctx.db);
+    expect(overview.bankBalance).toBe(300_000);
+    const kpayPos = overview.accounts.find((a) => a.accountId === kpay);
+    expect(kpayPos?.balance).toBe(300_000);
+
+    // Cash in hand is untouched!
+    expect(cashInHand(ctx.db).amount).toBe(200_000);
+  });
+
+  it('updates multiple accounts in a single call', () => {
+    const res = saveBankBalances(
+      {
+        balances: [
+          { accountId: kpay, balance: 400_000 },
+          { accountId: aya, balance: 600_000 },
+        ],
+      },
+      actor,
+      ctx.db,
+    );
+    expect(res.count).toBe(2);
+
+    const overview = bankingOverview(TODAY, ctx.db);
+    expect(overview.bankBalance).toBe(1_000_000);
+    expect(overview.accounts.find((a) => a.accountId === kpay)?.balance).toBe(400_000);
+    expect(overview.accounts.find((a) => a.accountId === aya)?.balance).toBe(600_000);
+  });
+
+  it('skips accounts with zero delta', () => {
+    saveBankBalances({ balances: [{ accountId: kpay, balance: 250_000 }] }, actor, ctx.db);
+    const res = saveBankBalances(
+      {
+        balances: [
+          { accountId: kpay, balance: 250_000 },
+          { accountId: aya, balance: 100_000 },
+        ],
+      },
+      actor,
+      ctx.db,
+    );
+    expect(res.count).toBe(1);
+    expect(bankingOverview(TODAY, ctx.db).bankBalance).toBe(350_000);
+  });
+
+  it('refuses to adjust a switched-off account', () => {
+    saveBankAccount(
+      { id: aya, name: 'AYA Bank', key: 'AYAPay', description: undefined, isActive: false },
+      actor,
+      ctx.db,
+    );
+
+    const error = captureError(() =>
+      saveBankBalances({ balances: [{ accountId: aya, balance: 100_000 }] }, actor, ctx.db),
+    );
+    expect(error.code).toBe('INVALID_STATE');
+    expect(error.message).toContain('switched off');
+  });
 });
 
 // -----------------------------------------------------------------------------
@@ -1050,6 +1189,147 @@ describe('customer advances', () => {
     expect(done.advance.remaining).toBe(0);
     expect(done.advance.status).toBe('SETTLED');
     expect(done.advance.withdrawalCount).toBe(2);
+  });
+
+  it('supports withdrawal in cash without an account number, and saves to the database', () => {
+    const opened = openAdvance(MILLION);
+    const withdrawn = withdrawFromBankAdvance(
+      {
+        advanceId: opened.id,
+        transactionAt: at('2026-10-10', '15:00'),
+        fromAccountId: kpay,
+        fromAccountNumber: '001-22-3333',
+        fromName: 'Green Mobile',
+        toAccountId: undefined,
+        toAccountNumber: '',
+        toName: 'Cash',
+        amount: 500_000,
+        feeBasisPoints: 0,
+        feeDirection: 'RECEIVE',
+        notes: 'Cash withdrawal',
+      },
+      actor,
+      ctx.db,
+    );
+
+    expect(withdrawn.advance.remaining).toBe(MILLION - 500_000);
+    expect(withdrawn.withdrawals).toHaveLength(1);
+    const w = withdrawn.withdrawals[0];
+    expect(w.toName).toBe('Cash');
+    expect(w.toAccountNumber).toBeNull();
+    expect(w.toAccountId).toBeNull();
+    expect(w.fromAccountId).toBeNull();
+
+    // Verify row in database directly
+    const row = ctx.db
+      .prepare('SELECT toAccountId, toAccountNumber, toName, fromAccountId FROM "BankTransaction" WHERE id = ?')
+      .get(w.id) as { toAccountId: string | null; toAccountNumber: string | null; toName: string | null; fromAccountId: string | null };
+    expect(row.toAccountId).toBeNull();
+    expect(row.toAccountNumber).toBeNull();
+    expect(row.toName).toBe('Cash');
+    expect(row.fromAccountId).toBeNull();
+  });
+
+  it('when user withdraws Cash from advance, minuses that amount from Cash in hand and leaves In the banks untouched', () => {
+    saveCashCount({ amount: MILLION, notes: 'Morning till' }, actor, ctx.db);
+    expect(cashInHand(ctx.db).amount).toBe(MILLION);
+
+    const opened = openAdvance(MILLION); // 1,000,000 received into kpay
+    expect(bankingOverview(ALL_TIME, ctx.db).bankBalance).toBe(MILLION);
+    expect(cashInHand(ctx.db).amount).toBe(MILLION);
+
+    const withdrawn = withdrawFromBankAdvance(
+      {
+        advanceId: opened.id,
+        transactionAt: at('2026-10-10', '15:00'),
+        amount: 30_000_000,
+        toName: 'Cash',
+        withdrawalMethod: 'cash',
+      },
+      actor,
+      ctx.db,
+    );
+
+    expect(withdrawn.advance.remaining).toBe(70_000_000);
+    // Cash in hand is reduced by 300,000 (30_000_000 minor units)!
+    expect(cashInHand(ctx.db).amount).toBe(70_000_000);
+    // In the banks is NOT reduced! It still holds the 1,000,000 deposited.
+    expect(bankingOverview(ALL_TIME, ctx.db).bankBalance).toBe(MILLION);
+
+    // Deleting the cash withdrawal restores Cash in hand!
+    deleteBankTransaction(withdrawn.withdrawals[0].id, 'Mistake', actor, ctx.db);
+    expect(cashInHand(ctx.db).amount).toBe(MILLION);
+    expect(bankingOverview(ALL_TIME, ctx.db).bankBalance).toBe(MILLION);
+  });
+
+  it('when user withdraws from Account from advance, minuses that amount from In the banks and leaves Cash in hand untouched', () => {
+    saveCashCount({ amount: MILLION, notes: 'Morning till' }, actor, ctx.db);
+    expect(cashInHand(ctx.db).amount).toBe(MILLION);
+
+    const opened = openAdvance(MILLION); // 1,000,000 received into kpay
+    expect(bankingOverview(ALL_TIME, ctx.db).bankBalance).toBe(MILLION);
+
+    const withdrawn = withdrawFromBankAdvance(
+      {
+        advanceId: opened.id,
+        transactionAt: at('2026-10-10', '15:00'),
+        fromAccountId: kpay,
+        fromAccountNumber: '001-22-3333',
+        fromName: 'Green Mobile',
+        toName: 'Daw Nu',
+        toAccountNumber: '09-999-8888',
+        amount: 40_000_000,
+        withdrawalMethod: 'account',
+      },
+      actor,
+      ctx.db,
+    );
+
+    expect(withdrawn.advance.remaining).toBe(60_000_000);
+    // In the banks is reduced by 400,000 (40_000_000 minor units)!
+    expect(bankingOverview(ALL_TIME, ctx.db).bankBalance).toBe(60_000_000);
+    // Cash in hand is NOT reduced!
+    expect(cashInHand(ctx.db).amount).toBe(MILLION);
+
+    // Deleting the account withdrawal restores In the banks!
+    deleteBankTransaction(withdrawn.withdrawals[0].id, 'Mistake', actor, ctx.db);
+    expect(bankingOverview(ALL_TIME, ctx.db).bankBalance).toBe(MILLION);
+    expect(cashInHand(ctx.db).amount).toBe(MILLION);
+  });
+
+  it('supports withdrawal to an account and saves the account details in the database', () => {
+    const opened = openAdvance(MILLION);
+    const withdrawn = withdrawFromBankAdvance(
+      {
+        advanceId: opened.id,
+        transactionAt: at('2026-10-10', '16:00'),
+        fromAccountId: kpay,
+        fromAccountNumber: '001-22-3333',
+        fromName: 'Green Mobile',
+        toAccountId: undefined,
+        toAccountNumber: '09-999-8888',
+        toName: 'Daw Nu',
+        amount: 400_000,
+        feeBasisPoints: 0,
+        feeDirection: 'RECEIVE',
+        notes: 'Account transfer',
+      },
+      actor,
+      ctx.db,
+    );
+
+    expect(withdrawn.advance.remaining).toBe(MILLION - 400_000);
+    expect(withdrawn.withdrawals).toHaveLength(1);
+    const w = withdrawn.withdrawals[0];
+    expect(w.toName).toBe('Daw Nu');
+    expect(w.toAccountNumber).toBe('09-999-8888');
+
+    // Verify row in database directly
+    const row = ctx.db
+      .prepare('SELECT toAccountId, toAccountNumber, toName FROM "BankTransaction" WHERE id = ?')
+      .get(w.id) as { toAccountId: string | null; toAccountNumber: string | null; toName: string | null };
+    expect(row.toAccountNumber).toBe('09-999-8888');
+    expect(row.toName).toBe('Daw Nu');
   });
 
   it('refuses to pay out more than is left', () => {

@@ -628,8 +628,30 @@ export const zOpenBankAdvance = z
  * check made against a number read earlier is how two withdrawals both fit.
  */
 export const zWithdrawBankAdvance = z
-  .object({ advanceId: zId, ...bankMovementFields })
-  .refine((v) => Boolean(v.fromAccountId), OWN_ACCOUNT_LEFT);
+  .object({
+    advanceId: zId,
+    transactionAt: z
+      .string()
+      .trim()
+      .regex(LOCAL_DATE_TIME_PATTERN, 'Use the date and time picker'),
+    fromAccountId: zId.optional(),
+    fromAccountNumber: z.string().trim().max(40, 'That is longer than any account number').default('-'),
+    fromName: z.string().trim().max(200).default('Cash in hand'),
+    toAccountId: zId.optional(),
+    toAccountNumber: z.string().trim().max(40, 'That is longer than any account number').default(''),
+    toName: z.string().trim().min(1, 'Enter the name on the account or Cash').max(200).default('Cash'),
+    amount: zMinor.refine((v) => v > 0, 'Amount must be more than zero'),
+    feeBasisPoints: zBasisPoints.default(0),
+    feeDirection: z.enum(BANK_FEE_DIRECTIONS).default('RECEIVE'),
+    notes: zOptionalText,
+    withdrawalMethod: z.enum(['cash', 'account']).optional(),
+  })
+  .refine(
+    (v) =>
+      (v.withdrawalMethod ?? (v.toName.trim().toLowerCase() === 'cash' ? 'cash' : 'account')) === 'cash' ||
+      Boolean(v.fromAccountId),
+    OWN_ACCOUNT_LEFT,
+  );
 
 export const zBankAdvanceListQuery = z.object({
   search: zShortText,
@@ -658,6 +680,16 @@ export const zBankTransactionListQuery = z.object({
 
 export const zSaveCashCount = z.object({
   amount: zMinor,
+  notes: zShortText,
+});
+
+export const zBankAccountBalanceAdjustment = z.object({
+  accountId: zId,
+  balance: zMinor,
+});
+
+export const zSaveBankBalances = z.object({
+  balances: z.array(zBankAccountBalanceAdjustment).min(1, 'At least one account balance required'),
   notes: zShortText,
 });
 
@@ -858,6 +890,10 @@ export type BankAdvanceListQueryInput = z.input<typeof zBankAdvanceListQuery>;
 
 export type SaveCashCountFormValues = z.input<typeof zSaveCashCount>;
 export type SaveCashCountInput = z.output<typeof zSaveCashCount>;
+
+export type BankAccountBalanceAdjustment = z.output<typeof zBankAccountBalanceAdjustment>;
+export type SaveBankBalancesFormValues = z.input<typeof zSaveBankBalances>;
+export type SaveBankBalancesInput = z.output<typeof zSaveBankBalances>;
 
 export type CreateServiceOrderFormValues = z.input<typeof zCreateServiceOrder>;
 export type CreateServiceOrderInput = z.output<typeof zCreateServiceOrder>;

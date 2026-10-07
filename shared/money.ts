@@ -10,7 +10,7 @@
  * Only the display layer converts to a decimal string, and only at the very
  * last step (formatMoney).
  */
-import type { BankFeeDirection } from './domain';
+import type { BankFeeDirection, BankTransactionType } from './domain';
 
 /** Number of decimal places a currency is quoted in. */
 export const CURRENCY_DECIMALS: Record<string, number> = {
@@ -160,7 +160,11 @@ export function amountAfterFee(
   amount: number,
   fee: number,
   direction: BankFeeDirection,
+  type: BankTransactionType = 'TRANSFER',
 ): number {
+  if (type === 'RECEIVE') {
+    return direction === 'RECEIVE' ? subtractMoney(amount, fee) : addMoney(amount, fee);
+  }
   return direction === 'RECEIVE' ? addMoney(amount, fee) : subtractMoney(amount, fee);
 }
 

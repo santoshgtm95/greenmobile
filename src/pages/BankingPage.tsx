@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState } from "react";
 import {
   Alert,
   Box,
@@ -20,39 +20,40 @@ import {
   TextField,
   Tooltip,
   Typography,
-} from '@mui/material';
-import SearchIcon from '@mui/icons-material/Search';
-import AddIcon from '@mui/icons-material/Add';
-import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
-import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
-import CallMadeIcon from '@mui/icons-material/CallMade';
-import CallReceivedIcon from '@mui/icons-material/CallReceived';
-import PaymentsIcon from '@mui/icons-material/Payments';
-import PercentIcon from '@mui/icons-material/Percent';
-import CalculateOutlinedIcon from '@mui/icons-material/CalculateOutlined';
-import EditIcon from '@mui/icons-material/Edit';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '../lib/api';
-import { useAuth } from '../hooks/useAuth';
-import { useMoneyFormatter } from '../hooks/useSettings';
-import { useDebounced } from '../hooks/useDebounced';
-import ExportMenu from '../components/ExportMenu';
-import BankAccountsDialog from '../components/BankAccountsDialog';
-import BankTransactionDialog from '../components/BankTransactionDialog';
-import CashCountDialog from '../components/CashCountDialog';
-import SummaryCard from '../components/SummaryCard';
-import DeleteReasonDialog from '../components/DeleteReasonDialog';
-import BankingTabs from '../components/BankingTabs';
-import AccountSide from '../components/AccountSide';
-import { PosApiError } from '@shared/errors';
+} from "@mui/material";
+import SearchIcon from "@mui/icons-material/Search";
+import AddIcon from "@mui/icons-material/Add";
+import AccountBalanceIcon from "@mui/icons-material/AccountBalance";
+import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
+import CallMadeIcon from "@mui/icons-material/CallMade";
+import CallReceivedIcon from "@mui/icons-material/CallReceived";
+import PaymentsIcon from "@mui/icons-material/Payments";
+import PercentIcon from "@mui/icons-material/Percent";
+import CalculateOutlinedIcon from "@mui/icons-material/CalculateOutlined";
+import EditIcon from "@mui/icons-material/Edit";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "../lib/api";
+import { useAuth } from "../hooks/useAuth";
+import { useMoneyFormatter } from "../hooks/useSettings";
+import { useDebounced } from "../hooks/useDebounced";
+import ExportMenu from "../components/ExportMenu";
+import BankAccountsDialog from "../components/BankAccountsDialog";
+import BankTransactionDialog from "../components/BankTransactionDialog";
+import CashCountDialog from "../components/CashCountDialog";
+import BankBalanceDialog from "../components/BankBalanceDialog";
+import SummaryCard from "../components/SummaryCard";
+import DeleteReasonDialog from "../components/DeleteReasonDialog";
+import BankingTabs from "../components/BankingTabs";
+import AccountSide from "../components/AccountSide";
+import { PosApiError } from "@shared/errors";
 import {
   BANK_ADVANCE_ROLE_LABELS,
   BANK_FEE_DIRECTION_LABELS,
   BANK_TRANSACTION_TYPES,
   BANK_TRANSACTION_TYPE_LABELS,
   type BankTransactionType,
-} from '@shared/domain';
-import { amountAfterFee, formatRate } from '@shared/money';
+} from "@shared/domain";
+import { amountAfterFee, formatRate } from "@shared/money";
 import {
   DATE_PRESETS,
   DATE_PRESET_LABELS,
@@ -60,8 +61,8 @@ import {
   formatBusinessDay,
   formatInstant,
   type DatePreset,
-} from '@shared/datetime';
-import type { BankAccountPosition, BankTransaction } from '@shared/api';
+} from "@shared/datetime";
+import type { BankAccountPosition, BankTransaction } from "@shared/api";
 
 /**
  * Banking — money moved between the shop and its banks and mobile wallets.
@@ -87,25 +88,30 @@ export default function BankingPage() {
   const money = useMoneyFormatter();
   const queryClient = useQueryClient();
 
-  const [search, setSearch] = useState('');
-  const [preset, setPreset] = useState<DatePreset>('THIS_MONTH');
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
-  const [type, setType] = useState('');
-  const [accountId, setAccountId] = useState('');
+  const [search, setSearch] = useState("");
+  const [preset, setPreset] = useState<DatePreset>("THIS_MONTH");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [type, setType] = useState("");
+  const [accountId, setAccountId] = useState("");
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);
 
   const [accountsOpen, setAccountsOpen] = useState(false);
   const [newTransactionOpen, setNewTransactionOpen] = useState(false);
   const [cashOpen, setCashOpen] = useState(false);
+  const [bankBalanceOpen, setBankBalanceOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const debouncedSearch = useDebounced(search, 250);
 
   const range = useMemo(
-    () => resolvePreset(preset, { from: customFrom || undefined, to: customTo || undefined }),
+    () =>
+      resolvePreset(preset, {
+        from: customFrom || undefined,
+        to: customTo || undefined,
+      }),
     [preset, customFrom, customTo],
   );
 
@@ -124,31 +130,32 @@ export default function BankingPage() {
   );
 
   const transactions = useQuery({
-    queryKey: ['bankTransactions', query],
+    queryKey: ["bankTransactions", query],
     queryFn: () => api.banking.listTransactions(query),
   });
 
   const overview = useQuery({
-    queryKey: ['bankingOverview', range],
+    queryKey: ["bankingOverview", range],
     queryFn: () => api.banking.overview(range),
   });
 
   const accounts = useQuery({
-    queryKey: ['bankAccounts', 'active'],
+    queryKey: ["bankAccounts", "active"],
     queryFn: () => api.banking.listAccounts({ includeInactive: false }),
   });
 
   const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: ['bankTransactions'] });
-    void queryClient.invalidateQueries({ queryKey: ['bankingOverview'] });
-    void queryClient.invalidateQueries({ queryKey: ['bankAccounts'] });
+    void queryClient.invalidateQueries({ queryKey: ["bankTransactions"] });
+    void queryClient.invalidateQueries({ queryKey: ["bankingOverview"] });
+    void queryClient.invalidateQueries({ queryKey: ["bankAccounts"] });
   };
 
   // A refusal is shown by DeleteReasonDialog, which is the only caller.
   const remove = useMutation({
-    mutationFn: (input: { id: string; reason: string }) => api.banking.deleteTransaction(input),
+    mutationFn: (input: { id: string; reason: string }) =>
+      api.banking.deleteTransaction(input),
     onSuccess: () => {
-      setToast('The transaction was removed from the balances.');
+      setToast("The transaction was removed from the balances.");
       refresh();
     },
   });
@@ -170,14 +177,21 @@ export default function BankingPage() {
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+      <Stack
+        direction="row"
+        spacing={2}
+        sx={{ alignItems: "center", flexWrap: "wrap" }}
+      >
         <Typography variant="h5" sx={{ flexGrow: 1 }}>
           Banking
         </Typography>
-        <ExportMenu target={{ dataset: 'BANK_TRANSACTION_LIST', query }} />
-        {can('banking.manage') && (
+        <ExportMenu target={{ dataset: "BANK_TRANSACTION_LIST", query }} />
+        {can("banking.manage") && (
           <>
-            <Button startIcon={<AccountBalanceIcon />} onClick={() => setAccountsOpen(true)}>
+            <Button
+              startIcon={<AccountBalanceIcon />}
+              onClick={() => setAccountsOpen(true)}
+            >
               Banks &amp; Payments
             </Button>
             <Button
@@ -202,16 +216,16 @@ export default function BankingPage() {
         <Alert severity="error">
           {transactions.error instanceof PosApiError
             ? transactions.error.message
-            : 'Unable to load bank transactions.'}
+            : "Unable to load bank transactions."}
         </Alert>
       )}
 
       {!overview.isLoading && positions.length === 0 && (
         <Alert severity="info" icon={<AccountBalanceIcon />}>
           No banks or mobile payments are registered yet.
-          {can('banking.manage')
+          {can("banking.manage")
             ? ' Use Banks & Payments to add the first one — a name such as "Kanbawza" and a short key such as "Kpay".'
-            : ' Ask an administrator to add them.'}
+            : " Ask an administrator to add them."}
         </Alert>
       )}
 
@@ -226,24 +240,24 @@ export default function BankingPage() {
       */}
       <Box
         sx={{
-          display: 'grid',
+          display: "grid",
           gap: 2,
           gridTemplateColumns: {
-            xs: '1fr',
-            sm: 'repeat(2, 1fr)',
-            lg: 'repeat(4, 1fr)',
+            xs: "1fr",
+            sm: "repeat(2, 1fr)",
+            lg: "repeat(4, 1fr)",
           },
         }}
       >
         <SummaryCard
-          label="Transferred out"
+          label="Transferred out (Cash In)"
           value={signed(overview.data?.totals.transferred ?? 0)}
           caption={`${formatBusinessDay(range.from)} to ${formatBusinessDay(range.to)}`}
           icon={<CallMadeIcon fontSize="small" />}
           tone="error"
         />
         <SummaryCard
-          label="Received in"
+          label="Received in (Cash Out)"
           value={signed(overview.data?.totals.received ?? 0)}
           caption={`${overview.data?.totals.count ?? 0} transaction(s) in this period`}
           icon={<CallReceivedIcon fontSize="small" />}
@@ -268,30 +282,38 @@ export default function BankingPage() {
           icon={<PercentIcon fontSize="small" />}
           tone="error"
         />
-        <SummaryCard
-          label="Total actual"
-          value={signed(overview.data?.totals.netAfterFees ?? 0)}
-          caption="Received less transferred, fees included"
-          icon={<CalculateOutlinedIcon fontSize="small" />}
-        />
+
         <SummaryCard
           label="In the banks"
           value={signed(overview.data?.bankBalance ?? 0)}
           caption="Received less transferred, all time"
           icon={<AccountBalanceIcon fontSize="small" />}
+          action={
+            can("banking.manage") && positions.length > 0 ? (
+              <Tooltip title="Update bank balances">
+                <IconButton size="small" onClick={() => setBankBalanceOpen(true)}>
+                  <EditIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            ) : undefined
+          }
         />
         <SummaryCard
           label="Cash in hand"
-          value={cash?.recorded ? signed(cash.amount) : 'Not recorded'}
+          value={cash?.recorded ? signed(cash.amount) : "Not recorded"}
           caption={
             cash?.recorded
-              ? `Counted ${formatInstant(cash.countedAt)}${cash.countedByName ? ` by ${cash.countedByName}` : ''}`
-              : 'A figure you count and save'
+              ? `Counted ${formatInstant(cash.countedAt)}${cash.countedByName ? ` by ${cash.countedByName}` : ""}`
+              : "A figure you count and save"
           }
           icon={<PaymentsIcon fontSize="small" />}
           action={
-            can('banking.manage') && cash ? (
-              <Tooltip title={cash.recorded ? 'Update the counted figure' : 'Record a count'}>
+            can("banking.manage") && cash ? (
+              <Tooltip
+                title={
+                  cash.recorded ? "Update the counted figure" : "Record a count"
+                }
+              >
                 <IconButton size="small" onClick={() => setCashOpen(true)}>
                   <EditIcon fontSize="small" />
                 </IconButton>
@@ -303,7 +325,7 @@ export default function BankingPage() {
 
       {/* Per-account position. */}
       {positions.length > 0 && (
-        <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
+        <Paper sx={{ border: "1px solid", borderColor: "divider" }}>
           <TableContainer>
             <Table size="small">
               <TableHead>
@@ -324,7 +346,11 @@ export default function BankingPage() {
                     format={signed}
                     selected={accountId === account.accountId}
                     onSelect={() => {
-                      setAccountId(accountId === account.accountId ? '' : account.accountId);
+                      setAccountId(
+                        accountId === account.accountId
+                          ? ""
+                          : account.accountId,
+                      );
                       setPage(0);
                     }}
                   />
@@ -332,18 +358,29 @@ export default function BankingPage() {
               </TableBody>
             </Table>
           </TableContainer>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 2, py: 1 }}>
-            Click a row to filter the history below by that account. A <strong>Transfer</strong>
-            counts against the account the money left and a <strong>Receive</strong> against the
-            account it arrived in, so each transaction is counted once. “Remaining” ignores the date
-            filter on purpose — it is what is left in the account, not what moved this period.
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: "block", px: 2, py: 1 }}
+          >
+            Click a row to filter the history below by that account. A{" "}
+            <strong>Transfer</strong>
+            counts against the account the money left and a{" "}
+            <strong>Receive</strong> against the account it arrived in, so each
+            transaction is counted once. “Remaining” ignores the date filter on
+            purpose — it is what is left in the account, not what moved this
+            period.
           </Typography>
         </Paper>
       )}
 
       {/* Filters. */}
-      <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
-        <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2} sx={{ alignItems: 'center' }}>
+      <Paper sx={{ p: 2, border: "1px solid", borderColor: "divider" }}>
+        <Stack
+          direction={{ xs: "column", lg: "row" }}
+          spacing={2}
+          sx={{ alignItems: "center" }}
+        >
           <TextField
             // Kept short enough not to be clipped at this width; the fuller
             // description is in the header of each column it searches.
@@ -381,7 +418,7 @@ export default function BankingPage() {
             ))}
           </TextField>
 
-          {preset === 'CUSTOM' && (
+          {preset === "CUSTOM" && (
             <>
               <TextField
                 label="From"
@@ -441,7 +478,7 @@ export default function BankingPage() {
       </Paper>
 
       {/* History. */}
-      <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
+      <Paper sx={{ border: "1px solid", borderColor: "divider" }}>
         <TableContainer>
           {/*
             Twelve columns, so the padding is tightened rather than a column
@@ -450,10 +487,10 @@ export default function BankingPage() {
             column — which put the delete button behind a horizontal scroll for
             the one role allowed to use it. Cheaper to buy the width back here.
           */}
-          <Table size="small" stickyHeader sx={{ '& th, & td': { px: 1.25 } }}>
+          <Table size="small" stickyHeader sx={{ "& th, & td": { px: 1.25 } }}>
             <TableHead>
               <TableRow>
-                <TableCell sx={{ whiteSpace: 'nowrap' }}>Number</TableCell>
+                <TableCell sx={{ whiteSpace: "nowrap" }}>Number</TableCell>
                 <TableCell>Date and time</TableCell>
                 <TableCell>Type</TableCell>
                 <TableCell>From</TableCell>
@@ -465,13 +502,19 @@ export default function BankingPage() {
                 <TableCell align="right">Actual</TableCell>
                 <TableCell>Notes</TableCell>
                 <TableCell>Recorded by</TableCell>
-                {can('banking.delete') && <TableCell align="right">Actions</TableCell>}
+                {can("banking.delete") && (
+                  <TableCell align="right">Actions</TableCell>
+                )}
               </TableRow>
             </TableHead>
             <TableBody>
               {transactions.isLoading && (
                 <TableRow>
-                  <TableCell colSpan={12} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                  <TableCell
+                    colSpan={12}
+                    align="center"
+                    sx={{ py: 4, color: "text.secondary" }}
+                  >
                     Loading…
                   </TableCell>
                 </TableRow>
@@ -479,7 +522,11 @@ export default function BankingPage() {
 
               {!transactions.isLoading && rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={12} align="center" sx={{ py: 5, color: 'text.secondary' }}>
+                  <TableCell
+                    colSpan={12}
+                    align="center"
+                    sx={{ py: 5, color: "text.secondary" }}
+                  >
                     No transactions in this period.
                   </TableCell>
                 </TableRow>
@@ -488,19 +535,25 @@ export default function BankingPage() {
               {rows.map((row) => (
                 <TableRow key={row.id} hover>
                   {/* One token, never broken across three lines. */}
-                  <TableCell sx={{ fontFamily: 'monospace', whiteSpace: 'nowrap', fontSize: 12.5 }}>
+                  <TableCell
+                    sx={{
+                      fontFamily: "monospace",
+                      whiteSpace: "nowrap",
+                      fontSize: 12.5,
+                    }}
+                  >
                     {row.transactionNumber}
                   </TableCell>
-                  <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                  <TableCell sx={{ whiteSpace: "nowrap" }}>
                     {formatInstant(row.transactionDate)}
                   </TableCell>
                   <TableCell>
                     <Chip
                       size="small"
                       variant="outlined"
-                      color={row.type === 'RECEIVE' ? 'success' : 'error'}
+                      color={row.type === "RECEIVE" ? "success" : "error"}
                       icon={
-                        row.type === 'RECEIVE' ? (
+                        row.type === "RECEIVE" ? (
                           <CallReceivedIcon sx={{ fontSize: 14 }} />
                         ) : (
                           <CallMadeIcon sx={{ fontSize: 14 }} />
@@ -522,7 +575,12 @@ export default function BankingPage() {
                       <Typography
                         variant="caption"
                         color="warning.main"
-                        sx={{ display: 'block', mt: 0.5, fontWeight: 600, lineHeight: 1.3 }}
+                        sx={{
+                          display: "block",
+                          mt: 0.5,
+                          fontWeight: 600,
+                          lineHeight: 1.3,
+                        }}
                       >
                         {BANK_ADVANCE_ROLE_LABELS[row.advanceRole]}
                       </Typography>
@@ -546,19 +604,28 @@ export default function BankingPage() {
                   </TableCell>
                   <TableCell
                     align="right"
-                    sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, whiteSpace: 'nowrap' }}
+                    sx={{
+                      fontVariantNumeric: "tabular-nums",
+                      fontWeight: 600,
+                      whiteSpace: "nowrap",
+                    }}
                   >
                     {money(row.amount)}
                   </TableCell>
                   <TableCell
                     align="right"
                     sx={{
-                      fontVariantNumeric: 'tabular-nums',
-                      whiteSpace: 'nowrap',
-                      color: row.feeBasisPoints === 0 ? 'text.disabled' : 'text.secondary',
+                      fontVariantNumeric: "tabular-nums",
+                      whiteSpace: "nowrap",
+                      color:
+                        row.feeBasisPoints === 0
+                          ? "text.disabled"
+                          : "text.secondary",
                     }}
                   >
-                    {row.feeBasisPoints === 0 ? '—' : formatRate(row.feeBasisPoints)}
+                    {row.feeBasisPoints === 0
+                      ? "—"
+                      : formatRate(row.feeBasisPoints)}
                   </TableCell>
                   {/*
                     The fee carries its direction in the colour and the sign, the
@@ -570,24 +637,24 @@ export default function BankingPage() {
                   <TableCell
                     align="right"
                     sx={{
-                      fontVariantNumeric: 'tabular-nums',
-                      whiteSpace: 'nowrap',
+                      fontVariantNumeric: "tabular-nums",
+                      whiteSpace: "nowrap",
                       color:
                         row.feeAmount === 0
-                          ? 'text.disabled'
-                          : row.feeDirection === 'RECEIVE'
-                            ? 'success.main'
-                            : 'error.main',
+                          ? "text.disabled"
+                          : row.feeDirection === "RECEIVE"
+                            ? "success.main"
+                            : "error.main",
                     }}
                   >
                     {row.feeAmount === 0 ? (
-                      '—'
+                      "—"
                     ) : (
                       <Tooltip
                         title={`Fee ${BANK_FEE_DIRECTION_LABELS[row.feeDirection].toLowerCase()}`}
                       >
                         <span>
-                          {row.feeDirection === 'PAY'
+                          {row.feeDirection === "PAY"
                             ? signed(-row.feeAmount)
                             : signed(row.feeAmount)}
                         </span>
@@ -603,13 +670,21 @@ export default function BankingPage() {
                   <TableCell
                     align="right"
                     sx={{
-                      fontVariantNumeric: 'tabular-nums',
-                      whiteSpace: 'nowrap',
+                      fontVariantNumeric: "tabular-nums",
+                      whiteSpace: "nowrap",
                       fontWeight: row.feeAmount === 0 ? 400 : 600,
-                      color: row.feeAmount === 0 ? 'text.secondary' : 'text.primary',
+                      color:
+                        row.feeAmount === 0 ? "text.secondary" : "text.primary",
                     }}
                   >
-                    {money(amountAfterFee(row.amount, row.feeAmount, row.feeDirection))}
+                    {money(
+                      amountAfterFee(
+                        row.amount,
+                        row.feeAmount,
+                        row.feeDirection,
+                        row.type,
+                      ),
+                    )}
                   </TableCell>
                   {/*
                     Notes wrap rather than truncate, and the column is capped so a
@@ -617,16 +692,18 @@ export default function BankingPage() {
                   */}
                   <TableCell
                     sx={{
-                      color: row.notes ? 'text.primary' : 'text.disabled',
+                      color: row.notes ? "text.primary" : "text.disabled",
                       maxWidth: 260,
-                      whiteSpace: 'pre-line',
+                      whiteSpace: "pre-line",
                       fontSize: 13,
                     }}
                   >
-                    {row.notes ?? '—'}
+                    {row.notes ?? "—"}
                   </TableCell>
-                  <TableCell sx={{ color: 'text.secondary' }}>{row.createdByName ?? '—'}</TableCell>
-                  {can('banking.delete') && (
+                  <TableCell sx={{ color: "text.secondary" }}>
+                    {row.createdByName ?? "—"}
+                  </TableCell>
+                  {can("banking.delete") && (
                     <TableCell align="right">
                       <Tooltip title="Delete (administrators only)">
                         <IconButton
@@ -647,10 +724,15 @@ export default function BankingPage() {
 
         <Stack
           direction="row"
-          sx={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', px: 2 }}
+          sx={{
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            px: 2,
+          }}
         >
           <Typography variant="body2" color="text.secondary">
-            Listed: {money(transactions.data?.transferTotal ?? 0)} transferred ·{' '}
+            Listed: {money(transactions.data?.transferTotal ?? 0)} transferred ·{" "}
             {money(transactions.data?.receiveTotal ?? 0)} received
           </Typography>
           <TablePagination
@@ -669,7 +751,10 @@ export default function BankingPage() {
       </Paper>
 
       {accountsOpen && (
-        <BankAccountsDialog onClose={() => setAccountsOpen(false)} onChanged={refresh} />
+        <BankAccountsDialog
+          onClose={() => setAccountsOpen(false)}
+          onChanged={refresh}
+        />
       )}
 
       {newTransactionOpen && (
@@ -678,7 +763,7 @@ export default function BankingPage() {
           onClose={() => setNewTransactionOpen(false)}
           onSaved={() => {
             setNewTransactionOpen(false);
-            setToast('Transaction recorded.');
+            setToast("Transaction recorded.");
             refresh();
           }}
         />
@@ -690,7 +775,19 @@ export default function BankingPage() {
           onClose={() => setCashOpen(false)}
           onSaved={() => {
             setCashOpen(false);
-            setToast('Cash in hand updated.');
+            setToast("Cash in hand updated.");
+            refresh();
+          }}
+        />
+      )}
+
+      {bankBalanceOpen && positions.length > 0 && (
+        <BankBalanceDialog
+          accounts={positions}
+          onClose={() => setBankBalanceOpen(false)}
+          onSaved={() => {
+            setBankBalanceOpen(false);
+            setToast("Bank balances updated.");
             refresh();
           }}
         />
@@ -700,7 +797,9 @@ export default function BankingPage() {
         <DeleteReasonDialog
           title={`Delete ${deleting.transactionNumber}?`}
           message="It stays in the records, marked deleted, but stops counting towards the balances."
-          onConfirm={(reason) => remove.mutateAsync({ id: deleting.id, reason })}
+          onConfirm={(reason) =>
+            remove.mutateAsync({ id: deleting.id, reason })
+          }
           onClose={() => setDeleting(null)}
         />
       )}
@@ -709,7 +808,7 @@ export default function BankingPage() {
         open={Boolean(toast)}
         autoHideDuration={4000}
         onClose={() => setToast(null)}
-        message={toast ?? ''}
+        message={toast ?? ""}
       />
     </Stack>
   );
@@ -733,10 +832,10 @@ function AccountRow({
       hover
       selected={selected}
       onClick={onSelect}
-      sx={{ cursor: 'pointer', opacity: account.isActive ? 1 : 0.65 }}
+      sx={{ cursor: "pointer", opacity: account.isActive ? 1 : 0.65 }}
     >
       <TableCell>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
           <Typography variant="body2" sx={{ fontWeight: 600 }}>
             {account.name}
           </Typography>
@@ -744,20 +843,34 @@ function AccountRow({
         </Stack>
       </TableCell>
       <TableCell>
-        <Chip size="small" label={account.key} sx={{ fontFamily: 'monospace', fontWeight: 600 }} />
+        <Chip
+          size="small"
+          label={account.key}
+          sx={{ fontFamily: "monospace", fontWeight: 600 }}
+        />
       </TableCell>
-      <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', color: 'success.main' }}>
+      <TableCell
+        align="right"
+        sx={{ fontVariantNumeric: "tabular-nums", color: "success.main" }}
+      >
         {format(account.received)}
       </TableCell>
-      <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', color: 'error.main' }}>
+      <TableCell
+        align="right"
+        sx={{ fontVariantNumeric: "tabular-nums", color: "error.main" }}
+      >
         {format(account.transferred)}
       </TableCell>
-      <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+      <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>
         {format(account.net)}
       </TableCell>
       <TableCell
         align="right"
-        sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 700, whiteSpace: 'nowrap' }}
+        sx={{
+          fontVariantNumeric: "tabular-nums",
+          fontWeight: 700,
+          whiteSpace: "nowrap",
+        }}
       >
         {format(account.balance)}
       </TableCell>

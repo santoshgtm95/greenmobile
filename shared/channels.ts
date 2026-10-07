@@ -97,6 +97,7 @@ export const CHANNELS = {
     openAdvance: 'banking:openAdvance',
     withdrawAdvance: 'banking:withdrawAdvance',
     saveCashCount: 'banking:saveCashCount',
+    saveBankBalances: 'banking:saveBankBalances',
   },
   backup: {
     overview: 'backup:overview',

@@ -124,6 +124,7 @@ export default function BankTransactionDialog({
     reverse?.toAccountNumber ?? "",
   );
   const [fromName, setFromName] = useState(reverse?.toName ?? "");
+  const [toMethod, setToMethod] = useState<"cash" | "account">("cash");
   const [toAccountId, setToAccountId] = useState(
     selectable(reverse?.fromAccountId ?? null, accounts),
   );
@@ -144,6 +145,7 @@ export default function BankTransactionDialog({
   const currency = settings?.currency ?? "THB";
 
   const isTransfer = type === "TRANSFER";
+  const isCashWithdrawal = mode.kind === "withdraw" && toMethod === "cash";
 
   /**
    * The typed percentage as basis points: "0.5" → 50.
@@ -167,8 +169,7 @@ export default function BankTransactionDialog({
   const feeAmount =
     feeBasisPoints === null ? 0 : rateOf(amount, feeBasisPoints);
 
-  // 1,000,000 with a 5,000 fee: 1,005,000 received, 995,000 paid.
-  const actualAmount = amountAfterFee(amount, feeAmount, feeDirection);
+  const actualAmount = amountAfterFee(amount, feeAmount, feeDirection, type);
 
   /*
     What a withdrawal may take. Checked here so the user sees it while typing,
@@ -187,17 +188,18 @@ export default function BankTransactionDialog({
     mutationFn: (): Promise<unknown> => {
       const movement = {
         transactionAt,
-        fromAccountId: fromAccountId || undefined,
-        fromAccountNumber: fromAccountNumber.trim(),
-        fromName: fromName.trim(),
-        toAccountId: toAccountId || undefined,
-        toAccountNumber: toAccountNumber.trim(),
-        toName: toName.trim(),
+        fromAccountId: isCashWithdrawal ? undefined : (fromAccountId || undefined),
+        fromAccountNumber: isCashWithdrawal ? "-" : fromAccountNumber.trim(),
+        fromName: isCashWithdrawal ? "Cash in hand" : fromName.trim(),
+        toAccountId: isCashWithdrawal ? undefined : (toAccountId || undefined),
+        toAccountNumber: isCashWithdrawal ? "" : toAccountNumber.trim(),
+        toName: isCashWithdrawal ? "Cash" : toName.trim(),
         amount,
         // The rate, not the money. The main process works the fee out itself.
         feeBasisPoints: feeBasisPoints ?? 0,
         feeDirection,
         notes: notes.trim() || undefined,
+        withdrawalMethod: isCashWithdrawal ? ("cash" as const) : ("account" as const),
       };
       // No type is sent for an advance or a withdrawal: each channel fixes its
       // own, so the renderer cannot record a "withdrawal" that is a receipt.
@@ -239,7 +241,11 @@ export default function BankTransactionDialog({
     )),
   ];
 
-  const ownSideMissing = isTransfer ? !fromAccountId : !toAccountId;
+  const ownSideMissing = isCashWithdrawal
+    ? false
+    : isTransfer
+      ? !fromAccountId
+      : !toAccountId;
 
   return (
     // Wider than the other dialogs: each side of the movement carries three fields.
@@ -350,6 +356,7 @@ export default function BankTransactionDialog({
                 select
                 label="Bank / wallet"
                 required={isTransfer}
+                disabled={mode.kind === "withdraw"}
                 value={fromAccountId}
                 onChange={(e) => {
                   setFromAccountId(e.target.value);
@@ -367,6 +374,7 @@ export default function BankTransactionDialog({
               <TextField
                 label="Account number"
                 required
+                disabled={mode.kind === "withdraw"}
                 placeholder="09 7777 8888"
                 value={fromAccountNumber}
                 onChange={(e) => setFromAccountNumber(e.target.value)}
@@ -377,6 +385,7 @@ export default function BankTransactionDialog({
               <TextField
                 label="Account name"
                 required
+                disabled={mode.kind === "withdraw"}
                 placeholder="Name on the account"
                 value={fromName}
                 onChange={(e) => setFromName(e.target.value)}
@@ -388,49 +397,86 @@ export default function BankTransactionDialog({
           </Stack>
 
           <Stack spacing={1}>
-            <Typography variant="overline" color="text.secondary">
-              To
-            </Typography>
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-              <TextField
-                select
-                label="Bank / wallet"
-                required={!isTransfer}
-                value={toAccountId}
-                onChange={(e) => {
-                  setToAccountId(e.target.value);
-                  setFieldErrors({});
-                }}
-                error={Boolean(fieldErrors.toAccountId)}
-                helperText={
-                  fieldErrors.toAccountId ??
-                  (isTransfer ? " " : "Where the money arrived")
-                }
-                sx={{ flex: "1 1 0", minWidth: 0 }}
-              >
-                {accountOptions()}
-              </TextField>
-              <TextField
-                label="Account number"
-                required
-                placeholder="09 7777 8888"
-                value={toAccountNumber}
-                onChange={(e) => setToAccountNumber(e.target.value)}
-                error={Boolean(fieldErrors.toAccountNumber)}
-                helperText={fieldErrors.toAccountNumber ?? " "}
-                sx={{ flex: "1 1 0", minWidth: 0 }}
-              />
-              <TextField
-                label="Account name"
-                required
-                placeholder="Name on the account"
-                value={toName}
-                onChange={(e) => setToName(e.target.value)}
-                error={Boolean(fieldErrors.toName)}
-                helperText={fieldErrors.toName ?? " "}
-                sx={{ flex: "1 1 0", minWidth: 0 }}
-              />
+            <Stack
+              direction="row"
+              spacing={2}
+              sx={{
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+              }}
+            >
+              <Typography variant="overline" color="text.secondary">
+                To
+              </Typography>
+              {mode.kind === "withdraw" && (
+                <RadioGroup
+                  row
+                  value={toMethod}
+                  onChange={(e) => {
+                    setToMethod(e.target.value as "cash" | "account");
+                    setFieldErrors({});
+                  }}
+                >
+                  <FormControlLabel
+                    value="cash"
+                    control={<Radio size="small" />}
+                    label={<Typography variant="body2">Cash</Typography>}
+                  />
+                  <FormControlLabel
+                    value="account"
+                    control={<Radio size="small" />}
+                    label={<Typography variant="body2">Account</Typography>}
+                  />
+                </RadioGroup>
+              )}
             </Stack>
+            {isCashWithdrawal ? (
+              <Alert severity="info" variant="outlined" sx={{ py: 0.5 }}>
+                Paying cash to the customer. No bank or wallet account required.
+              </Alert>
+            ) : (
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <TextField
+                  select
+                  label="Bank / wallet"
+                  required={!isTransfer}
+                  value={toAccountId}
+                  onChange={(e) => {
+                    setToAccountId(e.target.value);
+                    setFieldErrors({});
+                  }}
+                  error={Boolean(fieldErrors.toAccountId)}
+                  helperText={
+                    fieldErrors.toAccountId ??
+                    (isTransfer ? " " : "Where the money arrived")
+                  }
+                  sx={{ flex: "1 1 0", minWidth: 0 }}
+                >
+                  {accountOptions()}
+                </TextField>
+                <TextField
+                  label="Account number"
+                  required
+                  placeholder="09 7777 8888"
+                  value={toAccountNumber}
+                  onChange={(e) => setToAccountNumber(e.target.value)}
+                  error={Boolean(fieldErrors.toAccountNumber)}
+                  helperText={fieldErrors.toAccountNumber ?? " "}
+                  sx={{ flex: "1 1 0", minWidth: 0 }}
+                />
+                <TextField
+                  label="Account name"
+                  required
+                  placeholder="Name on the account"
+                  value={toName}
+                  onChange={(e) => setToName(e.target.value)}
+                  error={Boolean(fieldErrors.toName)}
+                  helperText={fieldErrors.toName ?? " "}
+                  sx={{ flex: "1 1 0", minWidth: 0 }}
+                />
+              </Stack>
+            )}
           </Stack>
 
           {/*
@@ -563,9 +609,13 @@ export default function BankTransactionDialog({
               {feeAmount > 0 && (
                 <Typography variant="caption" color="text.secondary">
                   {formatMoney(amount, currency)}{" "}
-                  {feeDirection === "RECEIVE" ? "plus" : "less"} the{" "}
-                  {formatMoney(feeAmount, currency)} fee
-                  {feeDirection === "RECEIVE" ? " you received" : " you paid"}
+                  {(type === "RECEIVE"
+                    ? feeDirection === "PAY"
+                    : feeDirection === "RECEIVE")
+                    ? "plus"
+                    : "less"}{" "}
+                  the {formatMoney(feeAmount, currency)} fee
+                  {feeDirection === "RECEIVE" ? " received" : " paid"}
                 </Typography>
               )}
             </Stack>
@@ -616,10 +666,8 @@ export default function BankTransactionDialog({
             feeBasisPoints === null ||
             ownSideMissing ||
             !transactionAt ||
-            !fromAccountNumber.trim() ||
-            !fromName.trim() ||
-            !toAccountNumber.trim() ||
-            !toName.trim()
+            (!isCashWithdrawal && (!fromAccountNumber.trim() || !fromName.trim())) ||
+            (!isCashWithdrawal && (!toAccountNumber.trim() || !toName.trim()))
           }
         >
           {save.isPending ? "Saving…" : SAVE_LABELS[mode.kind]}

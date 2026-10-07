@@ -118,19 +118,28 @@ describe('the amount after a fee', () => {
   const MILLION = 100_000_000;
   const FIVE_THOUSAND = 500_000;
 
-  it('adds a fee that was received', () => {
-    expect(amountAfterFee(MILLION, FIVE_THOUSAND, 'RECEIVE')).toBe(100_500_000);
-    expect(formatMoney(amountAfterFee(MILLION, FIVE_THOUSAND, 'RECEIVE'))).toBe('1,005,000.00');
+  it('handles Account Transfer (Cash In): adds fee if received, subtracts fee if paid', () => {
+    expect(amountAfterFee(MILLION, FIVE_THOUSAND, 'RECEIVE', 'TRANSFER')).toBe(100_500_000);
+    expect(formatMoney(amountAfterFee(MILLION, FIVE_THOUSAND, 'RECEIVE', 'TRANSFER'))).toBe('1,005,000.00');
+    expect(amountAfterFee(MILLION, FIVE_THOUSAND, 'PAY', 'TRANSFER')).toBe(99_500_000);
+    expect(formatMoney(amountAfterFee(MILLION, FIVE_THOUSAND, 'PAY', 'TRANSFER'))).toBe('995,000.00');
   });
 
-  it('subtracts a fee that was paid', () => {
-    expect(amountAfterFee(MILLION, FIVE_THOUSAND, 'PAY')).toBe(99_500_000);
-    expect(formatMoney(amountAfterFee(MILLION, FIVE_THOUSAND, 'PAY'))).toBe('995,000.00');
+  it('handles Account Receive (Cash Out): subtracts fee if received, adds fee if paid', () => {
+    const FIVE_HUNDRED_THOUSAND = 50_000_000;
+    const TWO_THOUSAND_FIVE_HUNDRED = 250_000;
+    expect(amountAfterFee(FIVE_HUNDRED_THOUSAND, TWO_THOUSAND_FIVE_HUNDRED, 'RECEIVE', 'RECEIVE')).toBe(49_750_000);
+    expect(formatMoney(amountAfterFee(FIVE_HUNDRED_THOUSAND, TWO_THOUSAND_FIVE_HUNDRED, 'RECEIVE', 'RECEIVE'))).toBe('497,500.00');
+
+    expect(amountAfterFee(FIVE_HUNDRED_THOUSAND, TWO_THOUSAND_FIVE_HUNDRED, 'PAY', 'RECEIVE')).toBe(50_250_000);
+    expect(formatMoney(amountAfterFee(FIVE_HUNDRED_THOUSAND, TWO_THOUSAND_FIVE_HUNDRED, 'PAY', 'RECEIVE'))).toBe('502,500.00');
   });
 
   it('leaves the amount alone when there is no fee', () => {
-    expect(amountAfterFee(MILLION, 0, 'RECEIVE')).toBe(MILLION);
-    expect(amountAfterFee(MILLION, 0, 'PAY')).toBe(MILLION);
+    expect(amountAfterFee(MILLION, 0, 'RECEIVE', 'TRANSFER')).toBe(MILLION);
+    expect(amountAfterFee(MILLION, 0, 'PAY', 'TRANSFER')).toBe(MILLION);
+    expect(amountAfterFee(MILLION, 0, 'RECEIVE', 'RECEIVE')).toBe(MILLION);
+    expect(amountAfterFee(MILLION, 0, 'PAY', 'RECEIVE')).toBe(MILLION);
   });
 
   it('cannot go below zero, because a fee is capped at the whole amount', () => {

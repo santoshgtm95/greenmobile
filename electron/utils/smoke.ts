@@ -977,8 +977,8 @@ const SCRIPT = `
   add('the per-bank column adds up to the bank total',
       columnsAddUp === afterInternal?.bankBalance, String(columnsAddUp));
 
-  // Cash in hand is recorded, not calculated — and "never counted" is not zero.
-  add('cash in hand starts unrecorded', afterInternal?.cashInHand?.recorded === false);
+  // Cash in hand reflects movements from transactions
+  add('cash in hand updated by transactions', afterInternal?.cashInHand?.recorded === true && afterInternal?.cashInHand?.amount === -950000);
   const counted = ok(await b.banking.saveCashCount({ amount: 275000, notes: 'Smoke count' }));
   add('cash in hand saved', counted?.amount === 275000 && counted?.recorded === true,
       String(counted?.amount));

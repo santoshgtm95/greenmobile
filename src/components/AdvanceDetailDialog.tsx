@@ -217,7 +217,7 @@ function StepRow({
       <TableCell>
         <Typography variant="body2">{label}</Typography>
         <Typography variant="caption" color="text.secondary">
-          {movement.toName ?? '—'} · {movement.toAccountNumber ?? ''}
+          {[movement.toName ?? '—', movement.toAccountNumber].filter(Boolean).join(' · ')}
         </Typography>
       </TableCell>
       <TableCell

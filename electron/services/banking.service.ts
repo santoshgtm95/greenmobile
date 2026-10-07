@@ -37,6 +37,7 @@ import { newId } from '../utils/id';
 import {
   nowInstant,
   businessDay,
+  nowLocalDateTime,
   localDateTimeToInstant,
   localDateTimeToDay,
 } from '../../shared/datetime';
@@ -53,7 +54,7 @@ import {
   type BankFeeDirection,
   type BankTransactionType,
 } from '../../shared/domain';
-import { formatMoney, rateOf } from '../../shared/money';
+import { amountAfterFee, formatMoney, rateOf } from '../../shared/money';
 import type {
   BankAdvanceListQuery,
   BankTransactionListQuery,
@@ -63,6 +64,8 @@ import type {
   DayRangeInput,
   SaveBankAccountInput,
   SaveCashCountInput,
+  SaveBankBalancesInput,
+  BankAccountBalanceAdjustment,
 } from '../../shared/validation';
 
 // -----------------------------------------------------------------------------
@@ -429,6 +432,29 @@ function usableAccount(id: string, db: Db): { id: string; name: string; key: str
   return { id: row.id, name: row.name, key: row.key };
 }
 
+/**
+ * Automatically adjusts cash in hand when an ordinary transaction moves cash in or out of the shop.
+ *
+ * An Account Transfer (Cash In) receives cash from the customer, adding actual amount to cash in hand.
+ * A Receive (Cash Out) pays cash to the customer, deducting actual amount from cash in hand.
+ */
+function adjustCashInHand(
+  delta: number,
+  note: string,
+  actorId: string,
+  db: Db,
+): void {
+  const current = cashInHand(db);
+  const newAmount = current.amount + delta;
+  const countId = newId();
+  const now = nowInstant();
+
+  db.prepare(
+    `INSERT INTO "CashCount" (id, amount, countedAt, countedDay, notes, createdBy, createdAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(countId, newAmount, now, businessDay(), note, actorId, now);
+}
+
 export function createBankTransaction(
   input: CreateBankTransactionInput,
   actor: SessionUser,
@@ -437,7 +463,16 @@ export function createBankTransaction(
   // An ordinary movement is never part of an advance. The link is set only by
   // openBankAdvance and withdrawFromBankAdvance, which is why it is a parameter
   // of the internal writer and not a field the renderer could send.
-  return transaction(() => insertMovement(input, null, actor, db), db);
+  return transaction(() => {
+    const row = insertMovement(input, null, actor, db);
+    const actual = amountAfterFee(row.amount, row.feeAmount, row.feeDirection, row.type);
+    if (row.type === 'TRANSFER') {
+      adjustCashInHand(actual, `Account Transfer (Cash In) · ${row.transactionNumber}`, actor.id, db);
+    } else if (row.type === 'RECEIVE') {
+      adjustCashInHand(-actual, `Receive (Cash Out) · ${row.transactionNumber}`, actor.id, db);
+    }
+    return row;
+  }, db);
 }
 
 /** How a movement belongs to a customer advance, when it does. */
@@ -467,7 +502,7 @@ function insertMovement(
     // Checked here as well as at the IPC boundary, because the balances in
     // bankingOverview are only arithmetic that adds up while this holds — and
     // this function is also reachable directly from tests and future callers.
-    if (input.type === 'TRANSFER' && !input.fromAccountId) {
+    if (input.type === 'TRANSFER' && !input.fromAccountId && advance?.role !== 'WITHDRAWAL') {
       throw errors.validation('Choose which of your accounts the money left.', {
         fromAccountId: 'Required for a transfer',
       });
@@ -515,8 +550,8 @@ function insertMovement(
       input.fromAccountNumber,
       input.fromName,
       input.toAccountId ?? null,
-      input.toAccountNumber,
-      input.toName,
+      input.toAccountNumber ? input.toAccountNumber.trim() : null,
+      input.toName ? input.toName.trim() : null,
       input.amount,
       input.feeBasisPoints,
       feeAmount,
@@ -532,9 +567,9 @@ function insertMovement(
     // Names the bank when it is one of ours, and always the number that was typed.
     const side = (
       bank: { name: string; key: string } | null,
-      accountNumber: string,
-      holder: string,
-    ) => `${bank ? `${bank.name} (${bank.key}) ` : ''}${accountNumber} ${holder}`.trim();
+      accountNumber: string | null | undefined,
+      holder: string | null | undefined,
+    ) => `${bank ? `${bank.name} (${bank.key}) ` : ''}${accountNumber ? `${accountNumber} ` : ''}${holder ?? ''}`.trim();
     const route = [
       side(from, input.fromAccountNumber, input.fromName),
       side(to, input.toAccountNumber, input.toName),
@@ -597,6 +632,19 @@ export function deleteBankTransaction(
     db.prepare(
       `UPDATE "BankTransaction" SET isDeleted = 1, deletedReason = ?, updatedAt = ? WHERE id = ?`,
     ).run(reason, nowInstant(), id);
+
+    // If an ordinary transaction that adjusted cash in hand is deleted, reverse its cash adjustment
+    if (before.advanceRole === null) {
+      const actual = amountAfterFee(before.amount, before.feeAmount, before.feeDirection, before.type);
+      if (before.type === 'TRANSFER') {
+        adjustCashInHand(-actual, `Deleted ${before.transactionNumber} (${reason})`, actor.id, db);
+      } else if (before.type === 'RECEIVE') {
+        adjustCashInHand(actual, `Deleted ${before.transactionNumber} (${reason})`, actor.id, db);
+      }
+    } else if (before.advanceRole === 'WITHDRAWAL' && (!before.fromAccountId || before.toName?.toLowerCase() === 'cash')) {
+      const actual = amountAfterFee(before.amount, before.feeAmount, before.feeDirection, before.type);
+      adjustCashInHand(actual, `Deleted withdrawal ${before.transactionNumber} (${reason})`, actor.id, db);
+    }
 
     recordAudit(
       {
@@ -830,12 +878,34 @@ export function withdrawFromBankAdvance(
       });
     }
 
-    insertMovement(
-      { ...movement, type: 'TRANSFER' },
+    const isCash =
+      movement.withdrawalMethod === 'cash' ||
+      movement.toName?.trim().toLowerCase() === 'cash' ||
+      (!movement.toAccountId && (!movement.toAccountNumber || movement.toAccountNumber.trim() === '') && movement.toName?.trim().toLowerCase() === 'cash');
+
+    const withdrawalInput: CreateBankTransactionInput = {
+      ...movement,
+      type: 'TRANSFER',
+      feeBasisPoints: movement.feeBasisPoints ?? 0,
+      feeDirection: movement.feeDirection ?? 'RECEIVE',
+      fromAccountId: isCash ? undefined : (movement.fromAccountId ?? deposit.toAccountId ?? undefined),
+      fromAccountNumber: isCash ? '-' : (movement.fromAccountNumber || '-'),
+      fromName: isCash ? 'Cash in hand' : (movement.fromName || 'Bank'),
+      toName: movement.toName || (isCash ? 'Cash' : '-'),
+      toAccountNumber: movement.toAccountNumber || '',
+    };
+
+    const row = insertMovement(
+      withdrawalInput,
       { role: 'WITHDRAWAL', depositId: deposit.id, depositNumber: deposit.transactionNumber },
       actor,
       db,
     );
+
+    if (isCash) {
+      const actual = amountAfterFee(row.amount, row.feeAmount, row.feeDirection, row.type);
+      adjustCashInHand(-actual, `Advance withdrawal (Cash) · ${deposit.transactionNumber}`, actor.id, db);
+    }
 
     return getBankAdvance(deposit.id, db);
   }, db);
@@ -915,6 +985,84 @@ export function saveCashCount(
     );
 
     return cashInHand(db);
+  }, db);
+}
+
+/**
+ * Updates bank or mobile payment account balances to match bank statements or app balances.
+ *
+ * Each changed balance creates an adjustment movement without touching cash in hand.
+ */
+export function saveBankBalances(
+  input: SaveBankBalancesInput,
+  actor: SessionUser,
+  db: Db = getDatabase(),
+): { updated: true; count: number } {
+  return transaction(() => {
+    let count = 0;
+    const localNow = nowLocalDateTime();
+
+    for (const item of input.balances) {
+      const account = usableAccount(item.accountId, db);
+
+      const currentBalanceRow = db
+        .prepare(
+          `SELECT COALESCE((SELECT SUM(amount) FROM "BankTransaction" WHERE type = 'RECEIVE' AND toAccountId = ? AND isDeleted = 0), 0)
+                - COALESCE((SELECT SUM(amount) FROM "BankTransaction" WHERE type = 'TRANSFER' AND fromAccountId = ? AND isDeleted = 0), 0) AS balance`,
+        )
+        .get(item.accountId, item.accountId) as { balance: number } | undefined;
+
+      const currentBalance = currentBalanceRow?.balance ?? 0;
+      const delta = item.balance - currentBalance;
+
+      if (delta === 0) continue;
+
+      if (delta > 0) {
+        insertMovement(
+          {
+            type: 'RECEIVE',
+            transactionAt: localNow,
+            toAccountId: account.id,
+            toAccountNumber: account.key,
+            toName: account.name,
+            fromAccountId: undefined,
+            fromAccountNumber: '-',
+            fromName: 'Balance adjustment',
+            amount: delta,
+            feeBasisPoints: 0,
+            feeDirection: 'RECEIVE',
+            notes: input.notes?.trim() || 'Bank balance adjustment',
+          },
+          null,
+          actor,
+          db,
+        );
+        count++;
+      } else {
+        insertMovement(
+          {
+            type: 'TRANSFER',
+            transactionAt: localNow,
+            fromAccountId: account.id,
+            fromAccountNumber: account.key,
+            fromName: account.name,
+            toAccountId: undefined,
+            toAccountNumber: '-',
+            toName: 'Balance adjustment',
+            amount: Math.abs(delta),
+            feeBasisPoints: 0,
+            feeDirection: 'PAY',
+            notes: input.notes?.trim() || 'Bank balance adjustment',
+          },
+          null,
+          actor,
+          db,
+        );
+        count++;
+      }
+    }
+
+    return { updated: true, count };
   }, db);
 }
 

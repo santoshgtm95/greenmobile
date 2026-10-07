@@ -24,6 +24,7 @@ import {
   zOpenBankAdvance,
   zSaveBankAccount,
   zSaveCashCount,
+  zSaveBankBalances,
   zWithdrawBankAdvance,
 } from '../../shared/validation';
 import {
@@ -38,6 +39,7 @@ import {
   openBankAdvance,
   saveBankAccount,
   saveCashCount,
+  saveBankBalances,
   withdrawFromBankAdvance,
 } from '../services/banking.service';
 import { requireUser } from '../session';
@@ -130,5 +132,12 @@ export function registerBankingIpc(): void {
     { access: 'permission', permission: 'banking.manage' },
     zSaveCashCount,
     (input) => saveCashCount(input, requireUser()),
+  );
+
+  handle(
+    CHANNELS.banking.saveBankBalances,
+    { access: 'permission', permission: 'banking.manage' },
+    zSaveBankBalances,
+    (input) => saveBankBalances(input, requireUser()),
   );
 }

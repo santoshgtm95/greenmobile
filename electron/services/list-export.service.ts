@@ -434,7 +434,7 @@ function bankTransactionList(query: BankTransactionListQuery, db: Db): Body {
           // Always filled, even with no fee: this is the column reconciled
           // against a bank statement, and a blank cell there reads as missing
           // data rather than as "same as the amount".
-          actualAmount: amountAfterFee(row.amount, row.feeAmount, row.feeDirection),
+          actualAmount: amountAfterFee(row.amount, row.feeAmount, row.feeDirection, row.type),
           notes: row.notes,
           createdByName: row.createdByName,
           state: row.isDeleted ? 'Deleted' : 'Recorded',

@@ -45,6 +45,8 @@ import type {
   WithdrawBankAdvanceInput,
   SaveBankAccountInput,
   SaveCashCountInput,
+  SaveBankBalancesInput,
+  BankAccountBalanceAdjustment,
   AddServiceItemInput,
   AddServicePaymentInput,
   ChangeServiceStatusInput,
@@ -816,6 +818,8 @@ export interface PosApi {
     withdrawAdvance(input: WithdrawBankAdvanceInput): Promise<BankAdvanceDetail>;
     /** Records a counted cash-in-hand figure. */
     saveCashCount(input: SaveCashCountInput): Promise<CashInHand>;
+    /** Updates bank/wallet account balances to match statements or mobile apps. */
+    saveBankBalances(input: SaveBankBalancesInput): Promise<{ updated: true; count: number }>;
   };
   backup: {
     /** Folders, retention settings and every backup file found (spec §53). */
