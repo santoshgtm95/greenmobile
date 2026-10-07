@@ -373,6 +373,16 @@ export default function PosPage() {
                       <Typography noWrap sx={{ fontWeight: 600 }}>
                         {line.product.name}
                       </Typography>
+                      {(line.product.sku || line.product.brandName) && (
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          noWrap
+                          title={[line.product.sku, line.product.brandName].filter(Boolean).join(' · ')}
+                        >
+                          {[line.product.sku, line.product.brandName].filter(Boolean).join(' · ')}
+                        </Typography>
+                      )}
                       <Typography variant="caption" color="text.secondary" noWrap>
                         {line.serial
                           ? `IMEI ${line.serial.imei1 ?? line.serial.serialNumber}`
