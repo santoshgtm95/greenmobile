@@ -10,6 +10,7 @@ import { getDatabase, transaction } from '../database/connection';
 import { newId } from '../utils/id';
 import { nowInstant, addMonthsInstant } from '../../shared/datetime';
 import { errors } from '../../shared/errors';
+import { generateEan13Candidate } from '../../shared/barcode';
 import { recordAudit } from './audit.service';
 import { applyStockMovement } from './inventory.service';
 import { getShopSettings } from './settings.service';
@@ -159,6 +160,20 @@ function assertBarcodeFree(barcode: string | undefined, exceptId: string | null,
   }
 }
 
+/** Generates a collision-free EAN-13 barcode against the database. */
+export function generateUniqueBarcode(db: Db = getDatabase()): string {
+  for (let attempt = 0; attempt < 1000; attempt++) {
+    const candidate = generateEan13Candidate();
+    const existing = db
+      .prepare('SELECT 1 FROM "Product" WHERE barcode = ? LIMIT 1')
+      .get(candidate);
+    if (!existing) {
+      return candidate;
+    }
+  }
+  throw errors.validation('Unable to generate unique barcode.', { barcode: 'Generation conflict' });
+}
+
 export function createProduct(
   input: CreateProductInput,
   actor: SessionUser,
@@ -168,7 +183,9 @@ export function createProduct(
 
   return transaction(() => {
     assertSkuFree(input.sku, null, db);
-    assertBarcodeFree(input.barcode, null, db);
+
+    const barcode = input.barcode?.trim() || generateUniqueBarcode(db);
+    assertBarcodeFree(barcode, null, db);
 
     const id = newId();
     const now = nowInstant();
@@ -181,7 +198,7 @@ export function createProduct(
     ).run(
       id,
       input.sku,
-      input.barcode ?? null,
+      barcode,
       input.name,
       input.description ?? null,
       input.categoryId ?? null,

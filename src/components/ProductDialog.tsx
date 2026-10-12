@@ -8,6 +8,7 @@ import {
   DialogTitle,
   Divider,
   FormControlLabel,
+  InputAdornment,
   MenuItem,
   Stack,
   Switch,
@@ -20,6 +21,7 @@ import MoneyField from './MoneyField';
 import { PosApiError } from '@shared/errors';
 import { formatRate, parseRate } from '@shared/money';
 import { PRODUCT_UNITS } from '@shared/domain';
+import { generateEan13Candidate } from '@shared/barcode';
 import type { Lookup, Product } from '@shared/api';
 
 /** Product form (spec §40). `product === null` means "create". */
@@ -64,9 +66,14 @@ export default function ProductDialog({
 
   const save = useMutation({
     mutationFn: async () => {
+      let barcode = form.barcode.trim();
+      if (!isEdit && !barcode) {
+        barcode = generateEan13Candidate();
+      }
+
       const common = {
         sku: form.sku.trim(),
-        barcode: form.barcode.trim() || undefined,
+        barcode: barcode || undefined,
         name: form.name.trim(),
         description: form.description.trim() || undefined,
         categoryId: form.categoryId || undefined,
@@ -137,7 +144,27 @@ export default function ProductDialog({
               value={form.barcode}
               onChange={(e) => set('barcode', e.target.value)}
               error={Boolean(fieldErrors.barcode)}
-              helperText={fieldErrors.barcode ?? 'Scan into this field if you have a scanner'}
+              helperText={
+                fieldErrors.barcode ??
+                (isEdit
+                  ? 'Scan into this field or enter barcode'
+                  : 'Leave empty to auto-generate when clicking Save')
+              }
+              slotProps={{
+                input: {
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <Button
+                        size="small"
+                        onClick={() => set('barcode', generateEan13Candidate())}
+                        sx={{ fontSize: 11, minWidth: 'auto', px: 1 }}
+                      >
+                        Generate
+                      </Button>
+                    </InputAdornment>
+                  ),
+                },
+              }}
             />
           </Stack>
 

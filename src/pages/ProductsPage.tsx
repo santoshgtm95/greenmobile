@@ -29,6 +29,7 @@ import TuneIcon from '@mui/icons-material/Tune';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import SmartphoneIcon from '@mui/icons-material/Smartphone';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import QrCodeIcon from '@mui/icons-material/QrCode';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
@@ -38,6 +39,7 @@ import ProductDialog from '../components/ProductDialog';
 import StockDialog from '../components/StockDialog';
 import SerialsDialog from '../components/SerialsDialog';
 import ProductImportDialog from '../components/ProductImportDialog';
+import BarcodePrintDialog from '../components/BarcodePrintDialog';
 import ExportMenu from '../components/ExportMenu';
 import { PosApiError } from '@shared/errors';
 import type { Product } from '@shared/api';
@@ -60,6 +62,7 @@ export default function ProductsPage() {
   const [editing, setEditing] = useState<Product | null | undefined>(undefined);
   const [stockFor, setStockFor] = useState<Product | null>(null);
   const [serialsFor, setSerialsFor] = useState<Product | null>(null);
+  const [barcodeFor, setBarcodeFor] = useState<Product | null>(null);
   const [importing, setImporting] = useState(false);
 
   // Debounced so typing a barcode does not fire a query per keystroke (spec §78).
@@ -359,6 +362,11 @@ export default function ProductsPage() {
                             </IconButton>
                           </Tooltip>
                         )}
+                        <Tooltip title="View & print barcode">
+                          <IconButton size="small" onClick={() => setBarcodeFor(product)}>
+                            <QrCodeIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
                       </Stack>
                     </TableCell>
                   </TableRow>
@@ -432,6 +440,13 @@ export default function ProductsPage() {
           void queryClient.invalidateQueries({ queryKey: ['brands'] });
         }}
       />
+
+      {barcodeFor && (
+        <BarcodePrintDialog
+          product={barcodeFor}
+          onClose={() => setBarcodeFor(null)}
+        />
+      )}
     </Stack>
   );
 }
