@@ -23,6 +23,7 @@ import {
   zLookupQuery,
   zOpenBankAdvance,
   zSaveBankAccount,
+  zSaveShopBankAccount,
   zSaveCashCount,
   zSaveBankBalances,
   zWithdrawBankAdvance,
@@ -32,14 +33,17 @@ import {
   createBankTransaction,
   deleteBankAccount,
   deleteBankTransaction,
+  deleteShopBankAccount,
   getBankAdvance,
   listBankAccounts,
   listBankAdvances,
   listBankTransactions,
+  listShopBankAccounts,
   openBankAdvance,
   saveBankAccount,
-  saveCashCount,
   saveBankBalances,
+  saveCashCount,
+  saveShopBankAccount,
   withdrawFromBankAdvance,
 } from '../services/banking.service';
 import { requireUser } from '../session';
@@ -68,6 +72,27 @@ export function registerBankingIpc(): void {
     { access: 'permission', permission: 'banking.manage' },
     zIdOnly,
     ({ id }) => deleteBankAccount(id, requireUser()),
+  );
+
+  handle(
+    CHANNELS.banking.listShopAccounts,
+    { access: 'permission', permission: 'banking.view' },
+    zLookupQuery,
+    ({ includeInactive }) => listShopBankAccounts(includeInactive),
+  );
+
+  handle(
+    CHANNELS.banking.saveShopAccount,
+    { access: 'permission', permission: 'banking.manage' },
+    zSaveShopBankAccount,
+    (input) => saveShopBankAccount(input, requireUser()),
+  );
+
+  handle(
+    CHANNELS.banking.deleteShopAccount,
+    { access: 'permission', permission: 'banking.manage' },
+    zIdOnly,
+    ({ id }) => deleteShopBankAccount(id, requireUser()),
   );
 
   handle(

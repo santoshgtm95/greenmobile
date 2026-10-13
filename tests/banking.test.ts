@@ -31,6 +31,10 @@ import {
   saveCashCount,
   saveBankBalances,
   withdrawFromBankAdvance,
+  listShopBankAccounts,
+  getShopBankAccount,
+  saveShopBankAccount,
+  deleteShopBankAccount,
 } from '../electron/services/banking.service';
 import { AppError } from '../shared/errors';
 import { businessDay, addDays, nowLocalDateTime, localDateTimeToInstant } from '../shared/datetime';
@@ -1192,7 +1196,7 @@ describe('customer advances', () => {
   });
 
   it('supports withdrawal in cash without an account number, and saves to the database', () => {
-    const opened = openAdvance(MILLION);
+    const opened = openAdvance(MILLION, { day: '2026-10-10' });
     const withdrawn = withdrawFromBankAdvance(
       {
         advanceId: opened.id,
@@ -1234,7 +1238,7 @@ describe('customer advances', () => {
     saveCashCount({ amount: MILLION, notes: 'Morning till' }, actor, ctx.db);
     expect(cashInHand(ctx.db).amount).toBe(MILLION);
 
-    const opened = openAdvance(MILLION); // 1,000,000 received into kpay
+    const opened = openAdvance(MILLION, { day: '2026-10-10' }); // 1,000,000 received into kpay
     expect(bankingOverview(ALL_TIME, ctx.db).bankBalance).toBe(MILLION);
     expect(cashInHand(ctx.db).amount).toBe(MILLION);
 
@@ -1242,8 +1246,13 @@ describe('customer advances', () => {
       {
         advanceId: opened.id,
         transactionAt: at('2026-10-10', '15:00'),
-        amount: 30_000_000,
+        fromAccountNumber: '-',
+        fromName: 'Cash in hand',
+        toAccountNumber: '',
         toName: 'Cash',
+        amount: 30_000_000,
+        feeBasisPoints: 0,
+        feeDirection: 'RECEIVE',
         withdrawalMethod: 'cash',
       },
       actor,
@@ -1266,7 +1275,7 @@ describe('customer advances', () => {
     saveCashCount({ amount: MILLION, notes: 'Morning till' }, actor, ctx.db);
     expect(cashInHand(ctx.db).amount).toBe(MILLION);
 
-    const opened = openAdvance(MILLION); // 1,000,000 received into kpay
+    const opened = openAdvance(MILLION, { day: '2026-10-10' }); // 1,000,000 received into kpay
     expect(bankingOverview(ALL_TIME, ctx.db).bankBalance).toBe(MILLION);
 
     const withdrawn = withdrawFromBankAdvance(
@@ -1279,6 +1288,8 @@ describe('customer advances', () => {
         toName: 'Daw Nu',
         toAccountNumber: '09-999-8888',
         amount: 40_000_000,
+        feeBasisPoints: 0,
+        feeDirection: 'RECEIVE',
         withdrawalMethod: 'account',
       },
       actor,
@@ -1298,7 +1309,7 @@ describe('customer advances', () => {
   });
 
   it('supports withdrawal to an account and saves the account details in the database', () => {
-    const opened = openAdvance(MILLION);
+    const opened = openAdvance(MILLION, { day: '2026-10-10' });
     const withdrawn = withdrawFromBankAdvance(
       {
         advanceId: opened.id,
@@ -1491,6 +1502,111 @@ describe('audit trail', () => {
       'CREATE CashCount',
     ]);
     expect(entries[3].summary).toContain('Wrong account');
+  });
+
+  describe('registered shop bank accounts', () => {
+    it('creates, lists, updates, and deletes shop bank accounts', () => {
+      // 1. Initially empty
+      expect(listShopBankAccounts(true, ctx.db)).toHaveLength(0);
+
+      // 2. Register first shop account under kpay
+      const shopAcct1 = saveShopBankAccount(
+        {
+          bankAccountId: kpay,
+          accountNumber: '09 123 456 789',
+          accountName: 'Green Mobile KBZPay',
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+
+      expect(shopAcct1.id).toBeTruthy();
+      expect(shopAcct1.accountNumber).toBe('09 123 456 789');
+      expect(shopAcct1.accountName).toBe('Green Mobile KBZPay');
+      expect(shopAcct1.bankName).toBe('Kanbawza');
+      expect(shopAcct1.bankKey).toBe('Kpay');
+      expect(shopAcct1.isActive).toBe(1);
+
+      // 3. Register second shop account under aya
+      const shopAcct2 = saveShopBankAccount(
+        {
+          bankAccountId: aya,
+          accountNumber: '09 987 654 321',
+          accountName: 'Green Mobile AYA Pay',
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+
+      const activeList = listShopBankAccounts(false, ctx.db);
+      expect(activeList).toHaveLength(2);
+
+      // 4. Refuse duplicate account number under same bank
+      expect(() =>
+        saveShopBankAccount(
+          {
+            bankAccountId: kpay,
+            accountNumber: '09 123 456 789',
+            accountName: 'Duplicate Kpay',
+            isActive: true,
+          },
+          actor,
+          ctx.db,
+        ),
+      ).toThrow();
+
+      // 5. Update shop account (rename and change number)
+      const updated = saveShopBankAccount(
+        {
+          id: shopAcct1.id,
+          bankAccountId: kpay,
+          accountNumber: '09 111 222 333',
+          accountName: 'Green Mobile Main',
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+      expect(updated.accountNumber).toBe('09 111 222 333');
+      expect(updated.accountName).toBe('Green Mobile Main');
+
+      // 6. Deactivate account and check filter
+      saveShopBankAccount(
+        {
+          id: shopAcct1.id,
+          bankAccountId: kpay,
+          accountNumber: '09 111 222 333',
+          accountName: 'Green Mobile Main',
+          isActive: false,
+        },
+        actor,
+        ctx.db,
+      );
+      expect(listShopBankAccounts(false, ctx.db)).toHaveLength(1);
+      expect(listShopBankAccounts(true, ctx.db)).toHaveLength(2);
+
+      // 7. Delete account
+      const delResult = deleteShopBankAccount(shopAcct2.id, actor, ctx.db);
+      expect(delResult.deleted).toBe(true);
+      expect(listShopBankAccounts(true, ctx.db)).toHaveLength(1);
+    });
+
+    it('refuses to register shop account with non-existent bank', () => {
+      expect(() =>
+        saveShopBankAccount(
+          {
+            bankAccountId: 'non-existent-bank-id',
+            accountNumber: '09 000 000 000',
+            accountName: 'Nowhere',
+            isActive: true,
+          },
+          actor,
+          ctx.db,
+        ),
+      ).toThrow();
+    });
   });
 });
 

@@ -24,6 +24,7 @@ import {
 import SearchIcon from "@mui/icons-material/Search";
 import AddIcon from "@mui/icons-material/Add";
 import AccountBalanceIcon from "@mui/icons-material/AccountBalance";
+import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import CallMadeIcon from "@mui/icons-material/CallMade";
 import CallReceivedIcon from "@mui/icons-material/CallReceived";
@@ -38,6 +39,7 @@ import { useMoneyFormatter } from "../hooks/useSettings";
 import { useDebounced } from "../hooks/useDebounced";
 import ExportMenu from "../components/ExportMenu";
 import BankAccountsDialog from "../components/BankAccountsDialog";
+import RegisterShopAccountsDialog from "../components/RegisterShopAccountsDialog";
 import BankTransactionDialog from "../components/BankTransactionDialog";
 import CashCountDialog from "../components/CashCountDialog";
 import BankBalanceDialog from "../components/BankBalanceDialog";
@@ -98,6 +100,7 @@ export default function BankingPage() {
   const [pageSize, setPageSize] = useState(25);
 
   const [accountsOpen, setAccountsOpen] = useState(false);
+  const [registerAccountsOpen, setRegisterAccountsOpen] = useState(false);
   const [newTransactionOpen, setNewTransactionOpen] = useState(false);
   const [cashOpen, setCashOpen] = useState(false);
   const [bankBalanceOpen, setBankBalanceOpen] = useState(false);
@@ -148,6 +151,7 @@ export default function BankingPage() {
     void queryClient.invalidateQueries({ queryKey: ["bankTransactions"] });
     void queryClient.invalidateQueries({ queryKey: ["bankingOverview"] });
     void queryClient.invalidateQueries({ queryKey: ["bankAccounts"] });
+    void queryClient.invalidateQueries({ queryKey: ["shopBankAccounts"] });
   };
 
   // A refusal is shown by DeleteReasonDialog, which is the only caller.
@@ -193,6 +197,12 @@ export default function BankingPage() {
               onClick={() => setAccountsOpen(true)}
             >
               Banks &amp; Payments
+            </Button>
+            <Button
+              startIcon={<AccountBalanceWalletIcon />}
+              onClick={() => setRegisterAccountsOpen(true)}
+            >
+              Register Accounts
             </Button>
             <Button
               variant="contained"
@@ -753,6 +763,13 @@ export default function BankingPage() {
       {accountsOpen && (
         <BankAccountsDialog
           onClose={() => setAccountsOpen(false)}
+          onChanged={refresh}
+        />
+      )}
+
+      {registerAccountsOpen && (
+        <RegisterShopAccountsDialog
+          onClose={() => setRegisterAccountsOpen(false)}
           onChanged={refresh}
         />
       )}

@@ -44,6 +44,7 @@ import type {
   OpenBankAdvanceInput,
   WithdrawBankAdvanceInput,
   SaveBankAccountInput,
+  SaveShopBankAccountInput,
   SaveCashCountInput,
   SaveBankBalancesInput,
   BankAccountBalanceAdjustment,
@@ -371,6 +372,18 @@ export interface BankAccount {
   transactionCount: number;
   /** True while the account has never been used, which is the only time it can be deleted. */
   canDelete: boolean;
+}
+
+export interface ShopBankAccount {
+  id: string;
+  bankAccountId: string;
+  bankName: string;
+  bankKey: string;
+  accountNumber: string;
+  accountName: string;
+  isActive: SqliteBool;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface BankTransaction {
@@ -787,6 +800,9 @@ export interface PosApi {
     saveAccount(input: SaveBankAccountInput): Promise<BankAccount>;
     /** Refused once the account has been used — deactivate it instead. */
     deleteAccount(input: { id: string }): Promise<{ deleted: true }>;
+    listShopAccounts(input?: LookupQueryInput): Promise<ShopBankAccount[]>;
+    saveShopAccount(input: SaveShopBankAccountInput): Promise<ShopBankAccount>;
+    deleteShopAccount(input: { id: string }): Promise<{ deleted: true }>;
     /**
      * transferTotal / receiveTotal are the listed rows split BY TYPE, so they add
      * up to the value on screen. The overview's received / transferred are money

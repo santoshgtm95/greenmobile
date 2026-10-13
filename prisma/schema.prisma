@@ -74,6 +74,7 @@ model User {
   bankAccounts       BankAccount[]
   bankTransactions   BankTransaction[]
   cashCounts         CashCount[]
+  shopBankAccounts   ShopBankAccount[]
   auditLogs          AuditLog[]
 
   @@index([role])
@@ -589,9 +590,29 @@ model BankAccount {
   creator      User              @relation(fields: [createdBy], references: [id], onDelete: Restrict)
   transfersOut BankTransaction[] @relation("BankTransactionFrom")
   transfersIn  BankTransaction[] @relation("BankTransactionTo")
+  shopAccounts ShopBankAccount[]
 
   @@index([isActive])
   @@index([key])
+}
+
+/// A shop's own registered bank account or mobile wallet account.
+/// Used to pre-populate account numbers and account names on transactions (Cash In / Out).
+model ShopBankAccount {
+  id            String      @id
+  bankAccountId String
+  accountNumber String
+  accountName   String
+  isActive      Boolean     @default(true)
+  createdBy     String
+  createdAt     String
+  updatedAt     String
+
+  bankAccount BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+  creator     User        @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@index([bankAccountId])
+  @@index([isActive])
 }
 
 /// One movement of money. TRANSFER is money leaving one of the shop's accounts,

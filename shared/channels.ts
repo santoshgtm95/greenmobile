@@ -98,6 +98,9 @@ export const CHANNELS = {
     withdrawAdvance: 'banking:withdrawAdvance',
     saveCashCount: 'banking:saveCashCount',
     saveBankBalances: 'banking:saveBankBalances',
+    listShopAccounts: 'banking:listShopAccounts',
+    saveShopAccount: 'banking:saveShopAccount',
+    deleteShopAccount: 'banking:deleteShopAccount',
   },
   backup: {
     overview: 'backup:overview',

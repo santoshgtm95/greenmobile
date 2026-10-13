@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Alert,
   Button,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -9,6 +10,7 @@ import {
   FormControl,
   FormControlLabel,
   FormLabel,
+  IconButton,
   InputAdornment,
   MenuItem,
   Radio,
@@ -17,11 +19,13 @@ import {
   TextField,
   ToggleButton,
   ToggleButtonGroup,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import CallMadeIcon from "@mui/icons-material/CallMade";
 import CallReceivedIcon from "@mui/icons-material/CallReceived";
-import { useMutation } from "@tanstack/react-query";
+import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import MoneyField from "./MoneyField";
 import { useSettings } from "../hooks/useSettings";
@@ -41,7 +45,7 @@ import {
   rateOf,
 } from "@shared/money";
 import { formatInstant, nowLocalDateTime } from "@shared/datetime";
-import type { BankAccount, BankAdvance } from "@shared/api";
+import type { BankAccount, BankAdvance, ShopBankAccount } from "@shared/api";
 
 /** 100%, the ceiling the form offers. Basis points, so 100% is 10,000. */
 const MAX_FEE_BASIS_POINTS = 10_000;
@@ -144,8 +148,127 @@ export default function BankTransactionDialog({
   const { data: settings } = useSettings();
   const currency = settings?.currency ?? "THB";
 
+  const shopAccountsQuery = useQuery({
+    queryKey: ["shopBankAccounts", "active"],
+    queryFn: () => api.banking.listShopAccounts({ includeInactive: false }),
+  });
+  const shopAccounts = shopAccountsQuery.data ?? [];
+
   const isTransfer = type === "TRANSFER";
   const isCashWithdrawal = mode.kind === "withdraw" && toMethod === "cash";
+
+  const [isCustomFromNumber, setIsCustomFromNumber] = useState(false);
+  const [isCustomToNumber, setIsCustomToNumber] = useState(false);
+
+  const fromShopAccountOptions = useMemo(() => {
+    if (!fromAccountId) return shopAccounts;
+    const matching = shopAccounts.filter((a) => a.bankAccountId === fromAccountId);
+    return matching.length > 0 ? matching : shopAccounts;
+  }, [shopAccounts, fromAccountId]);
+
+  const toShopAccountOptions = useMemo(() => {
+    if (!toAccountId) return shopAccounts;
+    const matching = shopAccounts.filter((a) => a.bankAccountId === toAccountId);
+    return matching.length > 0 ? matching : shopAccounts;
+  }, [shopAccounts, toAccountId]);
+
+  const selectedFromShopAccountId = useMemo(() => {
+    if (isCustomFromNumber) return "__custom";
+    if (!fromAccountNumber) return "";
+    const match =
+      shopAccounts.find(
+        (a) =>
+          a.accountNumber === fromAccountNumber &&
+          (!fromAccountId || a.bankAccountId === fromAccountId),
+      ) || shopAccounts.find((a) => a.accountNumber === fromAccountNumber);
+    return match ? match.id : "__custom";
+  }, [shopAccounts, fromAccountNumber, fromAccountId, isCustomFromNumber]);
+
+  const selectedToShopAccountId = useMemo(() => {
+    if (isCustomToNumber) return "__custom";
+    if (!toAccountNumber) return "";
+    const match =
+      shopAccounts.find(
+        (a) =>
+          a.accountNumber === toAccountNumber &&
+          (!toAccountId || a.bankAccountId === toAccountId),
+      ) || shopAccounts.find((a) => a.accountNumber === toAccountNumber);
+    return match ? match.id : "__custom";
+  }, [shopAccounts, toAccountNumber, toAccountId, isCustomToNumber]);
+
+  const isFromShopAccount = useMemo(() => {
+    if (!fromAccountNumber) return true;
+    return shopAccounts.some((a) => a.accountNumber === fromAccountNumber);
+  }, [shopAccounts, fromAccountNumber]);
+
+  const isToShopAccount = useMemo(() => {
+    if (!toAccountNumber) return true;
+    return shopAccounts.some((a) => a.accountNumber === toAccountNumber);
+  }, [shopAccounts, toAccountNumber]);
+
+  const handleFromShopAccountChange = (id: string) => {
+    if (id === "__custom") {
+      setIsCustomFromNumber(true);
+      setFromAccountNumber("");
+      return;
+    }
+    setIsCustomFromNumber(false);
+    const acct = shopAccounts.find((a) => a.id === id);
+    if (acct) {
+      setFromAccountNumber(acct.accountNumber);
+      setFromName(acct.accountName);
+      setFromAccountId(acct.bankAccountId);
+      setFieldErrors({});
+    } else {
+      setFromAccountNumber("");
+    }
+  };
+
+  const handleToShopAccountChange = (id: string) => {
+    if (id === "__custom") {
+      setIsCustomToNumber(true);
+      setToAccountNumber("");
+      return;
+    }
+    setIsCustomToNumber(false);
+    const acct = shopAccounts.find((a) => a.id === id);
+    if (acct) {
+      setToAccountNumber(acct.accountNumber);
+      setToName(acct.accountName);
+      setToAccountId(acct.bankAccountId);
+      setFieldErrors({});
+    } else {
+      setToAccountNumber("");
+    }
+  };
+
+  const fromAccountNumberOptions = () => [
+    <MenuItem key="__none" value="">
+      <em>Select account</em>
+    </MenuItem>,
+    ...fromShopAccountOptions.map((account) => (
+      <MenuItem key={account.id} value={account.id}>
+        {account.accountNumber} ({account.accountName})
+      </MenuItem>
+    )),
+    <MenuItem key="__custom" value="__custom">
+      <em>Type custom account number...</em>
+    </MenuItem>,
+  ];
+
+  const toAccountNumberOptions = () => [
+    <MenuItem key="__none" value="">
+      <em>Select account</em>
+    </MenuItem>,
+    ...toShopAccountOptions.map((account) => (
+      <MenuItem key={account.id} value={account.id}>
+        {account.accountNumber} ({account.accountName})
+      </MenuItem>
+    )),
+    <MenuItem key="__custom" value="__custom">
+      <em>Type custom account number...</em>
+    </MenuItem>,
+  ];
 
   /**
    * The typed percentage as basis points: "0.5" → 50.
@@ -371,17 +494,76 @@ export default function BankTransactionDialog({
               >
                 {accountOptions()}
               </TextField>
-              <TextField
-                label="Account number"
-                required
-                disabled={mode.kind === "withdraw"}
-                placeholder="09 7777 8888"
-                value={fromAccountNumber}
-                onChange={(e) => setFromAccountNumber(e.target.value)}
-                error={Boolean(fieldErrors.fromAccountNumber)}
-                helperText={fieldErrors.fromAccountNumber ?? " "}
-                sx={{ flex: "1 1 0", minWidth: 0 }}
-              />
+              {isTransfer && !isCustomFromNumber && isFromShopAccount && shopAccounts.length > 0 ? (
+                <TextField
+                  select
+                  label="Account number"
+                  required
+                  disabled={mode.kind === "withdraw"}
+                  value={selectedFromShopAccountId}
+                  onChange={(e) => handleFromShopAccountChange(e.target.value)}
+                  error={Boolean(fieldErrors.fromAccountNumber)}
+                  helperText={fieldErrors.fromAccountNumber ?? " "}
+                  sx={{ flex: "1 1 0", minWidth: 0 }}
+                >
+                  {fromAccountNumberOptions()}
+                </TextField>
+              ) : (
+                <TextField
+                  label="Account number"
+                  required
+                  disabled={mode.kind === "withdraw"}
+                  placeholder="09 7777 8888"
+                  value={fromAccountNumber}
+                  onChange={(e) => setFromAccountNumber(e.target.value)}
+                  error={Boolean(fieldErrors.fromAccountNumber)}
+                  helperText={
+                    fieldErrors.fromAccountNumber ??
+                    (isTransfer && shopAccounts.length > 0 ? (
+                      <Button
+                        variant="text"
+                        size="small"
+                        onClick={() => {
+                          setIsCustomFromNumber(false);
+                          setFromAccountNumber("");
+                        }}
+                        sx={{
+                          p: 0,
+                          minWidth: 0,
+                          fontSize: "0.75rem",
+                          textTransform: "none",
+                          verticalAlign: "baseline",
+                        }}
+                      >
+                        Choose from registered accounts
+                      </Button>
+                    ) : " ")
+                  }
+                  slotProps={
+                    isTransfer && shopAccounts.length > 0
+                      ? {
+                          input: {
+                            endAdornment: (
+                              <Tooltip title="Choose from registered accounts">
+                                <IconButton
+                                  size="small"
+                                  edge="end"
+                                  onClick={() => {
+                                    setIsCustomFromNumber(false);
+                                    setFromAccountNumber("");
+                                  }}
+                                >
+                                  <ArrowDropDownIcon />
+                                </IconButton>
+                              </Tooltip>
+                            ),
+                          },
+                        }
+                      : undefined
+                  }
+                  sx={{ flex: "1 1 0", minWidth: 0 }}
+                />
+              )}
               <TextField
                 label="Account name"
                 required
@@ -455,16 +637,74 @@ export default function BankTransactionDialog({
                 >
                   {accountOptions()}
                 </TextField>
-                <TextField
-                  label="Account number"
-                  required
-                  placeholder="09 7777 8888"
-                  value={toAccountNumber}
-                  onChange={(e) => setToAccountNumber(e.target.value)}
-                  error={Boolean(fieldErrors.toAccountNumber)}
-                  helperText={fieldErrors.toAccountNumber ?? " "}
-                  sx={{ flex: "1 1 0", minWidth: 0 }}
-                />
+                {!isTransfer && !isCustomToNumber && isToShopAccount && shopAccounts.length > 0 ? (
+                  <TextField
+                    select
+                    label="Account number"
+                    required
+                    value={selectedToShopAccountId}
+                    onChange={(e) => handleToShopAccountChange(e.target.value)}
+                    error={Boolean(fieldErrors.toAccountNumber)}
+                    helperText={fieldErrors.toAccountNumber ?? " "}
+                    sx={{ flex: "1 1 0", minWidth: 0 }}
+                  >
+                    {toAccountNumberOptions()}
+                  </TextField>
+                ) : (
+                  <TextField
+                    label="Account number"
+                    required
+                    placeholder="09 7777 8888"
+                    value={toAccountNumber}
+                    onChange={(e) => setToAccountNumber(e.target.value)}
+                    error={Boolean(fieldErrors.toAccountNumber)}
+                    helperText={
+                      fieldErrors.toAccountNumber ??
+                      (!isTransfer && shopAccounts.length > 0 ? (
+                        <Button
+                          variant="text"
+                          size="small"
+                          onClick={() => {
+                            setIsCustomToNumber(false);
+                            setToAccountNumber("");
+                          }}
+                          sx={{
+                            p: 0,
+                            minWidth: 0,
+                            fontSize: "0.75rem",
+                            textTransform: "none",
+                            verticalAlign: "baseline",
+                          }}
+                        >
+                          Choose from registered accounts
+                        </Button>
+                      ) : " ")
+                    }
+                    slotProps={
+                      !isTransfer && shopAccounts.length > 0
+                        ? {
+                            input: {
+                              endAdornment: (
+                                <Tooltip title="Choose from registered accounts">
+                                  <IconButton
+                                    size="small"
+                                    edge="end"
+                                    onClick={() => {
+                                      setIsCustomToNumber(false);
+                                      setToAccountNumber("");
+                                    }}
+                                  >
+                                    <ArrowDropDownIcon />
+                                  </IconButton>
+                                </Tooltip>
+                              ),
+                            },
+                          }
+                        : undefined
+                    }
+                    sx={{ flex: "1 1 0", minWidth: 0 }}
+                  />
+                )}
                 <TextField
                   label="Account name"
                   required

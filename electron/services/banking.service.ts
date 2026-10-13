@@ -63,6 +63,7 @@ import type {
   WithdrawBankAdvanceInput,
   DayRangeInput,
   SaveBankAccountInput,
+  SaveShopBankAccountInput,
   SaveCashCountInput,
   SaveBankBalancesInput,
   BankAccountBalanceAdjustment,
@@ -266,6 +267,178 @@ export function deleteBankAccount(
         entityName: 'BankAccount',
         entityId: id,
         summary: `Deleted unused account "${before.name}" (${before.key})`,
+        oldValues: before,
+      },
+      db,
+    );
+
+    return { deleted: true as const };
+  }, db);
+}
+
+// -----------------------------------------------------------------------------
+// Shop Registered Bank Accounts
+// -----------------------------------------------------------------------------
+
+export interface ShopBankAccountRow {
+  id: string;
+  bankAccountId: string;
+  bankName: string;
+  bankKey: string;
+  accountNumber: string;
+  accountName: string;
+  isActive: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function listShopBankAccounts(
+  includeInactive = false,
+  db: Db = getDatabase(),
+): ShopBankAccountRow[] {
+  return db
+    .prepare(
+      `SELECT s.id, s.bankAccountId, s.accountNumber, s.accountName, s.isActive,
+              s.createdAt, s.updatedAt,
+              b.name AS bankName, b.key AS bankKey
+         FROM "ShopBankAccount" s
+         JOIN "BankAccount" b ON b.id = s.bankAccountId
+        ${includeInactive ? '' : 'WHERE s.isActive = 1 AND b.isActive = 1'}
+        ORDER BY b.name ASC, s.accountNumber ASC`,
+    )
+    .all() as ShopBankAccountRow[];
+}
+
+export function getShopBankAccount(id: string, db: Db = getDatabase()): ShopBankAccountRow {
+  const row = db
+    .prepare(
+      `SELECT s.id, s.bankAccountId, s.accountNumber, s.accountName, s.isActive,
+              s.createdAt, s.updatedAt,
+              b.name AS bankName, b.key AS bankKey
+         FROM "ShopBankAccount" s
+         JOIN "BankAccount" b ON b.id = s.bankAccountId
+        WHERE s.id = ?`,
+    )
+    .get(id) as ShopBankAccountRow | undefined;
+  if (!row) throw errors.notFound('shop bank account');
+  return row;
+}
+
+export function saveShopBankAccount(
+  input: SaveShopBankAccountInput,
+  actor: SessionUser,
+  db: Db = getDatabase(),
+): ShopBankAccountRow {
+  return transaction(() => {
+    const bank = db
+      .prepare(`SELECT id, name, key, isActive FROM "BankAccount" WHERE id = ?`)
+      .get(input.bankAccountId) as { id: string; name: string; key: string; isActive: number } | undefined;
+    if (!bank) {
+      throw errors.validation('Please choose a valid bank or wallet provider.', {
+        bankAccountId: 'Provider not found',
+      });
+    }
+
+    const numberClash = db
+      .prepare(
+        `SELECT id FROM "ShopBankAccount"
+          WHERE bankAccountId = ? AND accountNumber = ? COLLATE NOCASE AND id IS NOT ?`,
+      )
+      .get(input.bankAccountId, input.accountNumber.trim(), input.id ?? null) as { id: string } | undefined;
+    if (numberClash) {
+      throw errors.validation(`This account number is already registered under ${bank.name}.`, {
+        accountNumber: 'Already registered',
+      });
+    }
+
+    const now = nowInstant();
+
+    if (input.id) {
+      const before = db
+        .prepare(
+          `SELECT id, bankAccountId, accountNumber, accountName, isActive FROM "ShopBankAccount" WHERE id = ?`,
+        )
+        .get(input.id) as
+        | { id: string; bankAccountId: string; accountNumber: string; accountName: string; isActive: number }
+        | undefined;
+      if (!before) throw errors.notFound('shop bank account');
+
+      db.prepare(
+        `UPDATE "ShopBankAccount"
+            SET bankAccountId = ?, accountNumber = ?, accountName = ?, isActive = ?, updatedAt = ?
+          WHERE id = ?`,
+      ).run(
+        input.bankAccountId,
+        input.accountNumber.trim(),
+        input.accountName.trim(),
+        input.isActive ? 1 : 0,
+        now,
+        input.id,
+      );
+
+      recordAudit(
+        {
+          userId: actor.id,
+          action: 'UPDATE',
+          entityName: 'ShopBankAccount',
+          entityId: input.id,
+          summary: `Updated shop account "${input.accountNumber.trim()}" (${input.accountName.trim()}) under ${bank.name}`,
+          oldValues: before,
+          newValues: input,
+        },
+        db,
+      );
+
+      return getShopBankAccount(input.id, db);
+    }
+
+    const id = newId();
+    db.prepare(
+      `INSERT INTO "ShopBankAccount" (id, bankAccountId, accountNumber, accountName, isActive, createdBy, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      id,
+      input.bankAccountId,
+      input.accountNumber.trim(),
+      input.accountName.trim(),
+      input.isActive ? 1 : 0,
+      actor.id,
+      now,
+      now,
+    );
+
+    recordAudit(
+      {
+        userId: actor.id,
+        action: 'CREATE',
+        entityName: 'ShopBankAccount',
+        entityId: id,
+        summary: `Registered shop account "${input.accountNumber.trim()}" (${input.accountName.trim()}) under ${bank.name}`,
+        newValues: input,
+      },
+      db,
+    );
+
+    return getShopBankAccount(id, db);
+  }, db);
+}
+
+export function deleteShopBankAccount(
+  id: string,
+  actor: SessionUser,
+  db: Db = getDatabase(),
+): { deleted: true } {
+  return transaction(() => {
+    const before = getShopBankAccount(id, db);
+    db.prepare(`DELETE FROM "ShopBankAccount" WHERE id = ?`).run(id);
+
+    recordAudit(
+      {
+        userId: actor.id,
+        action: 'DELETE',
+        entityName: 'ShopBankAccount',
+        entityId: id,
+        summary: `Deleted shop account "${before.accountNumber}" (${before.accountName})`,
         oldValues: before,
       },
       db,

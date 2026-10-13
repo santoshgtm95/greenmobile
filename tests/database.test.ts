@@ -41,6 +41,7 @@ const EXPECTED_TABLES = [
   'ServiceOrder',
   'ServicePayment',
   'Setting',
+  'ShopBankAccount',
   'User',
 ];
 

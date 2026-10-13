@@ -554,6 +554,14 @@ export const zSaveBankAccount = z.object({
   isActive: z.boolean().default(true),
 });
 
+export const zSaveShopBankAccount = z.object({
+  id: zId.optional(),
+  bankAccountId: zId,
+  accountNumber: zAccountNumber,
+  accountName: zAccountHolder,
+  isActive: z.boolean().default(true),
+});
+
 export const zBankTransactionType = z.enum(BANK_TRANSACTION_TYPES);
 
 /**
@@ -876,6 +884,9 @@ export type DayRangeInput = z.output<typeof zDayRange>;
 
 export type SaveBankAccountFormValues = z.input<typeof zSaveBankAccount>;
 export type SaveBankAccountInput = z.output<typeof zSaveBankAccount>;
+
+export type SaveShopBankAccountFormValues = z.input<typeof zSaveShopBankAccount>;
+export type SaveShopBankAccountInput = z.output<typeof zSaveShopBankAccount>;
 
 export type CreateBankTransactionFormValues = z.input<typeof zCreateBankTransaction>;
 export type CreateBankTransactionInput = z.output<typeof zCreateBankTransaction>;
