@@ -8,14 +8,18 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  IconButton,
   Stack,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableRow,
+  Tooltip,
   Typography,
 } from '@mui/material';
+import { useState } from 'react';
+import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useMoneyFormatter } from '../hooks/useSettings';
@@ -25,6 +29,7 @@ import { BANK_ADVANCE_STATUS_LABELS } from '@shared/domain';
 import { formatRate } from '@shared/money';
 import type { BankAdvance, BankTransaction } from '@shared/api';
 import AccountSide from './AccountSide';
+import DeleteReasonDialog from './DeleteReasonDialog';
 
 /**
  * One advance from start to finish: the deposit, then every withdrawal in the
@@ -38,15 +43,22 @@ import AccountSide from './AccountSide';
 export default function AdvanceDetailDialog({
   advanceId,
   canWithdraw,
+  canDelete,
   onWithdraw,
+  onChanged,
   onClose,
 }: {
   advanceId: string;
   canWithdraw: boolean;
+  canDelete: boolean;
   onWithdraw: (advance: BankAdvance) => void;
+  /** After a delete, so the page refetches what it shows (this dialog included). */
+  onChanged: () => void;
   onClose: () => void;
 }) {
   const money = useMoneyFormatter();
+  const [deleting, setDeleting] = useState<BankTransaction | null>(null);
+  const onDelete = canDelete ? setDeleting : undefined;
   const detail = useQuery({
     queryKey: ['bankAdvance', advanceId],
     queryFn: () => api.banking.getAdvance({ id: advanceId }),
@@ -141,6 +153,7 @@ export default function AdvanceDetailDialog({
                   <TableCell align="right">Amount</TableCell>
                   <TableCell align="right">Fee</TableCell>
                   <TableCell align="right">Left after</TableCell>
+                  {canDelete && <TableCell />}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -151,6 +164,7 @@ export default function AdvanceDetailDialog({
                   tone="success.main"
                   after={money(advance.amount)}
                   money={money}
+                  onDelete={onDelete}
                 />
                 {steps.map(({ withdrawal, after }) => (
                   <StepRow
@@ -162,6 +176,7 @@ export default function AdvanceDetailDialog({
                     tone="error.main"
                     after={money(after)}
                     money={money}
+                    onDelete={onDelete}
                   />
                 ))}
               </TableBody>
@@ -189,6 +204,25 @@ export default function AdvanceDetailDialog({
           </Button>
         )}
       </DialogActions>
+
+      {deleting && (
+        <DeleteReasonDialog
+          title={`Delete ${deleting.transactionNumber}?`}
+          message={
+            deleting.id === advanceId
+              ? 'The advance stays in the records, marked deleted, but stops counting towards the balances.'
+              : 'The withdrawal stays in the records, marked deleted, and its amount goes back on the advance.'
+          }
+          onConfirm={(reason) =>
+            api.banking.deleteTransaction({ id: deleting.id, reason }).then(() => {
+              onChanged();
+              // The deposit IS the advance; with it gone there is nothing to show.
+              if (deleting.id === advanceId) onClose();
+            })
+          }
+          onClose={() => setDeleting(null)}
+        />
+      )}
     </Dialog>
   );
 }
@@ -200,6 +234,7 @@ function StepRow({
   tone,
   after,
   money,
+  onDelete,
 }: {
   movement: BankTransaction;
   label: string;
@@ -207,6 +242,7 @@ function StepRow({
   tone: string;
   after: string;
   money: (minor: number) => string;
+  onDelete?: (movement: BankTransaction) => void;
 }) {
   return (
     <TableRow>
@@ -241,6 +277,19 @@ function StepRow({
       <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
         {after}
       </TableCell>
+      {onDelete && (
+        <TableCell align="right" sx={{ width: 48 }}>
+          <Tooltip title="Delete (administrators only)">
+            <IconButton
+              size="small"
+              aria-label={`Delete ${movement.transactionNumber}`}
+              onClick={() => onDelete(movement)}
+            >
+              <DeleteOutlinedIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </TableCell>
+      )}
     </TableRow>
   );
 }

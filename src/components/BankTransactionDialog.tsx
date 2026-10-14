@@ -141,6 +141,7 @@ export default function BankTransactionDialog({
   // that "0." on the way to "0.5" is not snapped back to "0" mid-keystroke.
   const [percentText, setPercentText] = useState("0");
   const [feeDirection, setFeeDirection] = useState<BankFeeDirection>("RECEIVE");
+  const [otherFees, setOtherFees] = useState(0);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -292,7 +293,7 @@ export default function BankTransactionDialog({
   const feeAmount =
     feeBasisPoints === null ? 0 : rateOf(amount, feeBasisPoints);
 
-  const actualAmount = amountAfterFee(amount, feeAmount, feeDirection, type);
+  const actualAmount = amountAfterFee(amount, feeAmount, feeDirection, type, otherFees);
 
   /*
     What a withdrawal may take. Checked here so the user sees it while typing,
@@ -321,6 +322,7 @@ export default function BankTransactionDialog({
         // The rate, not the money. The main process works the fee out itself.
         feeBasisPoints: feeBasisPoints ?? 0,
         feeDirection,
+        otherFees,
         notes: notes.trim() || undefined,
         withdrawalMethod: isCashWithdrawal ? ("cash" as const) : ("account" as const),
       };
@@ -827,6 +829,14 @@ export default function BankTransactionDialog({
               spacing={2}
               sx={{ alignItems: { sm: "center" } }}
             >
+              <MoneyField
+                label="Other fees"
+                value={otherFees}
+                onChange={setOtherFees}
+                error={Boolean(fieldErrors.otherFees)}
+                helperText={fieldErrors.otherFees}
+                sx={{ width: { xs: "100%", sm: 190 } }}
+              />
               <TextField
                 label="Actual amount"
                 value={formatMoney(actualAmount, currency)}
@@ -846,16 +856,23 @@ export default function BankTransactionDialog({
                   },
                 }}
               />
-              {feeAmount > 0 && (
+              {(feeAmount > 0 || otherFees > 0) && (
                 <Typography variant="caption" color="text.secondary">
-                  {formatMoney(amount, currency)}{" "}
-                  {(type === "RECEIVE"
-                    ? feeDirection === "PAY"
-                    : feeDirection === "RECEIVE")
-                    ? "plus"
-                    : "less"}{" "}
-                  the {formatMoney(feeAmount, currency)} fee
-                  {feeDirection === "RECEIVE" ? " received" : " paid"}
+                  {formatMoney(amount, currency)}
+                  {feeAmount > 0 && (
+                    <>
+                      {" "}
+                      {(type === "RECEIVE"
+                        ? feeDirection === "PAY"
+                        : feeDirection === "RECEIVE")
+                        ? "plus"
+                        : "less"}{" "}
+                      the {formatMoney(feeAmount, currency)} fee
+                      {feeDirection === "RECEIVE" ? " received" : " paid"}
+                    </>
+                  )}
+                  {otherFees > 0 &&
+                    ` plus ${formatMoney(otherFees, currency)} other fees`}
                 </Typography>
               )}
             </Stack>

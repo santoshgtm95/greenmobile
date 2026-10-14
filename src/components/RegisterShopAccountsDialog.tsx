@@ -28,6 +28,7 @@ import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { PosApiError } from '@shared/errors';
+import { useMoneyFormatter } from '../hooks/useSettings';
 import type { ShopBankAccount } from '@shared/api';
 
 /**
@@ -46,6 +47,7 @@ export default function RegisterShopAccountsDialog({
   onChanged?: () => void;
 }) {
   const queryClient = useQueryClient();
+  const money = useMoneyFormatter();
 
   const [editing, setEditing] = useState<ShopBankAccount | null>(null);
   const [bankAccountId, setBankAccountId] = useState('');
@@ -243,6 +245,7 @@ export default function RegisterShopAccountsDialog({
                 <TableCell>Bank / Wallet</TableCell>
                 <TableCell>Account Number</TableCell>
                 <TableCell>Account Name</TableCell>
+                <TableCell align="right">Balance</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
@@ -250,7 +253,7 @@ export default function RegisterShopAccountsDialog({
             <TableBody>
               {rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                  <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                     No shop accounts registered yet. Register your first account above.
                   </TableCell>
                 </TableRow>
@@ -274,6 +277,9 @@ export default function RegisterShopAccountsDialog({
                     {account.accountNumber}
                   </TableCell>
                   <TableCell>{account.accountName}</TableCell>
+                  <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                    {money(account.balance ?? 0)}
+                  </TableCell>
                   <TableCell>
                     {account.isActive === 1 ? (
                       <Chip size="small" color="success" variant="outlined" label="On" />

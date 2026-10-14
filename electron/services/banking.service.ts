@@ -287,6 +287,7 @@ export interface ShopBankAccountRow {
   bankKey: string;
   accountNumber: string;
   accountName: string;
+  balance: number;
   isActive: number;
   createdAt: string;
   updatedAt: string;
@@ -296,32 +297,60 @@ export function listShopBankAccounts(
   includeInactive = false,
   db: Db = getDatabase(),
 ): ShopBankAccountRow[] {
-  return db
+  const rows = db
     .prepare(
-      `SELECT s.id, s.bankAccountId, s.accountNumber, s.accountName, s.isActive,
+      `SELECT s.id, s.bankAccountId, s.accountNumber, s.accountName, s.balance, s.isActive,
               s.createdAt, s.updatedAt,
-              b.name AS bankName, b.key AS bankKey
+              b.name AS bankName, b.key AS bankKey,
+              COALESCE((SELECT SUM(t.amount) FROM "BankTransaction" t
+                         WHERE t.type = 'RECEIVE' AND t.toAccountId = s.bankAccountId
+                           AND t.toAccountNumber = s.accountNumber AND t.isDeleted = 0), 0)
+              - COALESCE((SELECT SUM(t.amount) FROM "BankTransaction" t
+                         WHERE t.type = 'TRANSFER' AND t.fromAccountId = s.bankAccountId
+                           AND t.fromAccountNumber = s.accountNumber AND t.isDeleted = 0), 0) AS calculatedBalance,
+              (SELECT COUNT(*) FROM "BankTransaction" t
+                WHERE ((t.toAccountId = s.bankAccountId AND t.toAccountNumber = s.accountNumber)
+                   OR (t.fromAccountId = s.bankAccountId AND t.fromAccountNumber = s.accountNumber))
+                  AND t.isDeleted = 0) AS txCount
          FROM "ShopBankAccount" s
          JOIN "BankAccount" b ON b.id = s.bankAccountId
         ${includeInactive ? '' : 'WHERE s.isActive = 1 AND b.isActive = 1'}
         ORDER BY b.name ASC, s.accountNumber ASC`,
     )
-    .all() as ShopBankAccountRow[];
+    .all() as Array<ShopBankAccountRow & { calculatedBalance: number; txCount: number }>;
+
+  return rows.map((r) => ({
+    ...r,
+    balance: r.txCount > 0 ? r.calculatedBalance : (r.balance ?? 0),
+  }));
 }
 
 export function getShopBankAccount(id: string, db: Db = getDatabase()): ShopBankAccountRow {
   const row = db
     .prepare(
-      `SELECT s.id, s.bankAccountId, s.accountNumber, s.accountName, s.isActive,
+      `SELECT s.id, s.bankAccountId, s.accountNumber, s.accountName, s.balance, s.isActive,
               s.createdAt, s.updatedAt,
-              b.name AS bankName, b.key AS bankKey
+              b.name AS bankName, b.key AS bankKey,
+              COALESCE((SELECT SUM(t.amount) FROM "BankTransaction" t
+                         WHERE t.type = 'RECEIVE' AND t.toAccountId = s.bankAccountId
+                           AND t.toAccountNumber = s.accountNumber AND t.isDeleted = 0), 0)
+              - COALESCE((SELECT SUM(t.amount) FROM "BankTransaction" t
+                         WHERE t.type = 'TRANSFER' AND t.fromAccountId = s.bankAccountId
+                           AND t.fromAccountNumber = s.accountNumber AND t.isDeleted = 0), 0) AS calculatedBalance,
+              (SELECT COUNT(*) FROM "BankTransaction" t
+                WHERE ((t.toAccountId = s.bankAccountId AND t.toAccountNumber = s.accountNumber)
+                   OR (t.fromAccountId = s.bankAccountId AND t.fromAccountNumber = s.accountNumber))
+                  AND t.isDeleted = 0) AS txCount
          FROM "ShopBankAccount" s
          JOIN "BankAccount" b ON b.id = s.bankAccountId
         WHERE s.id = ?`,
     )
-    .get(id) as ShopBankAccountRow | undefined;
+    .get(id) as (ShopBankAccountRow & { calculatedBalance: number; txCount: number }) | undefined;
   if (!row) throw errors.notFound('shop bank account');
-  return row;
+  return {
+    ...row,
+    balance: row.txCount > 0 ? row.calculatedBalance : (row.balance ?? 0),
+  };
 }
 
 export function saveShopBankAccount(
@@ -394,13 +423,14 @@ export function saveShopBankAccount(
 
     const id = newId();
     db.prepare(
-      `INSERT INTO "ShopBankAccount" (id, bankAccountId, accountNumber, accountName, isActive, createdBy, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO "ShopBankAccount" (id, bankAccountId, accountNumber, accountName, balance, isActive, createdBy, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       input.bankAccountId,
       input.accountNumber.trim(),
       input.accountName.trim(),
+      input.balance ?? 0,
       input.isActive ? 1 : 0,
       actor.id,
       now,
@@ -474,6 +504,8 @@ export interface BankTransactionRow {
   /** Minor units, worked out here and stored — never recomputed on read. */
   feeAmount: number;
   feeDirection: BankFeeDirection;
+  /** Minor units, typed by the user and added to the actual amount. */
+  otherFees: number;
   /** Set when this movement is part of a customer advance. */
   advanceRole: BankAdvanceRole | null;
   /** On a withdrawal, the deposit it draws down. */
@@ -492,7 +524,7 @@ const BANK_TRANSACTION_SELECT = `
          t.fromAccountNumber, t.fromName,
          t.toAccountId, o.name AS toAccountName, o.key AS toAccountKey,
          t.toAccountNumber, t.toName,
-         t.amount, t.feeBasisPoints, t.feeAmount, t.feeDirection,
+         t.amount, t.feeBasisPoints, t.feeAmount, t.feeDirection, t.otherFees,
          t.advanceRole, t.advanceDepositId,
          t.notes, t.isDeleted, t.deletedReason,
          t.createdBy, u.fullName AS createdByName, t.createdAt
@@ -524,6 +556,8 @@ export function listBankTransactions(
   const params: unknown[] = [];
 
   if (!query.includeDeleted) where.push('t.isDeleted = 0');
+  // Advance deposits and withdrawals live on the Advances tab only.
+  where.push('t.advanceRole IS NULL');
 
   if (query.from) {
     where.push('t.transactionDay >= ?');
@@ -638,7 +672,7 @@ export function createBankTransaction(
   // of the internal writer and not a field the renderer could send.
   return transaction(() => {
     const row = insertMovement(input, null, actor, db);
-    const actual = amountAfterFee(row.amount, row.feeAmount, row.feeDirection, row.type);
+    const actual = amountAfterFee(row.amount, row.feeAmount, row.feeDirection, row.type, row.otherFees);
     if (row.type === 'TRANSFER') {
       adjustCashInHand(actual, `Account Transfer (Cash In) · ${row.transactionNumber}`, actor.id, db);
     } else if (row.type === 'RECEIVE') {
@@ -710,9 +744,9 @@ function insertMovement(
     db.prepare(
       `INSERT INTO "BankTransaction" (id, transactionNumber, type, transactionDate, transactionDay,
          fromAccountId, fromAccountNumber, fromName, toAccountId, toAccountNumber, toName,
-         amount, feeBasisPoints, feeAmount, feeDirection, advanceRole, advanceDepositId,
+         amount, feeBasisPoints, feeAmount, feeDirection, otherFees, advanceRole, advanceDepositId,
          notes, isDeleted, deletedReason, createdBy, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
     ).run(
       id,
       number,
@@ -729,6 +763,7 @@ function insertMovement(
       input.feeBasisPoints,
       feeAmount,
       input.feeDirection,
+      input.otherFees ?? 0,
       advance?.role ?? null,
       advance?.depositId ?? null,
       input.notes ?? null,
@@ -760,7 +795,8 @@ function insertMovement(
           (advance?.depositNumber ? ` (from ${advance.depositNumber})` : '') +
           (feeAmount > 0
             ? ` (fee ${feeAmount} ${BANK_FEE_DIRECTION_LABELS[input.feeDirection].toLowerCase()})`
-            : ''),
+            : '') +
+          (input.otherFees ? ` (other fees ${input.otherFees})` : ''),
         // The calculated fee too, not just the rate that was sent in.
         newValues: { ...input, feeAmount, advanceRole: advance?.role ?? null },
       },
@@ -808,14 +844,14 @@ export function deleteBankTransaction(
 
     // If an ordinary transaction that adjusted cash in hand is deleted, reverse its cash adjustment
     if (before.advanceRole === null) {
-      const actual = amountAfterFee(before.amount, before.feeAmount, before.feeDirection, before.type);
+      const actual = amountAfterFee(before.amount, before.feeAmount, before.feeDirection, before.type, before.otherFees);
       if (before.type === 'TRANSFER') {
         adjustCashInHand(-actual, `Deleted ${before.transactionNumber} (${reason})`, actor.id, db);
       } else if (before.type === 'RECEIVE') {
         adjustCashInHand(actual, `Deleted ${before.transactionNumber} (${reason})`, actor.id, db);
       }
     } else if (before.advanceRole === 'WITHDRAWAL' && (!before.fromAccountId || before.toName?.toLowerCase() === 'cash')) {
-      const actual = amountAfterFee(before.amount, before.feeAmount, before.feeDirection, before.type);
+      const actual = amountAfterFee(before.amount, before.feeAmount, before.feeDirection, before.type, before.otherFees);
       adjustCashInHand(actual, `Deleted withdrawal ${before.transactionNumber} (${reason})`, actor.id, db);
     }
 
@@ -1076,7 +1112,7 @@ export function withdrawFromBankAdvance(
     );
 
     if (isCash) {
-      const actual = amountAfterFee(row.amount, row.feeAmount, row.feeDirection, row.type);
+      const actual = amountAfterFee(row.amount, row.feeAmount, row.feeDirection, row.type, row.otherFees);
       adjustCashInHand(-actual, `Advance withdrawal (Cash) · ${deposit.transactionNumber}`, actor.id, db);
     }
 
@@ -1174,64 +1210,146 @@ export function saveBankBalances(
   return transaction(() => {
     let count = 0;
     const localNow = nowLocalDateTime();
+    const now = nowInstant();
 
-    for (const item of input.balances) {
-      const account = usableAccount(item.accountId, db);
+    if (input.shopAccountBalances && input.shopAccountBalances.length > 0) {
+      for (const item of input.shopAccountBalances) {
+        const shopAccount = getShopBankAccount(item.shopAccountId, db);
+        if (!shopAccount.isActive) {
+          throw errors.invalidState(
+            `"${shopAccount.accountNumber}" (${shopAccount.accountName}) is switched off, so its balance cannot be adjusted.`,
+          );
+        }
 
-      const currentBalanceRow = db
-        .prepare(
-          `SELECT COALESCE((SELECT SUM(amount) FROM "BankTransaction" WHERE type = 'RECEIVE' AND toAccountId = ? AND isDeleted = 0), 0)
-                - COALESCE((SELECT SUM(amount) FROM "BankTransaction" WHERE type = 'TRANSFER' AND fromAccountId = ? AND isDeleted = 0), 0) AS balance`,
-        )
-        .get(item.accountId, item.accountId) as { balance: number } | undefined;
+        const currentBalance = shopAccount.balance;
+        const delta = item.balance - currentBalance;
 
-      const currentBalance = currentBalanceRow?.balance ?? 0;
-      const delta = item.balance - currentBalance;
+        if (delta === 0) continue;
 
-      if (delta === 0) continue;
+        if (delta > 0) {
+          insertMovement(
+            {
+              type: 'RECEIVE',
+              transactionAt: localNow,
+              toAccountId: shopAccount.bankAccountId,
+              toAccountNumber: shopAccount.accountNumber,
+              toName: shopAccount.accountName,
+              fromAccountId: undefined,
+              fromAccountNumber: '-',
+              fromName: 'Balance adjustment',
+              amount: delta,
+              feeBasisPoints: 0,
+              otherFees: 0,
+              feeDirection: 'RECEIVE',
+              notes: input.notes?.trim() || `Balance adjustment · ${shopAccount.accountNumber}`,
+            },
+            null,
+            actor,
+            db,
+          );
+          count++;
+        } else {
+          insertMovement(
+            {
+              type: 'TRANSFER',
+              transactionAt: localNow,
+              fromAccountId: shopAccount.bankAccountId,
+              fromAccountNumber: shopAccount.accountNumber,
+              fromName: shopAccount.accountName,
+              toAccountId: undefined,
+              toAccountNumber: '-',
+              toName: 'Balance adjustment',
+              amount: Math.abs(delta),
+              feeBasisPoints: 0,
+              otherFees: 0,
+              feeDirection: 'PAY',
+              notes: input.notes?.trim() || `Balance adjustment · ${shopAccount.accountNumber}`,
+            },
+            null,
+            actor,
+            db,
+          );
+          count++;
+        }
 
-      if (delta > 0) {
-        insertMovement(
+        db.prepare(
+          `UPDATE "ShopBankAccount" SET balance = ?, updatedAt = ? WHERE id = ?`,
+        ).run(item.balance, now, shopAccount.id);
+
+        recordAudit(
           {
-            type: 'RECEIVE',
-            transactionAt: localNow,
-            toAccountId: account.id,
-            toAccountNumber: account.key,
-            toName: account.name,
-            fromAccountId: undefined,
-            fromAccountNumber: '-',
-            fromName: 'Balance adjustment',
-            amount: delta,
-            feeBasisPoints: 0,
-            feeDirection: 'RECEIVE',
-            notes: input.notes?.trim() || 'Bank balance adjustment',
+            userId: actor.id,
+            action: 'UPDATE',
+            entityName: 'ShopBankAccount',
+            entityId: shopAccount.id,
+            summary: `Adjusted balance for shop account "${shopAccount.accountNumber}" (${shopAccount.accountName}) to ${formatMoney(item.balance)}`,
           },
-          null,
-          actor,
           db,
         );
-        count++;
-      } else {
-        insertMovement(
-          {
-            type: 'TRANSFER',
-            transactionAt: localNow,
-            fromAccountId: account.id,
-            fromAccountNumber: account.key,
-            fromName: account.name,
-            toAccountId: undefined,
-            toAccountNumber: '-',
-            toName: 'Balance adjustment',
-            amount: Math.abs(delta),
-            feeBasisPoints: 0,
-            feeDirection: 'PAY',
-            notes: input.notes?.trim() || 'Bank balance adjustment',
-          },
-          null,
-          actor,
-          db,
-        );
-        count++;
+      }
+    }
+
+    if (input.balances && input.balances.length > 0) {
+      for (const item of input.balances) {
+        const account = usableAccount(item.accountId, db);
+
+        const currentBalanceRow = db
+          .prepare(
+            `SELECT COALESCE((SELECT SUM(amount) FROM "BankTransaction" WHERE type = 'RECEIVE' AND toAccountId = ? AND isDeleted = 0), 0)
+                  - COALESCE((SELECT SUM(amount) FROM "BankTransaction" WHERE type = 'TRANSFER' AND fromAccountId = ? AND isDeleted = 0), 0) AS balance`,
+          )
+          .get(item.accountId, item.accountId) as { balance: number } | undefined;
+
+        const currentBalance = currentBalanceRow?.balance ?? 0;
+        const delta = item.balance - currentBalance;
+
+        if (delta === 0) continue;
+
+        if (delta > 0) {
+          insertMovement(
+            {
+              type: 'RECEIVE',
+              transactionAt: localNow,
+              toAccountId: account.id,
+              toAccountNumber: account.key,
+              toName: account.name,
+              fromAccountId: undefined,
+              fromAccountNumber: '-',
+              fromName: 'Balance adjustment',
+              amount: delta,
+              feeBasisPoints: 0,
+              otherFees: 0,
+              feeDirection: 'RECEIVE',
+              notes: input.notes?.trim() || 'Bank balance adjustment',
+            },
+            null,
+            actor,
+            db,
+          );
+          count++;
+        } else {
+          insertMovement(
+            {
+              type: 'TRANSFER',
+              transactionAt: localNow,
+              fromAccountId: account.id,
+              fromAccountNumber: account.key,
+              fromName: account.name,
+              toAccountId: undefined,
+              toAccountNumber: '-',
+              toName: 'Balance adjustment',
+              amount: Math.abs(delta),
+              feeBasisPoints: 0,
+              otherFees: 0,
+              feeDirection: 'PAY',
+              notes: input.notes?.trim() || 'Bank balance adjustment',
+            },
+            null,
+            actor,
+            db,
+          );
+          count++;
+        }
       }
     }
 
@@ -1370,7 +1488,9 @@ export function bankingOverview(
               COALESCE(SUM(CASE WHEN feeDirection = 'PAY' THEN feeAmount ELSE 0 END), 0)
                 AS feePaid
          FROM "BankTransaction"
-        WHERE isDeleted = 0 AND transactionDay BETWEEN ? AND ?`,
+        -- Advances are left out, matching the Transactions list. They still
+        -- count in the account balances above: that money really is there.
+        WHERE isDeleted = 0 AND advanceRole IS NULL AND transactionDay BETWEEN ? AND ?`,
     )
     .get(range.from, range.to) as {
     count: number;

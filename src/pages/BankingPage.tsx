@@ -49,7 +49,6 @@ import BankingTabs from "../components/BankingTabs";
 import AccountSide from "../components/AccountSide";
 import { PosApiError } from "@shared/errors";
 import {
-  BANK_ADVANCE_ROLE_LABELS,
   BANK_FEE_DIRECTION_LABELS,
   BANK_TRANSACTION_TYPES,
   BANK_TRANSACTION_TYPE_LABELS,
@@ -299,7 +298,7 @@ export default function BankingPage() {
           caption="Received less transferred, all time"
           icon={<AccountBalanceIcon fontSize="small" />}
           action={
-            can("banking.manage") && positions.length > 0 ? (
+            can("banking.manage") ? (
               <Tooltip title="Update bank balances">
                 <IconButton size="small" onClick={() => setBankBalanceOpen(true)}>
                   <EditIcon fontSize="small" />
@@ -571,30 +570,6 @@ export default function BankingPage() {
                       }
                       label={BANK_TRANSACTION_TYPE_LABELS[row.type] ?? row.type}
                     />
-                    {/*
-                      An advance movement is a real receipt or transfer and is
-                      counted like one — but the shop needs to see at a glance
-                      that the money belongs to a customer, or a deposit reads as
-                      takings and a withdrawal as an unexplained payment.
-
-                      Allowed to wrap under the chip. On one line it widened the
-                      Type column just enough to push the table into a scroll
-                      again, with the delete buttons at the far edge.
-                    */}
-                    {row.advanceRole && (
-                      <Typography
-                        variant="caption"
-                        color="warning.main"
-                        sx={{
-                          display: "block",
-                          mt: 0.5,
-                          fontWeight: 600,
-                          lineHeight: 1.3,
-                        }}
-                      >
-                        {BANK_ADVANCE_ROLE_LABELS[row.advanceRole]}
-                      </Typography>
-                    )}
                   </TableCell>
                   <TableCell>
                     <AccountSide
@@ -693,6 +668,7 @@ export default function BankingPage() {
                         row.feeAmount,
                         row.feeDirection,
                         row.type,
+                        row.otherFees,
                       ),
                     )}
                   </TableCell>
@@ -798,7 +774,7 @@ export default function BankingPage() {
         />
       )}
 
-      {bankBalanceOpen && positions.length > 0 && (
+      {bankBalanceOpen && (
         <BankBalanceDialog
           accounts={positions}
           onClose={() => setBankBalanceOpen(false)}

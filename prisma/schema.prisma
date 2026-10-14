@@ -603,6 +603,7 @@ model ShopBankAccount {
   bankAccountId String
   accountNumber String
   accountName   String
+  balance       Int         @default(0)
   isActive      Boolean     @default(true)
   createdBy     String
   createdAt     String
@@ -652,6 +653,8 @@ model BankTransaction {
   feeAmount         Int     @default(0)
   /// RECEIVE | PAY — whether the shop earned that fee or was charged it.
   feeDirection      String  @default("RECEIVE")
+  /// A flat extra charge in minor units, always added to the actual amount.
+  otherFees         Int     @default(0)
   /// DEPOSIT | WITHDRAWAL when this movement is part of a customer advance:
   /// money a customer left with the shop to collect later. Null otherwise.
   advanceRole       String?

@@ -48,6 +48,7 @@ import type {
   SaveCashCountInput,
   SaveBankBalancesInput,
   BankAccountBalanceAdjustment,
+  ShopBankAccountBalanceAdjustment,
   AddServiceItemInput,
   AddServicePaymentInput,
   ChangeServiceStatusInput,
@@ -381,6 +382,7 @@ export interface ShopBankAccount {
   bankKey: string;
   accountNumber: string;
   accountName: string;
+  balance: number;
   isActive: SqliteBool;
   createdAt: string;
   updatedAt: string;
@@ -412,6 +414,8 @@ export interface BankTransaction {
   feeAmount: number;
   /** Whether the shop earned the fee or was charged it. */
   feeDirection: BankFeeDirection;
+  /** A flat charge in minor units, added to the actual amount. */
+  otherFees: number;
   /** DEPOSIT or WITHDRAWAL when this movement is part of a customer advance. */
   advanceRole: BankAdvanceRole | null;
   /** On a withdrawal, the deposit it draws down. */

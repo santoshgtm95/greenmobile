@@ -200,6 +200,13 @@ describe('migrations', () => {
         'feeDirection',
       ]);
       expect(feeColumns.every((c) => c.dflt_value !== null)).toBe(true);
+      const otherFees = (
+        upgraded.db.prepare(`PRAGMA table_info("BankTransaction")`).all() as {
+          name: string;
+          dflt_value: string | null;
+        }[]
+      ).find((c) => c.name === 'otherFees');
+      expect(otherFees?.dflt_value).toBe('0');
 
       // The advance link, with the foreign key that keeps a withdrawal pointing
       // at a row that exists. Nullable with no default: every movement from

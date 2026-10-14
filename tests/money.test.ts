@@ -149,6 +149,14 @@ describe('the amount after a fee', () => {
     expect(whole).toBe(MILLION);
     expect(amountAfterFee(MILLION, whole, 'PAY')).toBe(0);
   });
+
+  it('always adds other fees, whichever way the percentage fee went', () => {
+    // 1,000,000 + 5,000 fee received + 2,000 other → 1,007,000
+    expect(amountAfterFee(MILLION, FIVE_THOUSAND, 'RECEIVE', 'TRANSFER', 200_000)).toBe(100_700_000);
+    // 1,000,000 − 5,000 fee paid + 2,000 other → 997,000
+    expect(amountAfterFee(MILLION, FIVE_THOUSAND, 'PAY', 'TRANSFER', 200_000)).toBe(99_700_000);
+    expect(amountAfterFee(MILLION, 0, 'RECEIVE', 'RECEIVE', 200_000)).toBe(100_200_000);
+  });
 });
 
 describe('proportional allocation', () => {

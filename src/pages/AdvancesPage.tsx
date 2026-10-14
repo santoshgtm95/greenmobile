@@ -46,8 +46,8 @@ type StatusFilter = BankAdvanceStatus | 'ALL';
  *
  * A customer transfers 3,000,000 in on the 3rd, collects 1,000,000 on the 10th,
  * and the remaining 2,000,000 another day. Each step is a real movement with its
- * own accounts, amount and fee, recorded in the Transactions tab like any other;
- * this screen ties them together and keeps the running figure.
+ * own accounts, amount and fee. They are kept here only, not in the
+ * Transactions tab; this screen ties them together and keeps the running figure.
  *
  * "Held for customers" is the number that matters most here: it is how much of
  * the money in the shop's accounts is not the shop's.
@@ -349,7 +349,12 @@ export default function AdvancesPage() {
         <AdvanceDetailDialog
           advanceId={viewing}
           canWithdraw={canManage}
+          canDelete={can('banking.delete')}
           onWithdraw={(advance) => setWithdrawing(advance)}
+          onChanged={() => {
+            setToast('Removed from the balances.');
+            refresh();
+          }}
           onClose={() => setViewing(null)}
         />
       )}

@@ -104,6 +104,7 @@ function receive(
     day: string;
     fromName: string;
     feeBasisPoints: number;
+    otherFees: number;
     feeDirection: BankFeeDirection;
   }> = {},
 ) {
@@ -119,6 +120,7 @@ function receive(
       toName: 'Green Mobile',
       amount,
       feeBasisPoints: overrides.feeBasisPoints ?? 0,
+      otherFees: overrides.otherFees ?? 0,
       feeDirection: overrides.feeDirection ?? 'RECEIVE',
       notes: undefined,
     },
@@ -135,6 +137,7 @@ function transfer(
     day: string;
     toName: string;
     feeBasisPoints: number;
+    otherFees: number;
     feeDirection: BankFeeDirection;
   }> = {},
 ) {
@@ -150,6 +153,7 @@ function transfer(
       toName: overrides.toName ?? 'A supplier',
       amount,
       feeBasisPoints: overrides.feeBasisPoints ?? 0,
+      otherFees: overrides.otherFees ?? 0,
       feeDirection: overrides.feeDirection ?? 'RECEIVE',
       notes: undefined,
     },
@@ -334,6 +338,7 @@ describe('recording transactions', () => {
         toName: 'Green Mobile',
         amount: 10_000,
         feeBasisPoints: 0,
+        otherFees: 0,
         feeDirection: 'RECEIVE',
         notes: undefined,
       },
@@ -368,6 +373,7 @@ describe('recording transactions', () => {
           toName: 'Somebody else',
           amount: 1_000,
           feeBasisPoints: 0,
+          otherFees: 0,
           feeDirection: 'RECEIVE',
           notes: undefined,
         },
@@ -391,6 +397,7 @@ describe('recording transactions', () => {
           toName: 'Somebody else',
           amount: 1_000,
           feeBasisPoints: 0,
+          otherFees: 0,
           feeDirection: 'RECEIVE',
           notes: undefined,
         },
@@ -487,6 +494,12 @@ describe('the fee on a movement', () => {
     expect(formatMoney(row.feeAmount)).toBe('5,000.00');
   });
 
+  it('stores other fees as typed', () => {
+    const row = transfer(100_000_000, { feeBasisPoints: 50, otherFees: 200_000 });
+    expect(row.otherFees).toBe(200_000);
+    expect(receive(100_000).otherFees).toBe(0);
+  });
+
   it('records which way the fee went', () => {
     const earned = receive(100_000_000, { feeBasisPoints: 50, feeDirection: 'RECEIVE' });
     const charged = transfer(100_000_000, { feeBasisPoints: 50, feeDirection: 'PAY' });
@@ -525,6 +538,7 @@ describe('the fee on a movement', () => {
         toName: 'Green Mobile',
         amount: 100_000_000,
         feeBasisPoints: 50,
+        otherFees: 0,
         feeDirection: 'RECEIVE',
         notes: undefined,
         ...sent,
@@ -1119,6 +1133,7 @@ describe('customer advances', () => {
       day: string;
       time: string;
       feeBasisPoints: number;
+      otherFees: number;
       feeDirection: BankFeeDirection;
       customer: string;
     }> = {},
@@ -1134,6 +1149,7 @@ describe('customer advances', () => {
         toName: 'Green Mobile',
         amount,
         feeBasisPoints: overrides.feeBasisPoints ?? 0,
+        otherFees: overrides.otherFees ?? 0,
         feeDirection: overrides.feeDirection ?? 'RECEIVE',
         notes: undefined,
       },
@@ -1160,6 +1176,7 @@ describe('customer advances', () => {
         toName: 'U Aung',
         amount,
         feeBasisPoints: overrides.feeBasisPoints ?? 0,
+        otherFees: 0,
         feeDirection: 'RECEIVE',
         notes: undefined,
       },
@@ -1209,6 +1226,7 @@ describe('customer advances', () => {
         toName: 'Cash',
         amount: 500_000,
         feeBasisPoints: 0,
+        otherFees: 0,
         feeDirection: 'RECEIVE',
         notes: 'Cash withdrawal',
       },
@@ -1252,6 +1270,7 @@ describe('customer advances', () => {
         toName: 'Cash',
         amount: 30_000_000,
         feeBasisPoints: 0,
+        otherFees: 0,
         feeDirection: 'RECEIVE',
         withdrawalMethod: 'cash',
       },
@@ -1289,6 +1308,7 @@ describe('customer advances', () => {
         toAccountNumber: '09-999-8888',
         amount: 40_000_000,
         feeBasisPoints: 0,
+        otherFees: 0,
         feeDirection: 'RECEIVE',
         withdrawalMethod: 'account',
       },
@@ -1322,6 +1342,7 @@ describe('customer advances', () => {
         toName: 'Daw Nu',
         amount: 400_000,
         feeBasisPoints: 0,
+        otherFees: 0,
         feeDirection: 'RECEIVE',
         notes: 'Account transfer',
       },
@@ -1428,8 +1449,9 @@ describe('customer advances', () => {
     withdraw(opened.id, MILLION);
 
     const { totals, accounts } = bankingOverview(ALL_TIME, ctx.db);
-    expect(totals.received).toBe(3 * MILLION);
-    expect(totals.transferred).toBe(MILLION);
+    // Not in the Transactions totals — those match the list, which hides advances.
+    expect(totals.received).toBe(0);
+    expect(totals.transferred).toBe(0);
     expect(accounts.find((a) => a.accountId === kpay)!.balance).toBe(2 * MILLION);
   });
 
@@ -1456,17 +1478,19 @@ describe('customer advances', () => {
     expect(done.rows.map((r) => r.fromName)).toEqual(['Ko Min']);
   });
 
-  it('marks advance movements in the ordinary history', () => {
+  it('keeps advance movements out of the ordinary history', () => {
     const opened = openAdvance(MILLION);
     withdraw(opened.id, 1_000);
+    const ordinary = receive(1_000);
+    // An ordinary movement is never part of an advance.
+    expect(ordinary.advanceRole).toBeNull();
 
-    const { rows } = listBankTransactions(
+    const { rows, total } = listBankTransactions(
       { ...ALL_TIME, includeDeleted: false, page: 0, pageSize: 50 },
       ctx.db,
     );
-    expect(rows.map((r) => r.advanceRole).sort()).toEqual(['DEPOSIT', 'WITHDRAWAL']);
-    // And an ordinary movement is never part of one.
-    expect(receive(1_000).advanceRole).toBeNull();
+    expect(rows.map((r) => r.id)).toEqual([ordinary.id]);
+    expect(total).toBe(1);
   });
 
   it('accepts no advance link from the ordinary transaction channel', () => {
@@ -1606,6 +1630,77 @@ describe('audit trail', () => {
           ctx.db,
         ),
       ).toThrow();
+    });
+
+    it('adjusts shop bank account balance and records ledger transaction', () => {
+      const shopAcct = saveShopBankAccount(
+        {
+          bankAccountId: kpay,
+          accountNumber: '09 555 666 777',
+          accountName: 'Shop KPay 1',
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+      expect(shopAcct.balance).toBe(0);
+
+      // Increase balance to 500,000
+      const res = saveBankBalances(
+        {
+          shopAccountBalances: [{ shopAccountId: shopAcct.id, balance: 500_000 }],
+        },
+        actor,
+        ctx.db,
+      );
+      expect(res.count).toBe(1);
+
+      // Shop bank account reflects new balance
+      const updated = getShopBankAccount(shopAcct.id, ctx.db);
+      expect(updated.balance).toBe(500_000);
+
+      const list = listShopBankAccounts(false, ctx.db);
+      expect(list.find((a) => a.id === shopAcct.id)?.balance).toBe(500_000);
+
+      // Parent bank and overview reflect the balance
+      const overview = bankingOverview(TODAY, ctx.db);
+      expect(overview.bankBalance).toBe(500_000);
+
+      // Decrease balance to 300,000
+      saveBankBalances(
+        {
+          shopAccountBalances: [{ shopAccountId: shopAcct.id, balance: 300_000 }],
+        },
+        actor,
+        ctx.db,
+      );
+      expect(getShopBankAccount(shopAcct.id, ctx.db).balance).toBe(300_000);
+      expect(bankingOverview(TODAY, ctx.db).bankBalance).toBe(300_000);
+    });
+
+    it('refuses to adjust balance of switched-off shop bank account', () => {
+      const shopAcct = saveShopBankAccount(
+        {
+          bankAccountId: kpay,
+          accountNumber: '09 888 999 000',
+          accountName: 'Retired Account',
+          isActive: false,
+        },
+        actor,
+        ctx.db,
+      );
+
+      const err = captureError(() =>
+        saveBankBalances(
+          {
+            shopAccountBalances: [{ shopAccountId: shopAcct.id, balance: 100_000 }],
+          },
+          actor,
+          ctx.db,
+        ),
+      );
+      expect(err.code).toBe('INVALID_STATE');
+      expect(err.message).toContain('switched off');
     });
   });
 });

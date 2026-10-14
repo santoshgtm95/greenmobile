@@ -402,6 +402,7 @@ function bankTransactionList(query: BankTransactionListQuery, db: Db): Body {
           { key: 'feeRate', label: 'Fee %', type: 'text', width: 9 },
           { key: 'feeAmount', label: 'Fee', type: 'money', width: 14 },
           { key: 'feeDirectionLabel', label: 'Fee is', type: 'text', width: 11 },
+          { key: 'otherFees', label: 'Other fees', type: 'money', width: 14 },
           { key: 'actualAmount', label: 'Actual amount', type: 'money', width: 16 },
           { key: 'notes', label: 'Notes', type: 'text', width: 30 },
           { key: 'createdByName', label: 'Recorded by', type: 'text', width: 18 },
@@ -434,7 +435,8 @@ function bankTransactionList(query: BankTransactionListQuery, db: Db): Body {
           // Always filled, even with no fee: this is the column reconciled
           // against a bank statement, and a blank cell there reads as missing
           // data rather than as "same as the amount".
-          actualAmount: amountAfterFee(row.amount, row.feeAmount, row.feeDirection, row.type),
+          otherFees: row.otherFees > 0 ? row.otherFees : null,
+          actualAmount: amountAfterFee(row.amount, row.feeAmount, row.feeDirection, row.type, row.otherFees),
           notes: row.notes,
           createdByName: row.createdByName,
           state: row.isDeleted ? 'Deleted' : 'Recorded',

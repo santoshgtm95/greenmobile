@@ -453,7 +453,40 @@ async function captureScreens(win: BrowserWindow, outDir: string): Promise<Check
     )) as { error?: string; before?: number; after?: number; dialogOpen?: boolean; message?: string };
   };
 
-  const refused = await deleteThrough('#/banking', 'Advance deposit', 'Delete');
+  // Advances are not in the Transactions list, so the deposit is deleted from
+  // its own detail dialog on the Advances tab.
+  await win.webContents.executeJavaScript(`window.location.hash = '#/banking/advances'`);
+  await win.webContents.reload();
+  await new Promise<void>((resolve) => win.webContents.once('did-finish-load', () => resolve()));
+  await new Promise((resolve) => setTimeout(resolve, 1600));
+  const refused = (await win.webContents.executeJavaScript(
+    `(async () => {
+       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+       const row = document.querySelector('tbody tr[class*="MuiTableRow-hover"]');
+       if (!row) return { error: 'no advance row' };
+       row.click();
+       await wait(900);
+       const remove = document.querySelector('[role="dialog"] button[aria-label^="Delete BNK-"]');
+       if (!remove) return { error: 'no delete button in the advance detail' };
+       remove.click();
+       await wait(600);
+       const dialog = [...document.querySelectorAll('[role="dialog"]')].pop();
+       const input = dialog.querySelector('input');
+       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+       setter.call(input, 'Smoke test');
+       input.dispatchEvent(new Event('input', { bubbles: true }));
+       await wait(200);
+       const go = [...dialog.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Delete');
+       if (!go || go.disabled) return { error: 'Delete button missing or disabled' };
+       go.click();
+       await wait(1200);
+       const still = [...document.querySelectorAll('[role="dialog"]')].pop();
+       return {
+         dialogOpen: Boolean(still),
+         message: still ? (still.querySelector('[role="alert"]')?.textContent ?? '') : '',
+       };
+     })()`,
+  )) as { error?: string; dialogOpen?: boolean; message?: string };
   checks.push({
     name: 'a refused delete says why, inside the dialog',
     pass: refused.dialogOpen === true && (refused.message ?? '').includes('withdrawal'),
