@@ -714,6 +714,35 @@ export const zSaveBankBalances = z.object({
   { message: 'At least one account balance required', path: ['balances'] },
 );
 
+export const zCreateInternalTransfer = z.object({
+  fromShopAccountId: zId,
+  toShopAccountId: zId,
+  amount: zMinor.refine((v) => v > 0, 'Amount must be more than zero'),
+  transferAt: z
+    .string()
+    .trim()
+    .regex(LOCAL_DATE_TIME_PATTERN, 'Use the date and time picker'),
+  notes: zOptionalText,
+}).refine((d) => d.fromShopAccountId !== d.toShopAccountId, {
+  message: 'Choose a different account to transfer to',
+  path: ['toShopAccountId'],
+});
+
+export const zInternalTransferListQuery = zPaging.extend({
+  search: zShortText,
+  from: zBusinessDay.optional(),
+  to: zBusinessDay.optional(),
+  fromShopAccountId: zId.optional(),
+  toShopAccountId: zId.optional(),
+  shopAccountId: zId.optional(),
+  includeDeleted: z.boolean().default(false),
+});
+
+export const zDeleteInternalTransfer = z.object({
+  id: zId,
+  reason: z.string().trim().min(1, 'Give a reason for deleting this transfer').max(300),
+});
+
 // -----------------------------------------------------------------------------
 // Service / repair (spec §21–§23, §51, §52)
 // -----------------------------------------------------------------------------
@@ -919,6 +948,12 @@ export type BankAccountBalanceAdjustment = z.output<typeof zBankAccountBalanceAd
 export type ShopBankAccountBalanceAdjustment = z.output<typeof zShopBankAccountBalanceAdjustment>;
 export type SaveBankBalancesFormValues = z.input<typeof zSaveBankBalances>;
 export type SaveBankBalancesInput = z.input<typeof zSaveBankBalances>;
+
+export type CreateInternalTransferFormValues = z.input<typeof zCreateInternalTransfer>;
+export type CreateInternalTransferInput = z.output<typeof zCreateInternalTransfer>;
+export type InternalTransferListQueryInput = z.input<typeof zInternalTransferListQuery>;
+export type InternalTransferListQuery = z.output<typeof zInternalTransferListQuery>;
+export type DeleteInternalTransferInput = z.output<typeof zDeleteInternalTransfer>;
 
 export type CreateServiceOrderFormValues = z.input<typeof zCreateServiceOrder>;
 export type CreateServiceOrderInput = z.output<typeof zCreateServiceOrder>;

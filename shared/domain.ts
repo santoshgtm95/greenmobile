@@ -191,12 +191,13 @@ export const BANK_FEE_DIRECTION_LABELS: Record<BankFeeDirection, string> = {
  * role is what ties the steps together, and what is still owed is worked out
  * from them rather than stored, so it cannot drift from the movements.
  */
-export const BANK_ADVANCE_ROLES = ["DEPOSIT", "WITHDRAWAL"] as const;
+export const BANK_ADVANCE_ROLES = ["DEPOSIT", "WITHDRAWAL", "INTERNAL_TRANSFER"] as const;
 export type BankAdvanceRole = (typeof BANK_ADVANCE_ROLES)[number];
 
 export const BANK_ADVANCE_ROLE_LABELS: Record<BankAdvanceRole, string> = {
   DEPOSIT: "Advance deposit",
   WITHDRAWAL: "Advance withdrawal",
+  INTERNAL_TRANSFER: "Internal transfer",
 };
 
 /** Derived from what is left, never stored: OPEN while anything remains. */

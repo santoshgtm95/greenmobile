@@ -67,6 +67,8 @@ import type {
   SaveCashCountInput,
   SaveBankBalancesInput,
   BankAccountBalanceAdjustment,
+  CreateInternalTransferInput,
+  InternalTransferListQuery,
 } from '../../shared/validation';
 
 // -----------------------------------------------------------------------------
@@ -307,7 +309,11 @@ export function listShopBankAccounts(
                            AND t.toAccountNumber = s.accountNumber AND t.isDeleted = 0), 0)
               - COALESCE((SELECT SUM(t.amount) FROM "BankTransaction" t
                          WHERE t.type = 'TRANSFER' AND t.fromAccountId = s.bankAccountId
-                           AND t.fromAccountNumber = s.accountNumber AND t.isDeleted = 0), 0) AS calculatedBalance,
+                           AND t.fromAccountNumber = s.accountNumber AND t.isDeleted = 0), 0)
+              + COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
+                           WHERE i.toShopAccountId = s.id AND i.isDeleted = 0), 0)
+              - COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
+                           WHERE i.fromShopAccountId = s.id AND i.isDeleted = 0), 0) AS calculatedBalance,
               (SELECT COUNT(*) FROM "BankTransaction" t
                 WHERE ((t.toAccountId = s.bankAccountId AND t.toAccountNumber = s.accountNumber)
                    OR (t.fromAccountId = s.bankAccountId AND t.fromAccountNumber = s.accountNumber))
@@ -336,7 +342,11 @@ export function getShopBankAccount(id: string, db: Db = getDatabase()): ShopBank
                            AND t.toAccountNumber = s.accountNumber AND t.isDeleted = 0), 0)
               - COALESCE((SELECT SUM(t.amount) FROM "BankTransaction" t
                          WHERE t.type = 'TRANSFER' AND t.fromAccountId = s.bankAccountId
-                           AND t.fromAccountNumber = s.accountNumber AND t.isDeleted = 0), 0) AS calculatedBalance,
+                           AND t.fromAccountNumber = s.accountNumber AND t.isDeleted = 0), 0)
+              + COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
+                           WHERE i.toShopAccountId = s.id AND i.isDeleted = 0), 0)
+              - COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
+                           WHERE i.fromShopAccountId = s.id AND i.isDeleted = 0), 0) AS calculatedBalance,
               (SELECT COUNT(*) FROM "BankTransaction" t
                 WHERE ((t.toAccountId = s.bankAccountId AND t.toAccountNumber = s.accountNumber)
                    OR (t.fromAccountId = s.bankAccountId AND t.fromAccountNumber = s.accountNumber))
@@ -400,7 +410,7 @@ export function saveShopBankAccount(
         input.bankAccountId,
         input.accountNumber.trim(),
         input.accountName.trim(),
-        input.isActive ? 1 : 0,
+        (input.isActive ?? true) ? 1 : 0,
         now,
         input.id,
       );
@@ -431,7 +441,7 @@ export function saveShopBankAccount(
       input.accountNumber.trim(),
       input.accountName.trim(),
       input.balance ?? 0,
-      input.isActive ? 1 : 0,
+      (input.isActive ?? true) ? 1 : 0,
       actor.id,
       now,
       now,
@@ -460,6 +470,18 @@ export function deleteShopBankAccount(
 ): { deleted: true } {
   return transaction(() => {
     const before = getShopBankAccount(id, db);
+
+    const inUseTransfer = db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM "InternalTransfer" WHERE fromShopAccountId = ? OR toShopAccountId = ?`,
+      )
+      .get(id, id) as { c: number } | undefined;
+    if (inUseTransfer && inUseTransfer.c > 0) {
+      throw errors.invalidState(
+        `"${before.accountNumber}" (${before.accountName}) has internal transfers recorded against it, so it cannot be deleted. Deactivate it instead.`,
+      );
+    }
+
     db.prepare(`DELETE FROM "ShopBankAccount" WHERE id = ?`).run(id);
 
     recordAudit(
@@ -1441,13 +1463,19 @@ export function bankingOverview(
                            AND t.isDeleted = 0), 0)
                 - COALESCE((SELECT SUM(t.amount) FROM "BankTransaction" t
                              WHERE t.type = 'TRANSFER' AND t.fromAccountId = a.id
-                               AND t.isDeleted = 0), 0) AS balance
+                               AND t.isDeleted = 0), 0)
+                + COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
+                             WHERE i.toAccountId = a.id AND i.isDeleted = 0), 0)
+                - COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
+                             WHERE i.fromAccountId = a.id AND i.isDeleted = 0), 0) AS balance
          FROM "BankAccount" a
         WHERE a.isActive = 1
            -- A retired account holding money must stay on screen, or the figure
            -- would simply disappear the day it was switched off.
            OR EXISTS (SELECT 1 FROM "BankTransaction" t
                        WHERE (t.fromAccountId = a.id OR t.toAccountId = a.id) AND t.isDeleted = 0)
+           OR EXISTS (SELECT 1 FROM "InternalTransfer" i
+                       WHERE (i.fromAccountId = a.id OR i.toAccountId = a.id) AND i.isDeleted = 0)
         ORDER BY a.name ASC`,
     )
     .all(
@@ -1523,3 +1551,321 @@ export function bankingOverview(
     range: { from: range.from, to: range.to },
   };
 }
+
+// -----------------------------------------------------------------------------
+// Internal Transfers — money moved between the shop's own bank accounts
+// -----------------------------------------------------------------------------
+
+export interface InternalTransferRow {
+  id: string;
+  transferNumber: string;
+  transferDate: string;
+  transferDay: string;
+  fromShopAccountId: string;
+  toShopAccountId: string;
+  fromAccountId: string;
+  toAccountId: string;
+  fromBankName: string;
+  fromBankKey: string;
+  fromAccountNumber: string;
+  fromAccountName: string;
+  toBankName: string;
+  toBankKey: string;
+  toAccountNumber: string;
+  toAccountName: string;
+  amount: number;
+  notes: string | null;
+  outTransactionId: string | null;
+  inTransactionId: string | null;
+  isDeleted: number;
+  deletedReason: string | null;
+  createdBy: string;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const INTERNAL_TRANSFER_SELECT = `
+  SELECT it.id, it.transferNumber, it.transferDate, it.transferDay,
+         it.fromShopAccountId, it.toShopAccountId,
+         it.fromAccountId, it.toAccountId,
+         fb.name AS fromBankName, fb.key AS fromBankKey,
+         it.fromAccountNumber, it.fromAccountName,
+         tb.name AS toBankName, tb.key AS toBankKey,
+         it.toAccountNumber, it.toAccountName,
+         it.amount, it.notes,
+         it.outTransactionId, it.inTransactionId,
+         it.isDeleted, it.deletedReason,
+         it.createdBy, u.fullName AS createdByName,
+         it.createdAt, it.updatedAt
+    FROM "InternalTransfer" it
+    JOIN "BankAccount" fb ON fb.id = it.fromAccountId
+    JOIN "BankAccount" tb ON tb.id = it.toAccountId
+    LEFT JOIN "User" u ON u.id = it.createdBy
+`;
+
+export function getInternalTransfer(id: string, db: Db = getDatabase()): InternalTransferRow {
+  const row = db
+    .prepare(`${INTERNAL_TRANSFER_SELECT} WHERE it.id = ?`)
+    .get(id) as InternalTransferRow | undefined;
+  if (!row) throw errors.notFound('internal transfer');
+  return row;
+}
+
+export function listInternalTransfers(
+  query: InternalTransferListQuery,
+  db: Db = getDatabase(),
+): {
+  rows: InternalTransferRow[];
+  total: number;
+  totalAmount: number;
+} {
+  const where: string[] = [];
+  const params: unknown[] = [];
+
+  if (!query.includeDeleted) where.push('it.isDeleted = 0');
+  if (query.from) {
+    where.push('it.transferDay >= ?');
+    params.push(query.from);
+  }
+  if (query.to) {
+    where.push('it.transferDay <= ?');
+    params.push(query.to);
+  }
+  if (query.fromShopAccountId) {
+    where.push('it.fromShopAccountId = ?');
+    params.push(query.fromShopAccountId);
+  }
+  if (query.toShopAccountId) {
+    where.push('it.toShopAccountId = ?');
+    params.push(query.toShopAccountId);
+  }
+  if (query.shopAccountId) {
+    where.push('(it.fromShopAccountId = ? OR it.toShopAccountId = ?)');
+    params.push(query.shopAccountId, query.shopAccountId);
+  }
+  if (query.search) {
+    where.push(
+      `(it.transferNumber LIKE ? COLLATE NOCASE
+        OR it.fromAccountNumber LIKE ? OR it.toAccountNumber LIKE ?
+        OR it.fromAccountName LIKE ? COLLATE NOCASE OR it.toAccountName LIKE ? COLLATE NOCASE
+        OR fb.name LIKE ? COLLATE NOCASE OR fb.key LIKE ? COLLATE NOCASE
+        OR tb.name LIKE ? COLLATE NOCASE OR tb.key LIKE ? COLLATE NOCASE
+        OR it.notes LIKE ? COLLATE NOCASE)`,
+    );
+    const like = `%${query.search}%`;
+    params.push(like, like, like, like, like, like, like, like, like, like);
+  }
+
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+  const aggregate = db
+    .prepare(
+      `SELECT COUNT(*) AS total,
+              COALESCE(SUM(it.amount), 0) AS totalAmount
+         FROM "InternalTransfer" it
+         JOIN "BankAccount" fb ON fb.id = it.fromAccountId
+         JOIN "BankAccount" tb ON tb.id = it.toAccountId
+       ${whereSql}`,
+    )
+    .get(...params) as { total: number; totalAmount: number };
+
+  const rows = db
+    .prepare(
+      `${INTERNAL_TRANSFER_SELECT}
+       ${whereSql}
+       ORDER BY it.transferDate DESC, it.createdAt DESC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(...params, query.pageSize, query.page * query.pageSize) as InternalTransferRow[];
+
+  return {
+    rows,
+    total: aggregate.total,
+    totalAmount: aggregate.totalAmount,
+  };
+}
+
+export function createInternalTransfer(
+  input: CreateInternalTransferInput,
+  actor: SessionUser,
+  db: Db = getDatabase(),
+): InternalTransferRow {
+  return transaction(() => {
+    if (input.fromShopAccountId === input.toShopAccountId) {
+      throw errors.validation('Source and destination accounts must be different.', {
+        toShopAccountId: 'Choose a different account to transfer to',
+      });
+    }
+
+    if (input.amount <= 0) {
+      throw errors.validation('Amount must be more than zero.', {
+        amount: 'Required',
+      });
+    }
+
+    const fromShopAccount = getShopBankAccount(input.fromShopAccountId, db);
+    const toShopAccount = getShopBankAccount(input.toShopAccountId, db);
+
+    if (!fromShopAccount.isActive) {
+      throw errors.validation('The source account is inactive.', {
+        fromShopAccountId: 'Account is inactive',
+      });
+    }
+    if (!toShopAccount.isActive) {
+      throw errors.validation('The destination account is inactive.', {
+        toShopAccountId: 'Account is inactive',
+      });
+    }
+
+    if (fromShopAccount.balance <= 0) {
+      throw errors.validation(
+        `"${fromShopAccount.accountName}" has no available balance to transfer.`,
+        {
+          fromShopAccountId: 'Insufficient balance',
+          amount: 'Account has zero or negative balance',
+        },
+      );
+    }
+
+    if (input.amount > fromShopAccount.balance) {
+      throw errors.validation(
+        `Cannot transfer more than the current balance (${formatMoney(fromShopAccount.balance)}) of "${fromShopAccount.accountName}".`,
+        {
+          amount: `Exceeds current balance of ${formatMoney(fromShopAccount.balance)}`,
+        },
+      );
+    }
+
+    const fromBank = usableAccount(fromShopAccount.bankAccountId, db);
+    const toBank = usableAccount(toShopAccount.bankAccountId, db);
+
+    const transferId = newId();
+    const transferNumber = nextNumber('banking', db);
+    const now = nowInstant();
+    const transferDate = localDateTimeToInstant(input.transferAt);
+    const transferDay = localDateTimeToDay(input.transferAt);
+
+    // Insert InternalTransfer record (no BankTransaction rows — balance is tracked
+    // directly on ShopBankAccount.balance, avoiding the calculatedBalance override
+    // that only accounts for BankTransaction sums and would ignore the stored balance).
+    db.prepare(
+      `INSERT INTO "InternalTransfer" (
+         id, transferNumber, transferDate, transferDay,
+         fromShopAccountId, toShopAccountId,
+         fromAccountId, toAccountId,
+         fromAccountNumber, fromAccountName,
+         toAccountNumber, toAccountName,
+         amount, notes,
+         outTransactionId, inTransactionId,
+         isDeleted, deletedReason,
+         createdBy, createdAt, updatedAt
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, NULL, ?, ?, ?)`,
+    ).run(
+      transferId,
+      transferNumber,
+      transferDate,
+      transferDay,
+      fromShopAccount.id,
+      toShopAccount.id,
+      fromShopAccount.bankAccountId,
+      toShopAccount.bankAccountId,
+      fromShopAccount.accountNumber,
+      fromShopAccount.accountName,
+      toShopAccount.accountNumber,
+      toShopAccount.accountName,
+      input.amount,
+      input.notes?.trim() || null,
+      actor.id,
+      now,
+      now,
+    );
+
+    // Update balances directly on ShopBankAccount
+    const newFromBal = fromShopAccount.balance - input.amount;
+    const newToBal = toShopAccount.balance + input.amount;
+    db.prepare(`UPDATE "ShopBankAccount" SET balance = ?, updatedAt = ? WHERE id = ?`).run(
+      newFromBal,
+      now,
+      fromShopAccount.id,
+    );
+    db.prepare(`UPDATE "ShopBankAccount" SET balance = ?, updatedAt = ? WHERE id = ?`).run(
+      newToBal,
+      now,
+      toShopAccount.id,
+    );
+
+    recordAudit(
+      {
+        userId: actor.id,
+        action: 'CREATE',
+        entityName: 'InternalTransfer',
+        entityId: transferId,
+        summary: `Transferred ${formatMoney(input.amount)} from ${fromBank.name} (${fromShopAccount.accountNumber}) to ${toBank.name} (${toShopAccount.accountNumber})`,
+        newValues: input,
+      },
+      db,
+    );
+
+    return getInternalTransfer(transferId, db);
+  }, db);
+}
+
+export function deleteInternalTransfer(
+  id: string,
+  reason: string,
+  actor: SessionUser,
+  db: Db = getDatabase(),
+): { deleted: true } {
+  return transaction(() => {
+    const transfer = getInternalTransfer(id, db);
+    if (transfer.isDeleted) {
+      throw errors.invalidState('This internal transfer has already been deleted.');
+    }
+
+    const now = nowInstant();
+
+    db.prepare(
+      `UPDATE "InternalTransfer"
+          SET isDeleted = 1, deletedReason = ?, updatedAt = ?
+        WHERE id = ?`,
+    ).run(reason, now, id);
+
+    const fromAccount = db
+      .prepare(`SELECT id, balance FROM "ShopBankAccount" WHERE id = ?`)
+      .get(transfer.fromShopAccountId) as { id: string; balance: number } | undefined;
+    if (fromAccount) {
+      db.prepare(`UPDATE "ShopBankAccount" SET balance = ?, updatedAt = ? WHERE id = ?`).run(
+        fromAccount.balance + transfer.amount,
+        now,
+        fromAccount.id,
+      );
+    }
+
+    const toAccount = db
+      .prepare(`SELECT id, balance FROM "ShopBankAccount" WHERE id = ?`)
+      .get(transfer.toShopAccountId) as { id: string; balance: number } | undefined;
+    if (toAccount) {
+      db.prepare(`UPDATE "ShopBankAccount" SET balance = ?, updatedAt = ? WHERE id = ?`).run(
+        toAccount.balance - transfer.amount,
+        now,
+        toAccount.id,
+      );
+    }
+
+    recordAudit(
+      {
+        userId: actor.id,
+        action: 'DELETE',
+        entityName: 'InternalTransfer',
+        entityId: id,
+        summary: `Deleted internal transfer ${transfer.transferNumber} of ${formatMoney(transfer.amount)}: ${reason}`,
+        oldValues: transfer,
+      },
+      db,
+    );
+
+    return { deleted: true };
+  }, db);
+}
+

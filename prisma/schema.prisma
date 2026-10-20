@@ -75,6 +75,7 @@ model User {
   bankTransactions   BankTransaction[]
   cashCounts         CashCount[]
   shopBankAccounts   ShopBankAccount[]
+  internalTransfers  InternalTransfer[]
   auditLogs          AuditLog[]
 
   @@index([role])
@@ -609,11 +610,48 @@ model ShopBankAccount {
   createdAt     String
   updatedAt     String
 
-  bankAccount BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
-  creator     User        @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  bankAccount  BankAccount        @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+  creator      User               @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  transfersOut InternalTransfer[] @relation("ShopTransfersOut")
+  transfersIn  InternalTransfer[] @relation("ShopTransfersIn")
 
   @@index([bankAccountId])
   @@index([isActive])
+}
+
+/// A transfer of funds between two of the shop's own registered bank accounts.
+/// Both sides must be registered ShopBankAccounts.
+model InternalTransfer {
+  id                String   @id
+  transferNumber    String   @unique
+  transferDate      String
+  transferDay       String
+  fromShopAccountId String
+  toShopAccountId   String
+  fromAccountId     String
+  toAccountId       String
+  fromAccountNumber String
+  fromAccountName   String
+  toAccountNumber   String
+  toAccountName     String
+  amount            Int
+  notes             String?
+  outTransactionId  String?
+  inTransactionId   String?
+  isDeleted         Boolean  @default(false)
+  deletedReason     String?
+  createdBy         String
+  createdAt         String
+  updatedAt         String
+
+  fromShopAccount   ShopBankAccount @relation("ShopTransfersOut", fields: [fromShopAccountId], references: [id], onDelete: Restrict)
+  toShopAccount     ShopBankAccount @relation("ShopTransfersIn", fields: [toShopAccountId], references: [id], onDelete: Restrict)
+  creator           User            @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@index([transferDay])
+  @@index([fromShopAccountId])
+  @@index([toShopAccountId])
+  @@index([isDeleted])
 }
 
 /// One movement of money. TRANSFER is money leaving one of the shop's accounts,

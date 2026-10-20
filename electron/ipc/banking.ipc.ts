@@ -27,17 +27,23 @@ import {
   zSaveCashCount,
   zSaveBankBalances,
   zWithdrawBankAdvance,
+  zCreateInternalTransfer,
+  zDeleteInternalTransfer,
+  zInternalTransferListQuery,
 } from '../../shared/validation';
 import {
   bankingOverview,
   createBankTransaction,
+  createInternalTransfer,
   deleteBankAccount,
   deleteBankTransaction,
+  deleteInternalTransfer,
   deleteShopBankAccount,
   getBankAdvance,
   listBankAccounts,
   listBankAdvances,
   listBankTransactions,
+  listInternalTransfers,
   listShopBankAccounts,
   openBankAdvance,
   saveBankAccount,
@@ -164,5 +170,28 @@ export function registerBankingIpc(): void {
     { access: 'permission', permission: 'banking.manage' },
     zSaveBankBalances,
     (input) => saveBankBalances(input, requireUser()),
+  );
+
+  handle(
+    CHANNELS.banking.listInternalTransfers,
+    { access: 'permission', permission: 'banking.view' },
+    zInternalTransferListQuery,
+    (query) => listInternalTransfers(query),
+  );
+
+  handle(
+    CHANNELS.banking.createInternalTransfer,
+    { access: 'permission', permission: 'banking.manage' },
+    zCreateInternalTransfer,
+    (input) => createInternalTransfer(input, requireUser()),
+  );
+
+  handle(
+    CHANNELS.banking.deleteInternalTransfer,
+    { access: 'permission', permission: 'banking.delete' },
+    zDeleteInternalTransfer,
+    ({ id, reason }) => {
+      deleteInternalTransfer(id, reason, requireUser());
+    },
   );
 }

@@ -35,6 +35,10 @@ import {
   getShopBankAccount,
   saveShopBankAccount,
   deleteShopBankAccount,
+  createInternalTransfer,
+  deleteInternalTransfer,
+  getInternalTransfer,
+  listInternalTransfers,
 } from '../electron/services/banking.service';
 import { AppError } from '../shared/errors';
 import { businessDay, addDays, nowLocalDateTime, localDateTimeToInstant } from '../shared/datetime';
@@ -1701,6 +1705,408 @@ describe('audit trail', () => {
       );
       expect(err.code).toBe('INVALID_STATE');
       expect(err.message).toContain('switched off');
+    });
+  });
+
+  describe('internal account transfers', () => {
+    it('transfers amount directly between two shop bank accounts without touching cash in hand or charging fees', () => {
+      const fromAcct = saveShopBankAccount(
+        {
+          bankAccountId: kpay,
+          accountNumber: '09 111 222 333',
+          accountName: 'Shop Kpay 1',
+          balance: 1_000_000,
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+      const toAcct = saveShopBankAccount(
+        {
+          bankAccountId: aya,
+          accountNumber: '09 444 555 666',
+          accountName: 'Shop AYA 1',
+          balance: 200_000,
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+
+      const cashBefore = cashInHand(ctx.db).amount;
+      const overviewBefore = bankingOverview({ from: businessDay(), to: businessDay() }, ctx.db);
+
+      const transfer = createInternalTransfer(
+        {
+          fromShopAccountId: fromAcct.id,
+          toShopAccountId: toAcct.id,
+          amount: 300_000,
+          transferAt: at(),
+          notes: 'Moving money from Kpay to AYA',
+        },
+        actor,
+        ctx.db,
+      );
+
+      expect(transfer.id).toBeDefined();
+      expect(transfer.transferNumber).toMatch(/^BNK-\d{6}-\d{4}/);
+      expect(transfer.amount).toBe(300_000);
+      expect(transfer.fromAccountNumber).toBe('09 111 222 333');
+      expect(transfer.toAccountNumber).toBe('09 444 555 666');
+      expect(transfer.fromBankKey).toBe('Kpay');
+      expect(transfer.toBankKey).toBe('AYAPay');
+
+      // Cash in hand is completely untouched
+      expect(cashInHand(ctx.db).amount).toBe(cashBefore);
+
+      // Account balances updated
+      expect(getShopBankAccount(fromAcct.id, ctx.db).balance).toBe(700_000);
+      expect(getShopBankAccount(toAcct.id, ctx.db).balance).toBe(500_000);
+
+      // No BankTransaction entries created — they clutter the ledger
+      const txs = listBankTransactions({ search: '', page: 0, pageSize: 50, includeDeleted: false }, ctx.db);
+      expect(txs.rows.filter((r) => r.notes?.includes('Internal transfer'))).toHaveLength(0);
+
+      // Appears in listInternalTransfers
+      const list = listInternalTransfers({ page: 0, pageSize: 50, search: '', includeDeleted: false }, ctx.db);
+      expect(list.total).toBe(1);
+      expect(list.totalAmount).toBe(300_000);
+      expect(list.rows[0].id).toBe(transfer.id);
+    });
+
+    it('updates recipient and sender balances correctly when accounts have existing bank transactions / set balances', () => {
+      // AN has 1,500,000, ST has 5,000,000 (both created then balance set via saveBankBalances)
+      const anAcct = saveShopBankAccount(
+        {
+          bankAccountId: kpay,
+          accountNumber: '09 254 243 046',
+          accountName: 'AN',
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+      const stAcct = saveShopBankAccount(
+        {
+          bankAccountId: kpay,
+          accountNumber: '09 403 113 003',
+          accountName: 'ST',
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+
+      saveBankBalances(
+        {
+          shopAccountBalances: [
+            { shopAccountId: anAcct.id, balance: 1_500_000 },
+            { shopAccountId: stAcct.id, balance: 5_000_000 },
+          ],
+        },
+        actor,
+        ctx.db,
+      );
+
+      // Verify initial balances before transfer
+      expect(getShopBankAccount(anAcct.id, ctx.db).balance).toBe(1_500_000);
+      expect(getShopBankAccount(stAcct.id, ctx.db).balance).toBe(5_000_000);
+      const initialList = listShopBankAccounts(false, ctx.db);
+      expect(initialList.find((a) => a.id === anAcct.id)?.balance).toBe(1_500_000);
+      expect(initialList.find((a) => a.id === stAcct.id)?.balance).toBe(5_000_000);
+
+      // Transfer 500,000 from AN to ST
+      const transfer = createInternalTransfer(
+        {
+          fromShopAccountId: anAcct.id,
+          toShopAccountId: stAcct.id,
+          amount: 500_000,
+          transferAt: at(),
+          notes: 'Transfer 500k from AN to ST',
+        },
+        actor,
+        ctx.db,
+      );
+
+      // AN balance must be 1,000,000 and ST balance must be 5,500,000
+      expect(getShopBankAccount(anAcct.id, ctx.db).balance).toBe(1_000_000);
+      expect(getShopBankAccount(stAcct.id, ctx.db).balance).toBe(5_500_000);
+
+      const afterList = listShopBankAccounts(false, ctx.db);
+      expect(afterList.find((a) => a.id === anAcct.id)?.balance).toBe(1_000_000);
+      expect(afterList.find((a) => a.id === stAcct.id)?.balance).toBe(5_500_000);
+
+      // Delete transfer, balances should restore to 1,500,000 and 5,000,000
+      deleteInternalTransfer(transfer.id, 'Wrong transfer', actor, ctx.db);
+      expect(getShopBankAccount(anAcct.id, ctx.db).balance).toBe(1_500_000);
+      expect(getShopBankAccount(stAcct.id, ctx.db).balance).toBe(5_000_000);
+      const restoredList = listShopBankAccounts(false, ctx.db);
+      expect(restoredList.find((a) => a.id === anAcct.id)?.balance).toBe(1_500_000);
+      expect(restoredList.find((a) => a.id === stAcct.id)?.balance).toBe(5_000_000);
+    });
+
+    it('refuses to transfer more than the current balance of the FROM account', () => {
+      const fromAcct = saveShopBankAccount(
+        {
+          bankAccountId: kpay,
+          accountNumber: '09 111 333 444',
+          accountName: 'Shop Kpay Limited',
+          balance: 300_000,
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+      const toAcct = saveShopBankAccount(
+        {
+          bankAccountId: aya,
+          accountNumber: '09 222 333 444',
+          accountName: 'Shop AYA Target',
+          balance: 100_000,
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+
+      // Attempt to transfer 300,001 (exceeds 300,000)
+      const err = captureError(() =>
+        createInternalTransfer(
+          {
+            fromShopAccountId: fromAcct.id,
+            toShopAccountId: toAcct.id,
+            amount: 300_001,
+            transferAt: at(),
+          },
+          actor,
+          ctx.db,
+        ),
+      );
+      expect(err.code).toBe('VALIDATION');
+      expect(err.message).toContain('more than the current balance');
+    });
+
+    it('refuses to transfer when the FROM account has zero or negative balance', () => {
+      const zeroAcct = saveShopBankAccount(
+        {
+          bankAccountId: kpay,
+          accountNumber: '09 000 000 000',
+          accountName: 'Shop Kpay Zero',
+          balance: 0,
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+      const toAcct = saveShopBankAccount(
+        {
+          bankAccountId: aya,
+          accountNumber: '09 555 666 777',
+          accountName: 'Shop AYA Target 2',
+          balance: 100_000,
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+
+      const err = captureError(() =>
+        createInternalTransfer(
+          {
+            fromShopAccountId: zeroAcct.id,
+            toShopAccountId: toAcct.id,
+            amount: 10_000,
+            transferAt: at(),
+          },
+          actor,
+          ctx.db,
+        ),
+      );
+      expect(err.code).toBe('VALIDATION');
+      expect(err.message).toContain('no available balance');
+    });
+
+    it('refuses to transfer to the same account', () => {
+      const acct = saveShopBankAccount(
+        {
+          bankAccountId: kpay,
+          accountNumber: '09 777 777 777',
+          accountName: 'Shop Kpay Single',
+          balance: 500_000,
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+
+      const err = captureError(() =>
+        createInternalTransfer(
+          {
+            fromShopAccountId: acct.id,
+            toShopAccountId: acct.id,
+            amount: 50_000,
+            transferAt: at(),
+          },
+          actor,
+          ctx.db,
+        ),
+      );
+      expect(err.code).toBe('VALIDATION');
+      expect(err.message).toContain('different');
+    });
+
+    it('refuses to transfer if either account is inactive', () => {
+      const activeAcct = saveShopBankAccount(
+        {
+          bankAccountId: kpay,
+          accountNumber: '09 111 000 111',
+          accountName: 'Active Account',
+          balance: 500_000,
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+      const inactiveAcct = saveShopBankAccount(
+        {
+          bankAccountId: aya,
+          accountNumber: '09 222 000 222',
+          accountName: 'Inactive Account',
+          isActive: false,
+          balance: 100_000,
+        },
+        actor,
+        ctx.db,
+      );
+
+      const err1 = captureError(() =>
+        createInternalTransfer(
+          {
+            fromShopAccountId: inactiveAcct.id,
+            toShopAccountId: activeAcct.id,
+            amount: 50_000,
+            transferAt: at(),
+          },
+          actor,
+          ctx.db,
+        ),
+      );
+      expect(err1.code).toBe('VALIDATION');
+
+      const err2 = captureError(() =>
+        createInternalTransfer(
+          {
+            fromShopAccountId: activeAcct.id,
+            toShopAccountId: inactiveAcct.id,
+            amount: 50_000,
+            transferAt: at(),
+          },
+          actor,
+          ctx.db,
+        ),
+      );
+      expect(err2.code).toBe('VALIDATION');
+    });
+
+    it('deletes an internal transfer and restores both account balances', () => {
+      const fromAcct = saveShopBankAccount(
+        {
+          bankAccountId: kpay,
+          accountNumber: '09 333 444 555',
+          accountName: 'Kpay For Delete',
+          balance: 1_000_000,
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+      const toAcct = saveShopBankAccount(
+        {
+          bankAccountId: aya,
+          accountNumber: '09 666 777 888',
+          accountName: 'AYA For Delete',
+          balance: 100_000,
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+
+      const transfer = createInternalTransfer(
+        {
+          fromShopAccountId: fromAcct.id,
+          toShopAccountId: toAcct.id,
+          amount: 250_000,
+          transferAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+
+      expect(getShopBankAccount(fromAcct.id, ctx.db).balance).toBe(750_000);
+      expect(getShopBankAccount(toAcct.id, ctx.db).balance).toBe(350_000);
+
+      const delResult = deleteInternalTransfer(transfer.id, 'Wrong amount transferred', actor, ctx.db);
+      expect(delResult.deleted).toBe(true);
+
+      // Balances restored
+      expect(getShopBankAccount(fromAcct.id, ctx.db).balance).toBe(1_000_000);
+      expect(getShopBankAccount(toAcct.id, ctx.db).balance).toBe(100_000);
+
+      // Deleted transfer is marked deleted
+      const updated = getInternalTransfer(transfer.id, ctx.db);
+      expect(updated.isDeleted).toBe(1);
+      expect(updated.deletedReason).toBe('Wrong amount transferred');
+
+      // Excluded from standard listing
+      const list = listInternalTransfers({ page: 0, pageSize: 50, search: '', includeDeleted: false }, ctx.db);
+      expect(list.total).toBe(0);
+
+      // Refuses to delete again
+      const err = captureError(() =>
+        deleteInternalTransfer(transfer.id, 'Trying again', actor, ctx.db),
+      );
+      expect(err.code).toBe('INVALID_STATE');
+    });
+
+    it('prevents deleting a ShopBankAccount that has internal transfers', () => {
+      const fromAcct = saveShopBankAccount(
+        {
+          bankAccountId: kpay,
+          accountNumber: '09 999 111 222',
+          accountName: 'Kpay Cannot Delete',
+          balance: 500_000,
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+      const toAcct = saveShopBankAccount(
+        {
+          bankAccountId: aya,
+          accountNumber: '09 999 333 444',
+          accountName: 'AYA Cannot Delete',
+          balance: 100_000,
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+
+      createInternalTransfer(
+        {
+          fromShopAccountId: fromAcct.id,
+          toShopAccountId: toAcct.id,
+          amount: 50_000,
+          transferAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+
+      const err = captureError(() => deleteShopBankAccount(fromAcct.id, actor, ctx.db));
+      expect(err.code).toBe('INVALID_STATE');
+      expect(err.message).toContain('internal transfers');
     });
   });
 });

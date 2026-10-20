@@ -49,6 +49,9 @@ import type {
   SaveBankBalancesInput,
   BankAccountBalanceAdjustment,
   ShopBankAccountBalanceAdjustment,
+  CreateInternalTransferInput,
+  InternalTransferListQueryInput,
+  DeleteInternalTransferInput,
   AddServiceItemInput,
   AddServicePaymentInput,
   ChangeServiceStatusInput,
@@ -386,6 +389,41 @@ export interface ShopBankAccount {
   isActive: SqliteBool;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface InternalTransfer {
+  id: string;
+  transferNumber: string;
+  transferDate: string;
+  transferDay: string;
+  fromShopAccountId: string;
+  toShopAccountId: string;
+  fromAccountId: string;
+  toAccountId: string;
+  fromBankName: string;
+  fromBankKey: string;
+  fromAccountNumber: string;
+  fromAccountName: string;
+  toBankName: string;
+  toBankKey: string;
+  toAccountNumber: string;
+  toAccountName: string;
+  amount: number;
+  notes: string | null;
+  outTransactionId: string | null;
+  inTransactionId: string | null;
+  isDeleted: SqliteBool;
+  deletedReason: string | null;
+  createdBy: string;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InternalTransferListResult {
+  rows: InternalTransfer[];
+  total: number;
+  totalAmount: number;
 }
 
 export interface BankTransaction {
@@ -840,6 +878,10 @@ export interface PosApi {
     saveCashCount(input: SaveCashCountInput): Promise<CashInHand>;
     /** Updates bank/wallet account balances to match statements or mobile apps. */
     saveBankBalances(input: SaveBankBalancesInput): Promise<{ updated: true; count: number }>;
+    /** Internal transfer between shop bank accounts. */
+    listInternalTransfers(query: InternalTransferListQueryInput): Promise<InternalTransferListResult>;
+    createInternalTransfer(input: CreateInternalTransferInput): Promise<InternalTransfer>;
+    deleteInternalTransfer(input: DeleteInternalTransferInput): Promise<void>;
   };
   backup: {
     /** Folders, retention settings and every backup file found (spec §53). */

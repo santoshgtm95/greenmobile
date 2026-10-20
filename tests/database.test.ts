@@ -29,6 +29,7 @@ const EXPECTED_TABLES = [
   'Customer',
   'Expense',
   'ExpenseCategory',
+  'InternalTransfer',
   'InventoryTransaction',
   'Payment',
   'Product',
