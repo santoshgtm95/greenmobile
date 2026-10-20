@@ -1,11 +1,12 @@
 import { Divider, Paper, Tab, Tabs } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 
-export type BankingTab = 'transactions' | 'advances' | 'internal-transfers';
+export type BankingTab = 'transactions' | 'advances' | 'shop-advances' | 'internal-transfers';
 
 const TABS: Array<{ value: BankingTab; label: string; path: string }> = [
   { value: 'transactions', label: 'Transactions', path: '/banking' },
   { value: 'advances', label: 'Advances', path: '/banking/advances' },
+  { value: 'shop-advances', label: 'Advances Shop', path: '/banking/shop-advances' },
   { value: 'internal-transfers', label: 'Internal Account Transfer', path: '/banking/internal-transfers' },
 ];
 

@@ -53,6 +53,9 @@ import {
   type BankAdvanceStatus,
   type BankFeeDirection,
   type BankTransactionType,
+  type ShopAdvanceSourceType,
+  type ShopAdvanceDestinationType,
+  type ShopAdvanceStatus,
 } from '../../shared/domain';
 import { amountAfterFee, formatMoney, rateOf } from '../../shared/money';
 import type {
@@ -69,6 +72,11 @@ import type {
   BankAccountBalanceAdjustment,
   CreateInternalTransferInput,
   InternalTransferListQuery,
+  CreateShopAdvanceInput,
+  ReceiveShopAdvanceInput,
+  ShopAdvanceListQuery,
+  DeleteShopAdvanceInput,
+  DeleteShopAdvanceSettlementInput,
 } from '../../shared/validation';
 
 // -----------------------------------------------------------------------------
@@ -313,7 +321,11 @@ export function listShopBankAccounts(
               + COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
                            WHERE i.toShopAccountId = s.id AND i.isDeleted = 0), 0)
               - COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
-                           WHERE i.fromShopAccountId = s.id AND i.isDeleted = 0), 0) AS calculatedBalance,
+                           WHERE i.fromShopAccountId = s.id AND i.isDeleted = 0), 0)
+              + COALESCE((SELECT SUM(sas.amount) FROM "ShopAdvanceSettlement" sas
+                           WHERE sas.toShopAccountId = s.id AND sas.isDeleted = 0), 0)
+              - COALESCE((SELECT SUM(sa.amount) FROM "ShopAdvance" sa
+                           WHERE sa.fromShopAccountId = s.id AND sa.isDeleted = 0), 0) AS calculatedBalance,
               (SELECT COUNT(*) FROM "BankTransaction" t
                 WHERE ((t.toAccountId = s.bankAccountId AND t.toAccountNumber = s.accountNumber)
                    OR (t.fromAccountId = s.bankAccountId AND t.fromAccountNumber = s.accountNumber))
@@ -346,7 +358,11 @@ export function getShopBankAccount(id: string, db: Db = getDatabase()): ShopBank
               + COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
                            WHERE i.toShopAccountId = s.id AND i.isDeleted = 0), 0)
               - COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
-                           WHERE i.fromShopAccountId = s.id AND i.isDeleted = 0), 0) AS calculatedBalance,
+                           WHERE i.fromShopAccountId = s.id AND i.isDeleted = 0), 0)
+              + COALESCE((SELECT SUM(sas.amount) FROM "ShopAdvanceSettlement" sas
+                           WHERE sas.toShopAccountId = s.id AND sas.isDeleted = 0), 0)
+              - COALESCE((SELECT SUM(sa.amount) FROM "ShopAdvance" sa
+                           WHERE sa.fromShopAccountId = s.id AND sa.isDeleted = 0), 0) AS calculatedBalance,
               (SELECT COUNT(*) FROM "BankTransaction" t
                 WHERE ((t.toAccountId = s.bankAccountId AND t.toAccountNumber = s.accountNumber)
                    OR (t.fromAccountId = s.bankAccountId AND t.fromAccountNumber = s.accountNumber))
@@ -479,6 +495,28 @@ export function deleteShopBankAccount(
     if (inUseTransfer && inUseTransfer.c > 0) {
       throw errors.invalidState(
         `"${before.accountNumber}" (${before.accountName}) has internal transfers recorded against it, so it cannot be deleted. Deactivate it instead.`,
+      );
+    }
+
+    const inUseShopAdvance = db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM "ShopAdvance" WHERE fromShopAccountId = ?`,
+      )
+      .get(id) as { c: number } | undefined;
+    if (inUseShopAdvance && inUseShopAdvance.c > 0) {
+      throw errors.invalidState(
+        `"${before.accountNumber}" (${before.accountName}) has shop advances recorded against it, so it cannot be deleted. Deactivate it instead.`,
+      );
+    }
+
+    const inUseSettlement = db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM "ShopAdvanceSettlement" WHERE toShopAccountId = ?`,
+      )
+      .get(id) as { c: number } | undefined;
+    if (inUseSettlement && inUseSettlement.c > 0) {
+      throw errors.invalidState(
+        `"${before.accountNumber}" (${before.accountName}) has shop advance repayments recorded against it, so it cannot be deleted. Deactivate it instead.`,
       );
     }
 
@@ -1467,7 +1505,13 @@ export function bankingOverview(
                 + COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
                              WHERE i.toAccountId = a.id AND i.isDeleted = 0), 0)
                 - COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
-                             WHERE i.fromAccountId = a.id AND i.isDeleted = 0), 0) AS balance
+                             WHERE i.fromAccountId = a.id AND i.isDeleted = 0), 0)
+                + COALESCE((SELECT SUM(sas.amount) FROM "ShopAdvanceSettlement" sas
+                             JOIN "ShopBankAccount" s ON s.id = sas.toShopAccountId
+                            WHERE s.bankAccountId = a.id AND sas.isDeleted = 0), 0)
+                - COALESCE((SELECT SUM(sa.amount) FROM "ShopAdvance" sa
+                             JOIN "ShopBankAccount" s ON s.id = sa.fromShopAccountId
+                            WHERE s.bankAccountId = a.id AND sa.isDeleted = 0), 0) AS balance
          FROM "BankAccount" a
         WHERE a.isActive = 1
            -- A retired account holding money must stay on screen, or the figure
@@ -1476,6 +1520,10 @@ export function bankingOverview(
                        WHERE (t.fromAccountId = a.id OR t.toAccountId = a.id) AND t.isDeleted = 0)
            OR EXISTS (SELECT 1 FROM "InternalTransfer" i
                        WHERE (i.fromAccountId = a.id OR i.toAccountId = a.id) AND i.isDeleted = 0)
+           OR EXISTS (SELECT 1 FROM "ShopAdvance" sa JOIN "ShopBankAccount" s ON s.id = sa.fromShopAccountId
+                       WHERE s.bankAccountId = a.id AND sa.isDeleted = 0)
+           OR EXISTS (SELECT 1 FROM "ShopAdvanceSettlement" sas JOIN "ShopBankAccount" s ON s.id = sas.toShopAccountId
+                       WHERE s.bankAccountId = a.id AND sas.isDeleted = 0)
         ORDER BY a.name ASC`,
     )
     .all(
@@ -1869,3 +1917,570 @@ export function deleteInternalTransfer(
   }, db);
 }
 
+
+
+// -----------------------------------------------------------------------------
+// Shop Advances (Money advanced from shop cash/account to external recipients)
+// -----------------------------------------------------------------------------
+
+export interface ShopAdvanceRow {
+  id: string;
+  advanceNumber: string;
+  fromType: ShopAdvanceSourceType;
+  fromShopAccountId: string | null;
+  fromBankName: string | null;
+  fromBankKey: string | null;
+  fromAccountNumber: string | null;
+  fromAccountName: string | null;
+  toType: ShopAdvanceDestinationType;
+  recipientName: string;
+  recipientPhone: string | null;
+  toBankName: string | null;
+  toAccountNumber: string | null;
+  toAccountName: string | null;
+  amount: number;
+  advanceDate: string;
+  advanceDay: string;
+  notes: string | null;
+  received: number;
+  remaining: number;
+  settlementCount: number;
+  lastSettlementDate: string | null;
+  status: ShopAdvanceStatus;
+  isDeleted: number;
+  deletedReason: string | null;
+  createdBy: string;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ShopAdvanceSettlementRow {
+  id: string;
+  shopAdvanceId: string;
+  settlementNumber: string;
+  toType: ShopAdvanceSourceType;
+  toShopAccountId: string | null;
+  toBankName: string | null;
+  toBankKey: string | null;
+  toAccountNumber: string | null;
+  toAccountName: string | null;
+  amount: number;
+  settlementDate: string;
+  settlementDay: string;
+  notes: string | null;
+  isDeleted: number;
+  deletedReason: string | null;
+  createdBy: string;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const SHOP_ADVANCE_BASE_SELECT = `
+  SELECT sa.id, sa.advanceNumber, sa.advanceDate, sa.advanceDay,
+         sa.fromType, sa.fromShopAccountId,
+         sa.fromBankName, sa.fromBankKey, sa.fromAccountNumber, sa.fromAccountName,
+         sa.toType, sa.recipientName, sa.recipientPhone,
+         sa.toBankName, sa.toAccountNumber, sa.toAccountName,
+         sa.amount, sa.notes,
+         sa.isDeleted, sa.deletedReason,
+         sa.createdBy, u.fullName AS createdByName,
+         sa.createdAt, sa.updatedAt
+    FROM "ShopAdvance" sa
+    LEFT JOIN "User" u ON u.id = sa.createdBy
+`;
+
+const SHOP_ADVANCE_SELECT = `
+  SELECT a.*,
+         a.amount - a.received AS remaining,
+         CASE WHEN a.amount - a.received <= 0 THEN 'SETTLED' ELSE 'OPEN' END AS status
+    FROM (
+      SELECT sa.*,
+             COALESCE((SELECT SUM(s.amount) FROM "ShopAdvanceSettlement" s
+                        WHERE s.shopAdvanceId = sa.id AND s.isDeleted = 0), 0) AS received,
+             (SELECT COUNT(*) FROM "ShopAdvanceSettlement" s
+                WHERE s.shopAdvanceId = sa.id AND s.isDeleted = 0) AS settlementCount,
+             (SELECT MAX(s.settlementDate) FROM "ShopAdvanceSettlement" s
+                WHERE s.shopAdvanceId = sa.id AND s.isDeleted = 0) AS lastSettlementDate
+        FROM (${SHOP_ADVANCE_BASE_SELECT}) sa
+    ) a
+`;
+
+const SHOP_ADVANCE_SETTLEMENT_SELECT = `
+  SELECT sas.id, sas.shopAdvanceId, sas.settlementNumber, sas.settlementDate, sas.settlementDay,
+         sas.toType, sas.toShopAccountId,
+         sas.toBankName, sas.toBankKey, sas.toAccountNumber, sas.toAccountName,
+         sas.amount, sas.notes,
+         sas.isDeleted, sas.deletedReason,
+         sas.createdBy, u.fullName AS createdByName,
+         sas.createdAt, sas.updatedAt
+    FROM "ShopAdvanceSettlement" sas
+    LEFT JOIN "User" u ON u.id = sas.createdBy
+`;
+
+export function getShopAdvance(
+  id: string,
+  db: Db = getDatabase(),
+): { advance: ShopAdvanceRow; settlements: ShopAdvanceSettlementRow[] } {
+  const advance = db
+    .prepare(`SELECT * FROM (${SHOP_ADVANCE_SELECT}) a WHERE a.id = ?`)
+    .get(id) as ShopAdvanceRow | undefined;
+  if (!advance) throw errors.notFound('shop advance');
+
+  const settlements = db
+    .prepare(
+      `${SHOP_ADVANCE_SETTLEMENT_SELECT}
+       WHERE sas.shopAdvanceId = ? AND sas.isDeleted = 0
+       ORDER BY sas.settlementDate ASC, sas.createdAt ASC`,
+    )
+    .all(id) as ShopAdvanceSettlementRow[];
+
+  return { advance, settlements };
+}
+
+export function listShopAdvances(
+  query: ShopAdvanceListQuery,
+  db: Db = getDatabase(),
+): {
+  rows: ShopAdvanceRow[];
+  total: number;
+  openCount: number;
+  totalAdvanced: number;
+  totalReceived: number;
+  outstandingTotal: number;
+} {
+  const where: string[] = [];
+  const params: unknown[] = [];
+
+  if (!query.includeDeleted) where.push('a.isDeleted = 0');
+  if (query.status === 'OPEN') where.push('a.remaining > 0');
+  if (query.status === 'SETTLED') where.push('a.remaining <= 0');
+  if (query.from) {
+    where.push('a.advanceDay >= ?');
+    params.push(query.from);
+  }
+  if (query.to) {
+    where.push('a.advanceDay <= ?');
+    params.push(query.to);
+  }
+  if (query.search) {
+    where.push(
+      `(a.advanceNumber LIKE ? COLLATE NOCASE
+        OR a.recipientName LIKE ? COLLATE NOCASE
+        OR a.recipientPhone LIKE ? COLLATE NOCASE
+        OR a.fromAccountNumber LIKE ? COLLATE NOCASE
+        OR a.fromAccountName LIKE ? COLLATE NOCASE
+        OR a.fromBankName LIKE ? COLLATE NOCASE
+        OR a.toAccountNumber LIKE ? COLLATE NOCASE
+        OR a.toAccountName LIKE ? COLLATE NOCASE
+        OR a.toBankName LIKE ? COLLATE NOCASE
+        OR a.notes LIKE ? COLLATE NOCASE)`,
+    );
+    const like = `%${query.search}%`;
+    params.push(like, like, like, like, like, like, like, like, like, like);
+  }
+
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+  const countRow = db
+    .prepare(`SELECT COUNT(*) AS total FROM (${SHOP_ADVANCE_SELECT}) a ${whereSql}`)
+    .get(...params) as { total: number };
+
+  const summary = db
+    .prepare(
+      `SELECT COUNT(CASE WHEN remaining > 0 THEN 1 END) AS openCount,
+              COALESCE(SUM(amount), 0) AS totalAdvanced,
+              COALESCE(SUM(received), 0) AS totalReceived,
+              COALESCE(SUM(CASE WHEN remaining > 0 THEN remaining ELSE 0 END), 0) AS outstandingTotal
+         FROM (${SHOP_ADVANCE_SELECT}) a
+        WHERE a.isDeleted = 0`,
+    )
+    .get() as {
+      openCount: number;
+      totalAdvanced: number;
+      totalReceived: number;
+      outstandingTotal: number;
+    };
+
+  const rows = db
+    .prepare(
+      `SELECT * FROM (${SHOP_ADVANCE_SELECT}) a
+       ${whereSql}
+       ORDER BY a.advanceDate DESC, a.createdAt DESC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(...params, query.pageSize, query.page * query.pageSize) as ShopAdvanceRow[];
+
+  return {
+    rows,
+    total: countRow.total,
+    openCount: summary.openCount,
+    totalAdvanced: summary.totalAdvanced,
+    totalReceived: summary.totalReceived,
+    outstandingTotal: summary.outstandingTotal,
+  };
+}
+
+export function createShopAdvance(
+  input: CreateShopAdvanceInput,
+  actor: SessionUser,
+  db: Db = getDatabase(),
+): ShopAdvanceRow {
+  return transaction(() => {
+    if (input.amount <= 0) {
+      throw errors.validation('Amount must be more than zero.', {
+        amount: 'Required',
+      });
+    }
+
+    let fromBankName: string | null = null;
+    let fromBankKey: string | null = null;
+    let fromAccountNumber: string | null = null;
+    let fromAccountName: string | null = null;
+    let fromShopAccountId: string | null = null;
+
+    if (input.fromType === 'CASH') {
+      const cash = cashInHand(db);
+      if (input.amount > cash.amount) {
+        throw errors.validation(
+          `Cannot advance more than current cash in hand balance (${formatMoney(cash.amount)}).`,
+          { amount: `Exceeds cash in hand balance of ${formatMoney(cash.amount)}` },
+        );
+      }
+    } else {
+      if (!input.fromShopAccountId) {
+        throw errors.validation('Choose a shop account to transfer from.', {
+          fromShopAccountId: 'Required',
+        });
+      }
+      const fromShopAccount = getShopBankAccount(input.fromShopAccountId, db);
+      if (!fromShopAccount.isActive) {
+        throw errors.validation('The source account is inactive.', {
+          fromShopAccountId: 'Account is inactive',
+        });
+      }
+      if (input.amount > fromShopAccount.balance) {
+        throw errors.validation(
+          `Cannot advance more than current balance (${formatMoney(fromShopAccount.balance)}) of "${fromShopAccount.accountName}".`,
+          { amount: `Exceeds current balance of ${formatMoney(fromShopAccount.balance)}` },
+        );
+      }
+      fromShopAccountId = fromShopAccount.id;
+      fromBankName = fromShopAccount.bankName;
+      fromBankKey = fromShopAccount.bankKey;
+      fromAccountNumber = fromShopAccount.accountNumber;
+      fromAccountName = fromShopAccount.accountName;
+    }
+
+    let toBankName: string | null = null;
+    let toAccountNumber: string | null = null;
+    let toAccountName: string | null = null;
+
+    if (input.toType === 'ACCOUNT') {
+      if (!input.toAccountNumber?.trim()) {
+        throw errors.validation('Enter recipient account number.', {
+          toAccountNumber: 'Required',
+        });
+      }
+      toBankName = input.toBankName?.trim() || null;
+      toAccountNumber = input.toAccountNumber.trim();
+      toAccountName = input.toAccountName?.trim() || null;
+    }
+
+    const id = newId();
+    const advanceNumber = nextNumber('banking', db);
+    const now = nowInstant();
+    const advanceDate = localDateTimeToInstant(input.advanceAt);
+    const advanceDay = localDateTimeToDay(input.advanceAt);
+
+    db.prepare(
+      `INSERT INTO "ShopAdvance" (
+         id, advanceNumber, advanceDate, advanceDay,
+         fromType, fromShopAccountId,
+         fromBankName, fromBankKey, fromAccountNumber, fromAccountName,
+         toType, recipientName, recipientPhone,
+         toBankName, toAccountNumber, toAccountName,
+         amount, notes,
+         isDeleted, deletedReason,
+         createdBy, createdAt, updatedAt
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
+    ).run(
+      id,
+      advanceNumber,
+      advanceDate,
+      advanceDay,
+      input.fromType,
+      fromShopAccountId,
+      fromBankName,
+      fromBankKey,
+      fromAccountNumber,
+      fromAccountName,
+      input.toType,
+      input.recipientName.trim(),
+      input.recipientPhone?.trim() || null,
+      toBankName,
+      toAccountNumber,
+      toAccountName,
+      input.amount,
+      input.notes?.trim() || null,
+      actor.id,
+      now,
+      now,
+    );
+
+    if (input.fromType === 'CASH') {
+      adjustCashInHand(
+        -input.amount,
+        `Shop Advance · ${advanceNumber} (${input.recipientName.trim()})`,
+        actor.id,
+        db,
+      );
+    } else if (fromShopAccountId) {
+      db.prepare(`UPDATE "ShopBankAccount" SET balance = balance - ?, updatedAt = ? WHERE id = ?`).run(
+        input.amount,
+        now,
+        fromShopAccountId,
+      );
+    }
+
+    recordAudit(
+      {
+        userId: actor.id,
+        action: 'CREATE',
+        entityName: 'ShopAdvance',
+        entityId: id,
+        summary: `Created shop advance ${advanceNumber} of ${formatMoney(input.amount)} to ${input.recipientName.trim()}`,
+        newValues: input,
+      },
+      db,
+    );
+
+    return getShopAdvance(id, db).advance;
+  }, db);
+}
+
+export function receiveShopAdvance(
+  input: ReceiveShopAdvanceInput,
+  actor: SessionUser,
+  db: Db = getDatabase(),
+): { advance: ShopAdvanceRow; settlement: ShopAdvanceSettlementRow } {
+  return transaction(() => {
+    const { advance } = getShopAdvance(input.shopAdvanceId, db);
+    if (advance.isDeleted) {
+      throw errors.invalidState('This advance has been deleted.');
+    }
+    if (advance.status === 'SETTLED' || advance.remaining <= 0) {
+      throw errors.invalidState('This advance has already been fully settled.');
+    }
+    if (input.amount <= 0) {
+      throw errors.validation('Amount must be more than zero.', { amount: 'Required' });
+    }
+    if (input.amount > advance.remaining) {
+      throw errors.validation(
+        `Repayment amount cannot exceed remaining balance of ${formatMoney(advance.remaining)}.`,
+        { amount: `Maximum is ${formatMoney(advance.remaining)}` },
+      );
+    }
+
+    let toBankName: string | null = null;
+    let toBankKey: string | null = null;
+    let toAccountNumber: string | null = null;
+    let toAccountName: string | null = null;
+    let toShopAccountId: string | null = null;
+
+    if (input.toType === 'SHOP_ACCOUNT') {
+      if (!input.toShopAccountId) {
+        throw errors.validation('Choose a shop account to receive into.', {
+          toShopAccountId: 'Required',
+        });
+      }
+      const toShopAccount = getShopBankAccount(input.toShopAccountId, db);
+      if (!toShopAccount.isActive) {
+        throw errors.validation('The destination account is inactive.', {
+          toShopAccountId: 'Account is inactive',
+        });
+      }
+      toShopAccountId = toShopAccount.id;
+      toBankName = toShopAccount.bankName;
+      toBankKey = toShopAccount.bankKey;
+      toAccountNumber = toShopAccount.accountNumber;
+      toAccountName = toShopAccount.accountName;
+    }
+
+    const settlementId = newId();
+    const settlementNumber = nextNumber('banking', db);
+    const now = nowInstant();
+    const settlementDate = localDateTimeToInstant(input.receivedAt);
+    const settlementDay = localDateTimeToDay(input.receivedAt);
+
+    db.prepare(
+      `INSERT INTO "ShopAdvanceSettlement" (
+         id, shopAdvanceId, settlementNumber, settlementDate, settlementDay,
+         toType, toShopAccountId,
+         toBankName, toBankKey, toAccountNumber, toAccountName,
+         amount, notes,
+         isDeleted, deletedReason,
+         createdBy, createdAt, updatedAt
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
+    ).run(
+      settlementId,
+      advance.id,
+      settlementNumber,
+      settlementDate,
+      settlementDay,
+      input.toType,
+      toShopAccountId,
+      toBankName,
+      toBankKey,
+      toAccountNumber,
+      toAccountName,
+      input.amount,
+      input.notes?.trim() || null,
+      actor.id,
+      now,
+      now,
+    );
+
+    if (input.toType === 'CASH') {
+      adjustCashInHand(
+        input.amount,
+        `Shop Advance Repayment · ${settlementNumber} (${advance.advanceNumber})`,
+        actor.id,
+        db,
+      );
+    } else if (toShopAccountId) {
+      db.prepare(`UPDATE "ShopBankAccount" SET balance = balance + ?, updatedAt = ? WHERE id = ?`).run(
+        input.amount,
+        now,
+        toShopAccountId,
+      );
+    }
+
+    recordAudit(
+      {
+        userId: actor.id,
+        action: 'CREATE',
+        entityName: 'ShopAdvanceSettlement',
+        entityId: settlementId,
+        summary: `Received repayment ${settlementNumber} of ${formatMoney(input.amount)} for advance ${advance.advanceNumber}`,
+        newValues: input,
+      },
+      db,
+    );
+
+    const updated = getShopAdvance(advance.id, db);
+    const settlement = updated.settlements.find((s) => s.id === settlementId)!;
+    return { advance: updated.advance, settlement };
+  }, db);
+}
+
+export function deleteShopAdvanceSettlement(
+  id: string,
+  reason: string,
+  actor: SessionUser,
+  db: Db = getDatabase(),
+): { deleted: true } {
+  return transaction(() => {
+    const settlement = db
+      .prepare(`${SHOP_ADVANCE_SETTLEMENT_SELECT} WHERE sas.id = ?`)
+      .get(id) as ShopAdvanceSettlementRow | undefined;
+    if (!settlement) throw errors.notFound('shop advance repayment');
+    if (settlement.isDeleted) {
+      throw errors.invalidState('This repayment has already been deleted.');
+    }
+
+    const now = nowInstant();
+
+    db.prepare(
+      `UPDATE "ShopAdvanceSettlement"
+          SET isDeleted = 1, deletedReason = ?, updatedAt = ?
+        WHERE id = ?`,
+    ).run(reason, now, id);
+
+    if (settlement.toType === 'CASH') {
+      adjustCashInHand(
+        -settlement.amount,
+        `Deleted repayment ${settlement.settlementNumber} (${reason})`,
+        actor.id,
+        db,
+      );
+    } else if (settlement.toShopAccountId) {
+      db.prepare(`UPDATE "ShopBankAccount" SET balance = balance - ?, updatedAt = ? WHERE id = ?`).run(
+        settlement.amount,
+        now,
+        settlement.toShopAccountId,
+      );
+    }
+
+    recordAudit(
+      {
+        userId: actor.id,
+        action: 'DELETE',
+        entityName: 'ShopAdvanceSettlement',
+        entityId: id,
+        summary: `Deleted repayment ${settlement.settlementNumber} of ${formatMoney(settlement.amount)}: ${reason}`,
+        oldValues: settlement,
+      },
+      db,
+    );
+
+    return { deleted: true };
+  }, db);
+}
+
+export function deleteShopAdvance(
+  id: string,
+  reason: string,
+  actor: SessionUser,
+  db: Db = getDatabase(),
+): { deleted: true } {
+  return transaction(() => {
+    const { advance, settlements } = getShopAdvance(id, db);
+    if (advance.isDeleted) {
+      throw errors.invalidState('This advance has already been deleted.');
+    }
+    if (settlements.length > 0) {
+      throw errors.invalidState(
+        'Cannot delete a shop advance that has repayments recorded. Delete the repayments first.',
+      );
+    }
+
+    const now = nowInstant();
+
+    db.prepare(
+      `UPDATE "ShopAdvance"
+          SET isDeleted = 1, deletedReason = ?, updatedAt = ?
+        WHERE id = ?`,
+    ).run(reason, now, id);
+
+    if (advance.fromType === 'CASH') {
+      adjustCashInHand(
+        advance.amount,
+        `Deleted shop advance ${advance.advanceNumber} (${reason})`,
+        actor.id,
+        db,
+      );
+    } else if (advance.fromShopAccountId) {
+      db.prepare(`UPDATE "ShopBankAccount" SET balance = balance + ?, updatedAt = ? WHERE id = ?`).run(
+        advance.amount,
+        now,
+        advance.fromShopAccountId,
+      );
+    }
+
+    recordAudit(
+      {
+        userId: actor.id,
+        action: 'DELETE',
+        entityName: 'ShopAdvance',
+        entityId: id,
+        summary: `Deleted shop advance ${advance.advanceNumber} of ${formatMoney(advance.amount)}: ${reason}`,
+        oldValues: advance,
+      },
+      db,
+    );
+
+    return { deleted: true };
+  }, db);
+}

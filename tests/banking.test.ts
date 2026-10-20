@@ -39,6 +39,12 @@ import {
   deleteInternalTransfer,
   getInternalTransfer,
   listInternalTransfers,
+  createShopAdvance,
+  receiveShopAdvance,
+  getShopAdvance,
+  listShopAdvances,
+  deleteShopAdvance,
+  deleteShopAdvanceSettlement,
 } from '../electron/services/banking.service';
 import { AppError } from '../shared/errors';
 import { businessDay, addDays, nowLocalDateTime, localDateTimeToInstant } from '../shared/datetime';
@@ -2107,6 +2113,401 @@ describe('audit trail', () => {
       const err = captureError(() => deleteShopBankAccount(fromAcct.id, actor, ctx.db));
       expect(err.code).toBe('INVALID_STATE');
       expect(err.message).toContain('internal transfers');
+    });
+  });
+
+  describe('shop advances', () => {
+    it('creates a shop advance from cash in hand, deducting from cash in hand', () => {
+      saveCashCount({ amount: 500_000, notes: 'Starting cash' }, actor, ctx.db);
+      expect(cashInHand(ctx.db).amount).toBe(500_000);
+
+      const adv = createShopAdvance(
+        {
+          fromType: 'CASH',
+          toType: 'ACCOUNT',
+          recipientName: 'Ko Aung',
+          recipientPhone: '09111222333',
+          toBankName: 'KBZ Bank',
+          toAccountNumber: '123456789',
+          toAccountName: 'Ko Aung',
+          amount: 200_000,
+          advanceAt: at(),
+          notes: 'Emergency advance',
+        },
+        actor,
+        ctx.db,
+      );
+
+      expect(adv.advanceNumber).toMatch(/^BNK-\d{6}-\d{4}$/);
+      expect(adv.fromType).toBe('CASH');
+      expect(adv.toType).toBe('ACCOUNT');
+      expect(adv.amount).toBe(200_000);
+      expect(adv.received).toBe(0);
+      expect(adv.remaining).toBe(200_000);
+      expect(adv.status).toBe('OPEN');
+
+      // Cash in hand is reduced
+      expect(cashInHand(ctx.db).amount).toBe(300_000);
+    });
+
+    it('refuses shop advance from cash when amount exceeds cash in hand', () => {
+      saveCashCount({ amount: 100_000, notes: 'Low cash' }, actor, ctx.db);
+
+      const err = captureError(() =>
+        createShopAdvance(
+          {
+            fromType: 'CASH',
+            toType: 'CASH',
+            recipientName: 'Ma Hla',
+            amount: 150_000,
+            advanceAt: at(),
+          },
+          actor,
+          ctx.db,
+        ),
+      );
+      expect(err.code).toBe('VALIDATION');
+      expect(err.message).toContain('cash in hand balance');
+    });
+
+    it('creates a shop advance from shop account, deducting from shop account balance', () => {
+      const shopAcct = saveShopBankAccount(
+        {
+          bankAccountId: kpay,
+          accountNumber: '09 555 666 777',
+          accountName: 'Shop Kpay 1',
+          balance: 1_000_000,
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+
+      const adv = createShopAdvance(
+        {
+          fromType: 'SHOP_ACCOUNT',
+          fromShopAccountId: shopAcct.id,
+          toType: 'CASH',
+          recipientName: 'Mg Ba',
+          amount: 400_000,
+          advanceAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+
+      expect(adv.fromBankKey).toBe('Kpay');
+      expect(adv.amount).toBe(400_000);
+
+      const updatedAcct = getShopBankAccount(shopAcct.id, ctx.db);
+      expect(updatedAcct.balance).toBe(600_000);
+    });
+
+    it('refuses shop advance from shop account when amount exceeds balance', () => {
+      const shopAcct = saveShopBankAccount(
+        {
+          bankAccountId: kpay,
+          accountNumber: '09 111 444 777',
+          accountName: 'Shop Kpay 2',
+          balance: 200_000,
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+
+      const err = captureError(() =>
+        createShopAdvance(
+          {
+            fromType: 'SHOP_ACCOUNT',
+            fromShopAccountId: shopAcct.id,
+            toType: 'ACCOUNT',
+            recipientName: 'U Mya',
+            toAccountNumber: '987654',
+            amount: 250_000,
+            advanceAt: at(),
+          },
+          actor,
+          ctx.db,
+        ),
+      );
+      expect(err.code).toBe('VALIDATION');
+      expect(err.message).toContain('current balance');
+    });
+
+    it('receives repayment by cash, increasing cash in hand and settling advance', () => {
+      saveCashCount({ amount: 1_000_000, notes: 'Initial' }, actor, ctx.db);
+      const adv = createShopAdvance(
+        {
+          fromType: 'CASH',
+          toType: 'CASH',
+          recipientName: 'Ko Zaw',
+          amount: 300_000,
+          advanceAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+      expect(cashInHand(ctx.db).amount).toBe(700_000);
+
+      // Partial repayment of 100,000
+      const part1 = receiveShopAdvance(
+        {
+          shopAdvanceId: adv.id,
+          toType: 'CASH',
+          amount: 100_000,
+          receivedAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+      expect(part1.advance.received).toBe(100_000);
+      expect(part1.advance.remaining).toBe(200_000);
+      expect(part1.advance.status).toBe('OPEN');
+      expect(cashInHand(ctx.db).amount).toBe(800_000);
+
+      // Final repayment of 200,000
+      const part2 = receiveShopAdvance(
+        {
+          shopAdvanceId: adv.id,
+          toType: 'CASH',
+          amount: 200_000,
+          receivedAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+      expect(part2.advance.received).toBe(300_000);
+      expect(part2.advance.remaining).toBe(0);
+      expect(part2.advance.status).toBe('SETTLED');
+      expect(cashInHand(ctx.db).amount).toBe(1_000_000);
+    });
+
+    it('receives repayment by shop account, updating shop account balance', () => {
+      saveCashCount({ amount: 500_000, notes: 'Cash' }, actor, ctx.db);
+      const shopAcct = saveShopBankAccount(
+        {
+          bankAccountId: aya,
+          accountNumber: '09 888 777 666',
+          accountName: 'Shop AYA',
+          balance: 100_000,
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+
+      const adv = createShopAdvance(
+        {
+          fromType: 'CASH',
+          toType: 'CASH',
+          recipientName: 'Ko Tun',
+          amount: 200_000,
+          advanceAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+
+      const res = receiveShopAdvance(
+        {
+          shopAdvanceId: adv.id,
+          toType: 'SHOP_ACCOUNT',
+          toShopAccountId: shopAcct.id,
+          amount: 200_000,
+          receivedAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+
+      expect(res.advance.status).toBe('SETTLED');
+      const updatedAcct = getShopBankAccount(shopAcct.id, ctx.db);
+      expect(updatedAcct.balance).toBe(300_000);
+    });
+
+    it('refuses repayment exceeding remaining balance', () => {
+      saveCashCount({ amount: 500_000, notes: 'Cash' }, actor, ctx.db);
+      const adv = createShopAdvance(
+        {
+          fromType: 'CASH',
+          toType: 'CASH',
+          recipientName: 'Ma Ni',
+          amount: 100_000,
+          advanceAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+
+      const err = captureError(() =>
+        receiveShopAdvance(
+          {
+            shopAdvanceId: adv.id,
+            toType: 'CASH',
+            amount: 150_000,
+            receivedAt: at(),
+          },
+          actor,
+          ctx.db,
+        ),
+      );
+      expect(err.code).toBe('VALIDATION');
+      expect(err.message).toContain('cannot exceed remaining balance');
+    });
+
+    it('deletes repayment and reverses balance change', () => {
+      saveCashCount({ amount: 500_000, notes: 'Cash' }, actor, ctx.db);
+      const adv = createShopAdvance(
+        {
+          fromType: 'CASH',
+          toType: 'CASH',
+          recipientName: 'Ko Kyaw',
+          amount: 200_000,
+          advanceAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+
+      const { settlement } = receiveShopAdvance(
+        {
+          shopAdvanceId: adv.id,
+          toType: 'CASH',
+          amount: 200_000,
+          receivedAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+      expect(cashInHand(ctx.db).amount).toBe(500_000);
+
+      deleteShopAdvanceSettlement(settlement.id, 'Wrong repayment', actor, ctx.db);
+
+      const restored = getShopAdvance(adv.id, ctx.db);
+      expect(restored.advance.status).toBe('OPEN');
+      expect(restored.advance.remaining).toBe(200_000);
+      expect(restored.advance.received).toBe(0);
+      expect(cashInHand(ctx.db).amount).toBe(300_000);
+    });
+
+    it('refuses deleting advance when repayments exist', () => {
+      saveCashCount({ amount: 500_000, notes: 'Cash' }, actor, ctx.db);
+      const adv = createShopAdvance(
+        {
+          fromType: 'CASH',
+          toType: 'CASH',
+          recipientName: 'Ko Myo',
+          amount: 200_000,
+          advanceAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+
+      receiveShopAdvance(
+        {
+          shopAdvanceId: adv.id,
+          toType: 'CASH',
+          amount: 50_000,
+          receivedAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+
+      const err = captureError(() => deleteShopAdvance(adv.id, 'Cancelled', actor, ctx.db));
+      expect(err.code).toBe('INVALID_STATE');
+      expect(err.message).toContain('repayments recorded');
+    });
+
+    it('deletes advance and restores source balance', () => {
+      const shopAcct = saveShopBankAccount(
+        {
+          bankAccountId: kpay,
+          accountNumber: '09 777 888 999',
+          accountName: 'Shop Kpay Delete Test',
+          balance: 800_000,
+          isActive: true,
+        },
+        actor,
+        ctx.db,
+      );
+
+      const adv = createShopAdvance(
+        {
+          fromType: 'SHOP_ACCOUNT',
+          fromShopAccountId: shopAcct.id,
+          toType: 'CASH',
+          recipientName: 'Ko Lwin',
+          amount: 300_000,
+          advanceAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+
+      expect(getShopBankAccount(shopAcct.id, ctx.db).balance).toBe(500_000);
+
+      deleteShopAdvance(adv.id, 'Mistake', actor, ctx.db);
+
+      expect(getShopBankAccount(shopAcct.id, ctx.db).balance).toBe(800_000);
+      const list = listShopAdvances({ status: 'ALL', page: 0, pageSize: 50 }, ctx.db);
+      expect(list.rows.find((r) => r.id === adv.id)).toBeUndefined();
+    });
+
+    it('lists and filters shop advances by search and status', () => {
+      saveCashCount({ amount: 2_000_000, notes: 'Cash' }, actor, ctx.db);
+
+      const adv1 = createShopAdvance(
+        {
+          fromType: 'CASH',
+          toType: 'ACCOUNT',
+          recipientName: 'Alice',
+          toAccountNumber: '111222',
+          amount: 100_000,
+          advanceAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+
+      const adv2 = createShopAdvance(
+        {
+          fromType: 'CASH',
+          toType: 'CASH',
+          recipientName: 'Bob',
+          amount: 200_000,
+          advanceAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+
+      // Settle Alice
+      receiveShopAdvance(
+        {
+          shopAdvanceId: adv1.id,
+          toType: 'CASH',
+          amount: 100_000,
+          receivedAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+
+      const openOnly = listShopAdvances({ status: 'OPEN', page: 0, pageSize: 50 }, ctx.db);
+      expect(openOnly.rows.map((r) => r.id)).toContain(adv2.id);
+      expect(openOnly.rows.map((r) => r.id)).not.toContain(adv1.id);
+      expect(openOnly.openCount).toBe(1);
+      expect(openOnly.outstandingTotal).toBe(200_000);
+
+      const settledOnly = listShopAdvances({ status: 'SETTLED', page: 0, pageSize: 50 }, ctx.db);
+      expect(settledOnly.rows.map((r) => r.id)).toContain(adv1.id);
+
+      const searchBob = listShopAdvances({ search: 'Bob', status: 'ALL', page: 0, pageSize: 50 }, ctx.db);
+      expect(searchBob.rows).toHaveLength(1);
+      expect(searchBob.rows[0].recipientName).toBe('Bob');
     });
   });
 });

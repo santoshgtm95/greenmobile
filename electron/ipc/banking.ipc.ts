@@ -30,22 +30,33 @@ import {
   zCreateInternalTransfer,
   zDeleteInternalTransfer,
   zInternalTransferListQuery,
+  zCreateShopAdvance,
+  zReceiveShopAdvance,
+  zShopAdvanceListQuery,
+  zDeleteShopAdvance,
+  zDeleteShopAdvanceSettlement,
 } from '../../shared/validation';
 import {
   bankingOverview,
   createBankTransaction,
   createInternalTransfer,
+  createShopAdvance,
   deleteBankAccount,
   deleteBankTransaction,
   deleteInternalTransfer,
+  deleteShopAdvance,
+  deleteShopAdvanceSettlement,
   deleteShopBankAccount,
   getBankAdvance,
+  getShopAdvance,
   listBankAccounts,
   listBankAdvances,
   listBankTransactions,
   listInternalTransfers,
+  listShopAdvances,
   listShopBankAccounts,
   openBankAdvance,
+  receiveShopAdvance,
   saveBankAccount,
   saveBankBalances,
   saveCashCount,
@@ -192,6 +203,52 @@ export function registerBankingIpc(): void {
     zDeleteInternalTransfer,
     ({ id, reason }) => {
       deleteInternalTransfer(id, reason, requireUser());
+    },
+  );
+
+  handle(
+    CHANNELS.banking.listShopAdvances,
+    { access: 'permission', permission: 'banking.view' },
+    zShopAdvanceListQuery,
+    (query) => listShopAdvances(query),
+  );
+
+  handle(
+    CHANNELS.banking.getShopAdvance,
+    { access: 'permission', permission: 'banking.view' },
+    zIdOnly,
+    ({ id }) => getShopAdvance(id),
+  );
+
+  handle(
+    CHANNELS.banking.createShopAdvance,
+    { access: 'permission', permission: 'banking.manage' },
+    zCreateShopAdvance,
+    (input) => createShopAdvance(input, requireUser()),
+  );
+
+  handle(
+    CHANNELS.banking.receiveShopAdvance,
+    { access: 'permission', permission: 'banking.manage' },
+    zReceiveShopAdvance,
+    (input) => receiveShopAdvance(input, requireUser()),
+  );
+
+  handle(
+    CHANNELS.banking.deleteShopAdvance,
+    { access: 'permission', permission: 'banking.delete' },
+    zDeleteShopAdvance,
+    ({ id, reason }) => {
+      deleteShopAdvance(id, reason, requireUser());
+    },
+  );
+
+  handle(
+    CHANNELS.banking.deleteShopAdvanceSettlement,
+    { access: 'permission', permission: 'banking.delete' },
+    zDeleteShopAdvanceSettlement,
+    ({ id, reason }) => {
+      deleteShopAdvanceSettlement(id, reason, requireUser());
     },
   );
 }

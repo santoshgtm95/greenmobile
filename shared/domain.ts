@@ -209,6 +209,20 @@ export const BANK_ADVANCE_STATUS_LABELS: Record<BankAdvanceStatus, string> = {
   SETTLED: "Settled",
 };
 
+export const SHOP_ADVANCE_SOURCE_TYPES = ["CASH", "SHOP_ACCOUNT"] as const;
+export type ShopAdvanceSourceType = (typeof SHOP_ADVANCE_SOURCE_TYPES)[number];
+
+export const SHOP_ADVANCE_DESTINATION_TYPES = ["CASH", "ACCOUNT"] as const;
+export type ShopAdvanceDestinationType = (typeof SHOP_ADVANCE_DESTINATION_TYPES)[number];
+
+export const SHOP_ADVANCE_STATUSES = ["OPEN", "SETTLED"] as const;
+export type ShopAdvanceStatus = (typeof SHOP_ADVANCE_STATUSES)[number];
+
+export const SHOP_ADVANCE_STATUS_LABELS: Record<ShopAdvanceStatus, string> = {
+  OPEN: "Open",
+  SETTLED: "Settled",
+};
+
 // -----------------------------------------------------------------------------
 // Sales
 // -----------------------------------------------------------------------------

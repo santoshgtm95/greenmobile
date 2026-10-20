@@ -104,6 +104,12 @@ export const CHANNELS = {
     listInternalTransfers: 'banking:listInternalTransfers',
     createInternalTransfer: 'banking:createInternalTransfer',
     deleteInternalTransfer: 'banking:deleteInternalTransfer',
+    listShopAdvances: 'banking:listShopAdvances',
+    getShopAdvance: 'banking:getShopAdvance',
+    createShopAdvance: 'banking:createShopAdvance',
+    receiveShopAdvance: 'banking:receiveShopAdvance',
+    deleteShopAdvance: 'banking:deleteShopAdvance',
+    deleteShopAdvanceSettlement: 'banking:deleteShopAdvanceSettlement',
   },
   backup: {
     overview: 'backup:overview',

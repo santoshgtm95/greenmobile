@@ -738,6 +738,67 @@ export const zInternalTransferListQuery = zPaging.extend({
   includeDeleted: z.boolean().default(false),
 });
 
+export const zCreateShopAdvance = z
+  .object({
+    fromType: z.enum(['CASH', 'SHOP_ACCOUNT']),
+    fromShopAccountId: zId.optional(),
+    toType: z.enum(['CASH', 'ACCOUNT']),
+    recipientName: z.string().trim().min(1, 'Enter the recipient name').max(120),
+    recipientPhone: zOptionalText,
+    toBankName: zOptionalText,
+    toAccountNumber: zOptionalText,
+    toAccountName: zOptionalText,
+    amount: zMinor.refine((v) => v > 0, 'Amount must be more than zero'),
+    advanceAt: z
+      .string()
+      .trim()
+      .regex(LOCAL_DATE_TIME_PATTERN, 'Use the date and time picker'),
+    notes: zOptionalText,
+  })
+  .refine(
+    (d) => d.fromType !== 'SHOP_ACCOUNT' || Boolean(d.fromShopAccountId),
+    { message: 'Choose a shop account to transfer from', path: ['fromShopAccountId'] },
+  )
+  .refine(
+    (d) => d.toType !== 'ACCOUNT' || Boolean(d.toAccountNumber?.trim()),
+    { message: 'Enter recipient account number', path: ['toAccountNumber'] },
+  );
+
+export const zReceiveShopAdvance = z
+  .object({
+    shopAdvanceId: zId,
+    toType: z.enum(['CASH', 'SHOP_ACCOUNT']),
+    toShopAccountId: zId.optional(),
+    amount: zMinor.refine((v) => v > 0, 'Amount must be more than zero'),
+    receivedAt: z
+      .string()
+      .trim()
+      .regex(LOCAL_DATE_TIME_PATTERN, 'Use the date and time picker'),
+    notes: zOptionalText,
+  })
+  .refine(
+    (d) => d.toType !== 'SHOP_ACCOUNT' || Boolean(d.toShopAccountId),
+    { message: 'Choose a shop account to receive into', path: ['toShopAccountId'] },
+  );
+
+export const zShopAdvanceListQuery = zPaging.extend({
+  search: zShortText.optional(),
+  status: z.enum(['OPEN', 'SETTLED', 'ALL']).default('ALL'),
+  from: zBusinessDay.optional(),
+  to: zBusinessDay.optional(),
+  includeDeleted: z.boolean().default(false),
+});
+
+export const zDeleteShopAdvance = z.object({
+  id: zId,
+  reason: z.string().trim().min(1, 'Give a reason for deleting this advance').max(300),
+});
+
+export const zDeleteShopAdvanceSettlement = z.object({
+  id: zId,
+  reason: z.string().trim().min(1, 'Give a reason for deleting this repayment').max(300),
+});
+
 export const zDeleteInternalTransfer = z.object({
   id: zId,
   reason: z.string().trim().min(1, 'Give a reason for deleting this transfer').max(300),
@@ -954,6 +1015,14 @@ export type CreateInternalTransferInput = z.output<typeof zCreateInternalTransfe
 export type InternalTransferListQueryInput = z.input<typeof zInternalTransferListQuery>;
 export type InternalTransferListQuery = z.output<typeof zInternalTransferListQuery>;
 export type DeleteInternalTransferInput = z.output<typeof zDeleteInternalTransfer>;
+export type CreateShopAdvanceFormValues = z.input<typeof zCreateShopAdvance>;
+export type CreateShopAdvanceInput = z.output<typeof zCreateShopAdvance>;
+export type ReceiveShopAdvanceFormValues = z.input<typeof zReceiveShopAdvance>;
+export type ReceiveShopAdvanceInput = z.output<typeof zReceiveShopAdvance>;
+export type ShopAdvanceListQueryInput = z.input<typeof zShopAdvanceListQuery>;
+export type ShopAdvanceListQuery = z.output<typeof zShopAdvanceListQuery>;
+export type DeleteShopAdvanceInput = z.output<typeof zDeleteShopAdvance>;
+export type DeleteShopAdvanceSettlementInput = z.output<typeof zDeleteShopAdvanceSettlement>;
 
 export type CreateServiceOrderFormValues = z.input<typeof zCreateServiceOrder>;
 export type CreateServiceOrderInput = z.output<typeof zCreateServiceOrder>;

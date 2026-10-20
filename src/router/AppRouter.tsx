@@ -8,6 +8,7 @@ import CustomersPage from '../pages/CustomersPage';
 import ExpensesPage from '../pages/ExpensesPage';
 import BankingPage from '../pages/BankingPage';
 import AdvancesPage from '../pages/AdvancesPage';
+import ShopAdvancesPage from '../pages/ShopAdvancesPage';
 import InternalTransfersPage from '../pages/InternalTransfersPage';
 import ServicesPage from '../pages/ServicesPage';
 import DashboardPage from '../pages/DashboardPage';
@@ -114,6 +115,14 @@ export default function AppRouter() {
           element={
             <Guard permission="banking.view">
               <AdvancesPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="/banking/shop-advances"
+          element={
+            <Guard permission="banking.view">
+              <ShopAdvancesPage />
             </Guard>
           }
         />

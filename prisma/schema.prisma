@@ -76,6 +76,8 @@ model User {
   cashCounts         CashCount[]
   shopBankAccounts   ShopBankAccount[]
   internalTransfers  InternalTransfer[]
+  shopAdvances       ShopAdvance[]
+  shopAdvanceSettlements ShopAdvanceSettlement[]
   auditLogs          AuditLog[]
 
   @@index([role])
@@ -614,6 +616,8 @@ model ShopBankAccount {
   creator      User               @relation(fields: [createdBy], references: [id], onDelete: Restrict)
   transfersOut InternalTransfer[] @relation("ShopTransfersOut")
   transfersIn  InternalTransfer[] @relation("ShopTransfersIn")
+  advancesOut  ShopAdvance[]      @relation("ShopAdvanceSource")
+  advancesIn   ShopAdvanceSettlement[] @relation("ShopAdvanceSettlementTarget")
 
   @@index([bankAccountId])
   @@index([isActive])
@@ -650,6 +654,81 @@ model InternalTransfer {
 
   @@index([transferDay])
   @@index([fromShopAccountId])
+  @@index([toShopAccountId])
+  @@index([isDeleted])
+}
+
+/// An advance of shop money to an external person, entity or supplier.
+/// Source (FROM) can be Cash in hand or any registered ShopBankAccount.
+/// Destination (TO) can be Cash (handed to recipient) or an Account (recipient's bank account).
+model ShopAdvance {
+  id                String   @id
+  advanceNumber     String   @unique
+  advanceDate       String
+  advanceDay        String
+  /// CASH | SHOP_ACCOUNT
+  fromType          String
+  fromShopAccountId String?
+  fromAccountId     String?
+  fromBankName      String?
+  fromBankKey       String?
+  fromAccountNumber String?
+  fromAccountName   String?
+  /// CASH | ACCOUNT
+  toType            String
+  recipientName     String
+  recipientPhone    String?
+  toBankName        String?
+  toAccountNumber   String?
+  toAccountName     String?
+  amount            Int
+  notes             String?
+  isDeleted         Boolean  @default(false)
+  deletedReason     String?
+  createdBy         String
+  createdAt         String
+  updatedAt         String
+
+  fromShopAccount   ShopBankAccount? @relation("ShopAdvanceSource", fields: [fromShopAccountId], references: [id], onDelete: Restrict)
+  creator           User             @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  settlements       ShopAdvanceSettlement[]
+
+  @@index([advanceDay])
+  @@index([fromShopAccountId])
+  @@index([isDeleted])
+  @@index([recipientName])
+}
+
+/// A repayment/receipt of money against a ShopAdvance.
+/// Received (TO) can be Cash in hand or any registered ShopBankAccount.
+model ShopAdvanceSettlement {
+  id                String   @id
+  settlementNumber  String   @unique
+  shopAdvanceId     String
+  settlementDate    String
+  settlementDay     String
+  /// CASH | SHOP_ACCOUNT
+  toType            String
+  toShopAccountId   String?
+  toAccountId       String?
+  toBankName        String?
+  toBankKey         String?
+  toAccountNumber   String?
+  toAccountName     String?
+  amount            Int
+  notes             String?
+  isDeleted         Boolean  @default(false)
+  deletedReason     String?
+  createdBy         String
+  createdAt         String
+  updatedAt         String
+
+  advance           ShopAdvance      @relation(fields: [shopAdvanceId], references: [id], onDelete: Restrict)
+  toShopAccount     ShopBankAccount? @relation("ShopAdvanceSettlementTarget", fields: [toShopAccountId], references: [id], onDelete: Restrict)
+  creator           User             @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@index([shopAdvanceId])
+  @@index([settlementDay])
   @@index([toShopAccountId])
   @@index([isDeleted])
 }

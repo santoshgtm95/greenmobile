@@ -17,7 +17,7 @@ import type {
   SerialStatus,
   ServiceItemType,
   ServiceStatus,
-  UserRole,
+  UserRole, ShopAdvanceSourceType, ShopAdvanceDestinationType, ShopAdvanceStatus,
 } from './domain';
 import type { SettingKey, ShopSettings } from './settings';
 import type { ExportFormat, Report, ReportKind } from './report';
@@ -52,6 +52,11 @@ import type {
   CreateInternalTransferInput,
   InternalTransferListQueryInput,
   DeleteInternalTransferInput,
+  CreateShopAdvanceInput,
+  ReceiveShopAdvanceInput,
+  ShopAdvanceListQueryInput,
+  DeleteShopAdvanceInput,
+  DeleteShopAdvanceSettlementInput,
   AddServiceItemInput,
   AddServicePaymentInput,
   ChangeServiceStatusInput,
@@ -418,6 +423,74 @@ export interface InternalTransfer {
   createdByName: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ShopAdvance {
+  id: string;
+  advanceNumber: string;
+  fromType: ShopAdvanceSourceType;
+  fromShopAccountId: string | null;
+  fromBankName: string | null;
+  fromBankKey: string | null;
+  fromAccountNumber: string | null;
+  fromAccountName: string | null;
+  toType: ShopAdvanceDestinationType;
+  recipientName: string;
+  recipientPhone: string | null;
+  toBankName: string | null;
+  toAccountNumber: string | null;
+  toAccountName: string | null;
+  amount: number;
+  advanceDate: string;
+  advanceDay: string;
+  notes: string | null;
+  received: number;
+  remaining: number;
+  settlementCount: number;
+  lastSettlementDate: string | null;
+  status: ShopAdvanceStatus;
+  isDeleted: SqliteBool;
+  deletedReason: string | null;
+  createdBy: string;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ShopAdvanceSettlement {
+  id: string;
+  shopAdvanceId: string;
+  settlementNumber: string;
+  toType: ShopAdvanceSourceType;
+  toShopAccountId: string | null;
+  toBankName: string | null;
+  toBankKey: string | null;
+  toAccountNumber: string | null;
+  toAccountName: string | null;
+  amount: number;
+  settlementDate: string;
+  settlementDay: string;
+  notes: string | null;
+  isDeleted: SqliteBool;
+  deletedReason: string | null;
+  createdBy: string;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ShopAdvanceListResult {
+  rows: ShopAdvance[];
+  total: number;
+  openCount: number;
+  totalAdvanced: number;
+  totalReceived: number;
+  outstandingTotal: number;
+}
+
+export interface ShopAdvanceDetailResult {
+  advance: ShopAdvance;
+  settlements: ShopAdvanceSettlement[];
 }
 
 export interface InternalTransferListResult {
@@ -882,6 +955,12 @@ export interface PosApi {
     listInternalTransfers(query: InternalTransferListQueryInput): Promise<InternalTransferListResult>;
     createInternalTransfer(input: CreateInternalTransferInput): Promise<InternalTransfer>;
     deleteInternalTransfer(input: DeleteInternalTransferInput): Promise<void>;
+    listShopAdvances(query: ShopAdvanceListQueryInput): Promise<ShopAdvanceListResult>;
+    getShopAdvance(input: { id: string }): Promise<ShopAdvanceDetailResult>;
+    createShopAdvance(input: CreateShopAdvanceInput): Promise<ShopAdvance>;
+    receiveShopAdvance(input: ReceiveShopAdvanceInput): Promise<{ advance: ShopAdvance; settlement: ShopAdvanceSettlement }>;
+    deleteShopAdvance(input: DeleteShopAdvanceInput): Promise<void>;
+    deleteShopAdvanceSettlement(input: DeleteShopAdvanceSettlementInput): Promise<void>;
   };
   backup: {
     /** Folders, retention settings and every backup file found (spec §53). */
