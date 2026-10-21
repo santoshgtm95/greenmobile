@@ -86,7 +86,7 @@ export function registerCatalogIpc(): void {
 
   handle(
     CHANNELS.products.delete,
-    { access: 'permission', permission: 'products.manage' },
+    { access: 'permission', permission: 'products.delete' },
     zIdOnly,
     ({ id }) => deleteProduct(id, requireUser()),
   );

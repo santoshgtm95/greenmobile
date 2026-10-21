@@ -86,7 +86,7 @@ export function registerBankingIpc(): void {
 
   handle(
     CHANNELS.banking.deleteAccount,
-    { access: 'permission', permission: 'banking.manage' },
+    { access: 'permission', permission: 'banking.delete' },
     zIdOnly,
     ({ id }) => deleteBankAccount(id, requireUser()),
   );
@@ -107,7 +107,7 @@ export function registerBankingIpc(): void {
 
   handle(
     CHANNELS.banking.deleteShopAccount,
-    { access: 'permission', permission: 'banking.manage' },
+    { access: 'permission', permission: 'banking.delete' },
     zIdOnly,
     ({ id }) => deleteShopBankAccount(id, requireUser()),
   );

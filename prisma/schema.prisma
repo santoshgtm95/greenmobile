@@ -53,7 +53,7 @@ model User {
   passwordHash String
   fullName     String
   phone        String?
-  /// ADMIN | MANAGER | CASHIER
+  /// ADMIN | MANAGER | SALES | CASHIER
   role         String
   isActive     Boolean @default(true)
   createdAt    String

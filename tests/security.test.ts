@@ -544,13 +544,12 @@ describe('authorization', () => {
     'sales.cancel',
     'sales.refund',
     'products.manage',
+    'products.delete',
     'products.import',
     'inventory.adjust',
     'expenses.view',
     'expenses.manage',
     'expenses.delete',
-    'banking.view',
-    'banking.manage',
     'banking.delete',
     'reports.view',
     'users.view',
@@ -575,6 +574,41 @@ describe('authorization', () => {
     expect(roleHasPermission('CASHIER', 'pos.sell')).toBe(true);
     for (const permission of CASHIER_DENIED) {
       expect(roleHasPermission('CASHIER', permission), permission).toBe(false);
+    }
+  });
+
+  it('lets a cashier record banking', () => {
+    expect(roleHasPermission('CASHIER', 'banking.view')).toBe(true);
+    expect(roleHasPermission('CASHIER', 'banking.manage')).toBe(true);
+  });
+
+  it('gives sales exactly its screens, able to register and edit', () => {
+    expect([...ROLE_PERMISSIONS.SALES].sort()).toEqual(
+      [
+        'pos.sell',
+        'sales.view',
+        'products.view',
+        'products.manage',
+        'products.import',
+        'inventory.view',
+        'inventory.adjust',
+        'customers.view',
+        'customers.manage',
+        'services.view',
+        'services.manage',
+        'expenses.view',
+        'expenses.manage',
+        'reports.view',
+      ].sort(),
+    );
+  });
+
+  it('lets neither cashier nor sales delete, cancel or refund anything', () => {
+    for (const role of ['CASHIER', 'SALES'] as const) {
+      const destructive = ROLE_PERMISSIONS[role].filter(
+        (p) => p.endsWith('.delete') || p === 'sales.cancel' || p === 'sales.refund',
+      );
+      expect(destructive, role).toEqual([]);
     }
   });
 

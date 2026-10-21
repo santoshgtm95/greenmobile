@@ -31,7 +31,9 @@ import type { StaffUser } from '@shared/api';
 
 /** What each role can do, in the words a shop owner would use. */
 const ROLE_SUMMARY: Record<UserRole, string> = {
-  CASHIER: 'Runs the till and looks things up. Cannot refund, discount or see the books.',
+  CASHIER: 'Runs the till, looks things up and records banking. Cannot refund, discount, see the books or delete anything.',
+  SALES:
+    'Sells, and registers and edits products, stock, customers, services and expenses. Sees reports. Cannot delete anything.',
   MANAGER:
     'Runs the shop: refunds, cancellations, stock, expenses and reports. Cannot change settings, manage users or take backups.',
   ADMIN: 'Everything, including settings, users, backups and the audit log.',

@@ -55,6 +55,7 @@ import type { StaffUser } from '@shared/api';
 const ROLE_COLOUR: Record<UserRole, 'error' | 'warning' | 'default'> = {
   ADMIN: 'error',
   MANAGER: 'warning',
+  SALES: 'default',
   CASHIER: 'default',
 };
 

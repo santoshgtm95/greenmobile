@@ -27,6 +27,7 @@ import LockIcon from '@mui/icons-material/Lock';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { PosApiError } from '@shared/errors';
+import { useAuth } from '../hooks/useAuth';
 import type { BankAccount } from '@shared/api';
 
 /**
@@ -50,6 +51,7 @@ export default function BankAccountsDialog({
 }) {
   const queryClient = useQueryClient();
 
+  const { can } = useAuth();
   const [editing, setEditing] = useState<BankAccount | null>(null);
   const [name, setName] = useState('');
   const [key, setKey] = useState('');
@@ -277,7 +279,7 @@ export default function BankAccountsDialog({
                       </Tooltip>
 
                       {/* Gone once the key has been used — see the file comment. */}
-                      {account.canDelete ? (
+                      {!can('banking.delete') ? null : account.canDelete ? (
                         <Tooltip title="Delete — this account has never been used">
                           <IconButton
                             size="small"

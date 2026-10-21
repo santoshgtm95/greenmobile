@@ -28,6 +28,7 @@ import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { PosApiError } from '@shared/errors';
+import { useAuth } from '../hooks/useAuth';
 import { useMoneyFormatter } from '../hooks/useSettings';
 import type { ShopBankAccount } from '@shared/api';
 
@@ -49,6 +50,7 @@ export default function RegisterShopAccountsDialog({
   const queryClient = useQueryClient();
   const money = useMoneyFormatter();
 
+  const { can } = useAuth();
   const [editing, setEditing] = useState<ShopBankAccount | null>(null);
   const [bankAccountId, setBankAccountId] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
@@ -306,6 +308,7 @@ export default function RegisterShopAccountsDialog({
                         </IconButton>
                       </Tooltip>
 
+                      {can('banking.delete') && (
                       <Tooltip title="Delete registered shop account">
                         <IconButton
                           size="small"
@@ -325,6 +328,7 @@ export default function RegisterShopAccountsDialog({
                           <DeleteOutlinedIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
+                      )}
                     </Stack>
                   </TableCell>
                 </TableRow>

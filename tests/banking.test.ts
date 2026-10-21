@@ -716,7 +716,9 @@ describe('deleting a transaction', () => {
     expect(roleHasPermission('CASHIER', 'banking.delete')).toBe(false);
     // A manager may still record movements.
     expect(roleHasPermission('MANAGER', 'banking.manage')).toBe(true);
-    expect(roleHasPermission('CASHIER', 'banking.view')).toBe(false);
+    // A cashier may record movements too, but never delete them.
+    expect(roleHasPermission('CASHIER', 'banking.manage')).toBe(true);
+    expect(roleHasPermission('SALES', 'banking.view')).toBe(false);
   });
 });
 

@@ -344,7 +344,7 @@ export default function ProductsPage() {
                               </IconButton>
                             </Tooltip>
                           ))}
-                        {can('products.manage') && (
+                        {can('products.delete') && (
                           <Tooltip title="Delete or deactivate">
                             <IconButton
                               size="small"

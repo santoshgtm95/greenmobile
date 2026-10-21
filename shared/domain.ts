@@ -10,12 +10,13 @@
 // Users
 // -----------------------------------------------------------------------------
 
-export const USER_ROLES = ["ADMIN", "MANAGER", "CASHIER"] as const;
+export const USER_ROLES = ["ADMIN", "MANAGER", "SALES", "CASHIER"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
 export const USER_ROLE_LABELS: Record<UserRole, string> = {
   ADMIN: "Administrator",
   MANAGER: "Manager",
+  SALES: "Sales",
   CASHIER: "Cashier",
 };
 
@@ -31,6 +32,7 @@ export const PERMISSIONS = [
   "sales.refund",
   "products.view",
   "products.manage",
+  "products.delete",
   "products.import",
   "inventory.view",
   "inventory.adjust",
@@ -58,7 +60,10 @@ export type Permission = (typeof PERMISSIONS)[number];
 /**
  * Role capabilities.
  *
- * CASHIER  — can run the till and look things up, cannot change money history.
+ * CASHIER  — can run the till, look things up and record banking; cannot
+ *            change money history or delete anything.
+ * SALES    — sells and registers/edits products, stock, customers, services
+ *            and expenses, sees reports; cannot delete anything.
  * MANAGER  — full shop operation including refunds and stock, but not users,
  *            settings, backups or the audit log.
  * ADMIN    — everything.
@@ -73,6 +78,24 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     "customers.manage",
     "services.view",
     "services.manage",
+    "banking.view",
+    "banking.manage",
+  ],
+  SALES: [
+    "pos.sell",
+    "sales.view",
+    "products.view",
+    "products.manage",
+    "products.import",
+    "inventory.view",
+    "inventory.adjust",
+    "customers.view",
+    "customers.manage",
+    "services.view",
+    "services.manage",
+    "expenses.view",
+    "expenses.manage",
+    "reports.view",
   ],
   MANAGER: [
     "pos.sell",
@@ -82,6 +105,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     "sales.refund",
     "products.view",
     "products.manage",
+    "products.delete",
     "products.import",
     "inventory.view",
     "inventory.adjust",
