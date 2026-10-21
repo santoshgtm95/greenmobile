@@ -158,8 +158,15 @@ export default function ShopAdvanceDialog({
               exclusive
               fullWidth
               value={fromType}
-              onChange={(_e, next) => {
-                if (next) setFromType(next);
+              onChange={(_e, next: ShopAdvanceSourceType | null) => {
+                if (next) {
+                  setFromType(next);
+                  if (next === 'CASH') {
+                    setToType('CASH');
+                  } else if (next === 'SHOP_ACCOUNT') {
+                    setToType('ACCOUNT');
+                  }
+                }
               }}
               sx={{ mb: 1.5 }}
             >

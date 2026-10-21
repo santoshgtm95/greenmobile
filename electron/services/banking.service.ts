@@ -75,6 +75,7 @@ import type {
   CreateShopAdvanceInput,
   ReceiveShopAdvanceInput,
   ShopAdvanceListQuery,
+  ShopAdvanceListQueryInput,
   DeleteShopAdvanceInput,
   DeleteShopAdvanceSettlementInput,
 } from '../../shared/validation';
@@ -774,7 +775,7 @@ function insertMovement(
         fromAccountId: 'Required for a transfer',
       });
     }
-    if (input.type === 'RECEIVE' && !input.toAccountId) {
+    if (input.type === 'RECEIVE' && !input.toAccountId && advance?.role !== 'DEPOSIT') {
       throw errors.validation('Choose which of your accounts the money arrived in.', {
         toAccountId: 'Required for a receipt',
       });
@@ -913,6 +914,9 @@ export function deleteBankTransaction(
     } else if (before.advanceRole === 'WITHDRAWAL' && (!before.fromAccountId || before.toName?.toLowerCase() === 'cash')) {
       const actual = amountAfterFee(before.amount, before.feeAmount, before.feeDirection, before.type, before.otherFees);
       adjustCashInHand(actual, `Deleted withdrawal ${before.transactionNumber} (${reason})`, actor.id, db);
+    } else if (before.advanceRole === 'DEPOSIT' && (!before.toAccountId || before.toName?.toLowerCase() === 'cash' || before.toName?.toLowerCase() === 'cash in hand')) {
+      const actual = amountAfterFee(before.amount, before.feeAmount, before.feeDirection, before.type, before.otherFees);
+      adjustCashInHand(-actual, `Deleted advance deposit ${before.transactionNumber} (${reason})`, actor.id, db);
     }
 
     recordAudit(
@@ -1089,12 +1093,38 @@ export function openBankAdvance(
   db: Db = getDatabase(),
 ): BankAdvanceRow {
   return transaction(() => {
+    const isCash =
+      input.depositMethod === 'cash' ||
+      input.toName?.trim().toLowerCase() === 'cash' ||
+      input.toName?.trim().toLowerCase() === 'cash in hand' ||
+      (!input.toAccountId &&
+        (!input.toAccountNumber ||
+          input.toAccountNumber.trim() === '' ||
+          input.toAccountNumber.trim() === '-'));
+
+    const depositInput: CreateBankTransactionInput = {
+      ...input,
+      type: 'RECEIVE',
+      toAccountId: isCash ? undefined : input.toAccountId,
+      toAccountNumber: isCash ? '-' : (input.toAccountNumber?.trim() || '-'),
+      toName: isCash ? 'Cash in hand' : (input.toName?.trim() || 'Shop Account'),
+      fromAccountNumber: input.fromAccountNumber?.trim() || '-',
+      feeBasisPoints: input.feeBasisPoints ?? 0,
+      feeDirection: input.feeDirection ?? 'RECEIVE',
+      otherFees: input.otherFees ?? 0,
+    };
+
     const deposit = insertMovement(
-      { ...input, type: 'RECEIVE' },
+      depositInput,
       { role: 'DEPOSIT', depositId: null },
       actor,
       db,
     );
+    if (isCash) {
+      const actual = amountAfterFee(deposit.amount, deposit.feeAmount, deposit.feeDirection, deposit.type, deposit.otherFees);
+      adjustCashInHand(actual, `Advance deposit (Cash) · ${deposit.transactionNumber}`, actor.id, db);
+    }
+
     return getBankAdvance(deposit.id, db).advance;
   }, db);
 }
@@ -1157,6 +1187,7 @@ export function withdrawFromBankAdvance(
       type: 'TRANSFER',
       feeBasisPoints: movement.feeBasisPoints ?? 0,
       feeDirection: movement.feeDirection ?? 'RECEIVE',
+      otherFees: movement.otherFees ?? 0,
       fromAccountId: isCash ? undefined : (movement.fromAccountId ?? deposit.toAccountId ?? undefined),
       fromAccountNumber: isCash ? '-' : (movement.fromAccountNumber || '-'),
       fromName: isCash ? 'Cash in hand' : (movement.fromName || 'Bank'),
@@ -2040,7 +2071,7 @@ export function getShopAdvance(
 }
 
 export function listShopAdvances(
-  query: ShopAdvanceListQuery,
+  query: ShopAdvanceListQueryInput,
   db: Db = getDatabase(),
 ): {
   rows: ShopAdvanceRow[];
@@ -2110,7 +2141,7 @@ export function listShopAdvances(
        ORDER BY a.advanceDate DESC, a.createdAt DESC
        LIMIT ? OFFSET ?`,
     )
-    .all(...params, query.pageSize, query.page * query.pageSize) as ShopAdvanceRow[];
+    .all(...params, query.pageSize ?? 50, (query.page ?? 0) * (query.pageSize ?? 50)) as ShopAdvanceRow[];
 
   return {
     rows,

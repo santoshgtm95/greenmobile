@@ -157,6 +157,7 @@ export default function BankTransactionDialog({
 
   const isTransfer = type === "TRANSFER";
   const isCashWithdrawal = mode.kind === "withdraw" && toMethod === "cash";
+  const isCashDeposit = mode.kind === "advance" && toMethod === "cash";
 
   const [isCustomFromNumber, setIsCustomFromNumber] = useState(false);
   const [isCustomToNumber, setIsCustomToNumber] = useState(false);
@@ -315,9 +316,9 @@ export default function BankTransactionDialog({
         fromAccountId: isCashWithdrawal ? undefined : (fromAccountId || undefined),
         fromAccountNumber: isCashWithdrawal ? "-" : fromAccountNumber.trim(),
         fromName: isCashWithdrawal ? "Cash in hand" : fromName.trim(),
-        toAccountId: isCashWithdrawal ? undefined : (toAccountId || undefined),
-        toAccountNumber: isCashWithdrawal ? "" : toAccountNumber.trim(),
-        toName: isCashWithdrawal ? "Cash" : toName.trim(),
+        toAccountId: isCashWithdrawal || isCashDeposit ? undefined : (toAccountId || undefined),
+        toAccountNumber: isCashWithdrawal ? "" : isCashDeposit ? "-" : toAccountNumber.trim(),
+        toName: isCashWithdrawal ? "Cash" : isCashDeposit ? "Cash in hand" : toName.trim(),
         amount,
         // The rate, not the money. The main process works the fee out itself.
         feeBasisPoints: feeBasisPoints ?? 0,
@@ -325,6 +326,7 @@ export default function BankTransactionDialog({
         otherFees,
         notes: notes.trim() || undefined,
         withdrawalMethod: isCashWithdrawal ? ("cash" as const) : ("account" as const),
+        depositMethod: isCashDeposit ? ("cash" as const) : ("account" as const),
       };
       // No type is sent for an advance or a withdrawal: each channel fixes its
       // own, so the renderer cannot record a "withdrawal" that is a receipt.
@@ -366,7 +368,7 @@ export default function BankTransactionDialog({
     )),
   ];
 
-  const ownSideMissing = isCashWithdrawal
+  const ownSideMissing = isCashWithdrawal || isCashDeposit
     ? false
     : isTransfer
       ? !fromAccountId
@@ -593,7 +595,7 @@ export default function BankTransactionDialog({
               <Typography variant="overline" color="text.secondary">
                 To
               </Typography>
-              {mode.kind === "withdraw" && (
+              {(mode.kind === "withdraw" || mode.kind === "advance") && (
                 <RadioGroup
                   row
                   value={toMethod}
@@ -605,7 +607,7 @@ export default function BankTransactionDialog({
                   <FormControlLabel
                     value="cash"
                     control={<Radio size="small" />}
-                    label={<Typography variant="body2">Cash</Typography>}
+                    label={<Typography variant="body2">{mode.kind === "advance" ? "Cash in hand" : "Cash"}</Typography>}
                   />
                   <FormControlLabel
                     value="account"
@@ -618,6 +620,10 @@ export default function BankTransactionDialog({
             {isCashWithdrawal ? (
               <Alert severity="info" variant="outlined" sx={{ py: 0.5 }}>
                 Paying cash to the customer. No bank or wallet account required.
+              </Alert>
+            ) : isCashDeposit ? (
+              <Alert severity="info" variant="outlined" sx={{ py: 0.5 }}>
+                Customer gives cash. Money will be added directly to the shop's cash in hand.
               </Alert>
             ) : (
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>

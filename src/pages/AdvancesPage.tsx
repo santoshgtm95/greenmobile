@@ -32,9 +32,10 @@ import BankingTabs from '../components/BankingTabs';
 import SummaryCard from '../components/SummaryCard';
 import AccountSide from '../components/AccountSide';
 import AdvanceDetailDialog from '../components/AdvanceDetailDialog';
+import CustomerAdvanceDialog from '../components/CustomerAdvanceDialog';
 import BankTransactionDialog from '../components/BankTransactionDialog';
 import { PosApiError } from '@shared/errors';
-import { formatInstant } from '@shared/datetime';
+import { formatInstant, businessDay } from '@shared/datetime';
 import { BANK_ADVANCE_STATUS_LABELS, type BankAdvanceStatus } from '@shared/domain';
 import type { BankAdvance } from '@shared/api';
 
@@ -84,6 +85,19 @@ export default function AdvancesPage() {
     queryKey: ['bankAdvances', query],
     queryFn: () => api.banking.listAdvances(query),
   });
+
+  const shopAccounts = useQuery({
+    queryKey: ['shopBankAccounts', 'active'],
+    queryFn: () => api.banking.listShopAccounts({ includeInactive: false }),
+  });
+
+  const today = businessDay();
+  const overview = useQuery({
+    queryKey: ['bankingOverview', today, today],
+    queryFn: () => api.banking.overview({ from: today, to: today }),
+  });
+
+  const cashInHandAmount = overview.data?.cashInHand.amount ?? 0;
 
   const accounts = useQuery({
     queryKey: ['bankAccounts', 'active'],
@@ -320,9 +334,9 @@ export default function AdvancesPage() {
       </Paper>
 
       {opening && (
-        <BankTransactionDialog
-          accounts={accounts.data ?? []}
-          mode={{ kind: 'advance' }}
+        <CustomerAdvanceDialog
+          shopAccounts={shopAccounts.data ?? []}
+          cashInHandAmount={cashInHandAmount}
           onClose={() => setOpening(false)}
           onSaved={() => {
             setOpening(false);

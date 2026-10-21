@@ -1338,6 +1338,59 @@ describe('customer advances', () => {
     expect(cashInHand(ctx.db).amount).toBe(MILLION);
   });
 
+  it('opens a customer advance in cash, adding to cash in hand and leaving bank balance untouched', () => {
+    saveCashCount({ amount: 500_000, notes: 'Morning drawer' }, actor, ctx.db);
+    expect(cashInHand(ctx.db).amount).toBe(500_000);
+    expect(bankingOverview(ALL_TIME, ctx.db).bankBalance).toBe(0);
+
+    const opened = openBankAdvance(
+      {
+        transactionAt: at('2026-10-10', '10:00'),
+        fromName: 'Ko Hla',
+        fromAccountNumber: '-',
+        amount: 300_000,
+        toName: 'Cash in hand',
+        toAccountNumber: '-',
+        depositMethod: 'cash',
+        notes: 'Customer left cash advance',
+      },
+      actor,
+      ctx.db,
+    );
+
+    expect(opened.amount).toBe(300_000);
+    expect(opened.remaining).toBe(300_000);
+    expect(opened.status).toBe('OPEN');
+    expect(opened.toName).toBe('Cash in hand');
+
+    // Cash in hand is increased by 300,000!
+    expect(cashInHand(ctx.db).amount).toBe(800_000);
+    // Bank balance is NOT changed!
+    expect(bankingOverview(ALL_TIME, ctx.db).bankBalance).toBe(0);
+
+    // Withdrawing cash reduces cash in hand
+    const withdrawn = withdrawFromBankAdvance(
+      {
+        advanceId: opened.id,
+        transactionAt: at('2026-10-10', '14:00'),
+        amount: 100_000,
+        withdrawalMethod: 'cash',
+        toName: 'Cash',
+      },
+      actor,
+      ctx.db,
+    );
+    expect(withdrawn.advance.remaining).toBe(200_000);
+    expect(cashInHand(ctx.db).amount).toBe(700_000);
+
+    // Deleting the cash advance deposit restores cash in hand!
+    deleteBankTransaction(withdrawn.withdrawals[0].id, 'Mistake', actor, ctx.db);
+    expect(cashInHand(ctx.db).amount).toBe(800_000);
+
+    deleteBankTransaction(opened.id, 'Wrong advance', actor, ctx.db);
+    expect(cashInHand(ctx.db).amount).toBe(500_000);
+  });
+
   it('supports withdrawal to an account and saves the account details in the database', () => {
     const opened = openAdvance(MILLION, { day: '2026-10-10' });
     const withdrawn = withdrawFromBankAdvance(

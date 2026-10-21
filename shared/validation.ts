@@ -627,8 +627,21 @@ export const zCreateBankTransaction = z
  * for the renderer to get wrong.
  */
 export const zOpenBankAdvance = z
-  .object(bankMovementFields)
-  .refine((v) => Boolean(v.toAccountId), OWN_ACCOUNT_ARRIVED);
+  .object({
+    ...bankMovementFields,
+    fromAccountNumber: z.string().trim().max(40).default('-'),
+    toAccountId: zId.optional(),
+    toAccountNumber: z.string().trim().max(40).default('-'),
+    toName: z.string().trim().min(1, 'Enter the account name or Cash in hand').max(200).default('Cash in hand'),
+    customerPhone: zOptionalText,
+    depositMethod: z.enum(['cash', 'account']).optional(),
+  })
+  .refine(
+    (v) =>
+      (v.depositMethod ?? (v.toName.trim().toLowerCase() === 'cash' || v.toName.trim().toLowerCase() === 'cash in hand' ? 'cash' : 'account')) === 'cash' ||
+      Boolean(v.toAccountId),
+    OWN_ACCOUNT_ARRIVED,
+  );
 
 /**
  * Pays some or all of an advance back out. Always a TRANSFER out of one of the
@@ -997,8 +1010,8 @@ export type CreateBankTransactionInput = z.output<typeof zCreateBankTransaction>
 export type DeleteBankTransactionInput = z.output<typeof zDeleteBankTransaction>;
 export type BankTransactionListQuery = z.output<typeof zBankTransactionListQuery>;
 
-export type OpenBankAdvanceInput = z.output<typeof zOpenBankAdvance>;
-export type WithdrawBankAdvanceInput = z.output<typeof zWithdrawBankAdvance>;
+export type OpenBankAdvanceInput = z.input<typeof zOpenBankAdvance>;
+export type WithdrawBankAdvanceInput = z.input<typeof zWithdrawBankAdvance>;
 export type BankAdvanceListQuery = z.output<typeof zBankAdvanceListQuery>;
 export type BankAdvanceListQueryInput = z.input<typeof zBankAdvanceListQuery>;
 
