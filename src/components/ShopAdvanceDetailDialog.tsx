@@ -277,6 +277,11 @@ export default function ShopAdvanceDetailDialog({
                               </TableCell>
                               <TableCell align="right" sx={{ fontWeight: 700, color: 'success.main' }}>
                                 {money(s.amount)}
+                                {s.feeAmount > 0 && (
+                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                    {s.feeDirection === 'RECEIVE' ? '+' : '-'}{money(s.feeAmount)} ({s.feeDirection === 'RECEIVE' ? 'Recv' : 'Pay'}) · Actual {money(s.actualAmount || s.amount)}
+                                  </Typography>
+                                )}
                               </TableCell>
                               <TableCell>{s.notes || '—'}</TableCell>
                               {canDelete && (

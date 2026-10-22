@@ -2446,6 +2446,72 @@ describe('audit trail', () => {
       expect(cashInHand(ctx.db).amount).toBe(300_000);
     });
 
+        it('receives repayment with percent and fees, adjusting cash in hand by actual repayment amount', () => {
+      saveCashCount({ amount: 500_000, notes: 'Cash' }, actor, ctx.db);
+      const adv = createShopAdvance(
+        {
+          fromType: 'CASH',
+          toType: 'CASH',
+          recipientName: 'Ko Tun',
+          amount: 200_000,
+          advanceAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+      expect(cashInHand(ctx.db).amount).toBe(300_000);
+
+      // 1. Receive 100,000 with 1% fee (1,000) direction RECEIVE
+      // Cash increases by 101,000; advance remaining reduces by 100,000
+      const res1 = receiveShopAdvance(
+        {
+          shopAdvanceId: adv.id,
+          toType: 'CASH',
+          amount: 100_000,
+          feeBasisPoints: 100,
+          feeDirection: 'RECEIVE',
+          receivedAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+      expect(res1.advance.remaining).toBe(100_000);
+      expect(res1.advance.received).toBe(100_000);
+      expect(res1.settlement.feeAmount).toBe(1_000);
+      expect(res1.settlement.feeDirection).toBe('RECEIVE');
+      expect(res1.settlement.actualAmount).toBe(101_000);
+      expect(cashInHand(ctx.db).amount).toBe(401_000);
+
+      // 2. Receive remaining 100,000 with 2% fee (2,000) direction PAY
+      // Cash increases by 98,000; advance remaining reduces by 100,000 (SETTLED)
+      const res2 = receiveShopAdvance(
+        {
+          shopAdvanceId: adv.id,
+          toType: 'CASH',
+          amount: 100_000,
+          feeBasisPoints: 200,
+          feeDirection: 'PAY',
+          receivedAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+      expect(res2.advance.status).toBe('SETTLED');
+      expect(res2.advance.remaining).toBe(0);
+      expect(res2.advance.received).toBe(200_000);
+      expect(res2.settlement.feeAmount).toBe(2_000);
+      expect(res2.settlement.feeDirection).toBe('PAY');
+      expect(res2.settlement.actualAmount).toBe(98_000);
+      expect(cashInHand(ctx.db).amount).toBe(499_000);
+
+      // 3. Delete PAY settlement: reverses actualAmount (98,000) from cash in hand
+      deleteShopAdvanceSettlement(res2.settlement.id, 'Delete partial', actor, ctx.db);
+      expect(cashInHand(ctx.db).amount).toBe(401_000);
+      const afterDel = getShopAdvance(adv.id, ctx.db);
+      expect(afterDel.advance.status).toBe('OPEN');
+      expect(afterDel.advance.remaining).toBe(100_000);
+    });
+
     it('refuses deleting advance when repayments exist', () => {
       saveCashCount({ amount: 500_000, notes: 'Cash' }, actor, ctx.db);
       const adv = createShopAdvance(

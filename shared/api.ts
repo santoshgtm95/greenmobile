@@ -468,6 +468,10 @@ export interface ShopAdvanceSettlement {
   toAccountNumber: string | null;
   toAccountName: string | null;
   amount: number;
+  feeBasisPoints: number;
+  feeAmount: number;
+  feeDirection: BankFeeDirection;
+  actualAmount: number;
   settlementDate: string;
   settlementDay: string;
   notes: string | null;

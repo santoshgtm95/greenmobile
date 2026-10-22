@@ -783,6 +783,8 @@ export const zReceiveShopAdvance = z
     toType: z.enum(['CASH', 'SHOP_ACCOUNT']),
     toShopAccountId: zId.optional(),
     amount: zMinor.refine((v) => v > 0, 'Amount must be more than zero'),
+    feeBasisPoints: zBasisPoints.default(0),
+    feeDirection: z.enum(BANK_FEE_DIRECTIONS).default('RECEIVE'),
     receivedAt: z
       .string()
       .trim()
@@ -1031,7 +1033,7 @@ export type DeleteInternalTransferInput = z.output<typeof zDeleteInternalTransfe
 export type CreateShopAdvanceFormValues = z.input<typeof zCreateShopAdvance>;
 export type CreateShopAdvanceInput = z.output<typeof zCreateShopAdvance>;
 export type ReceiveShopAdvanceFormValues = z.input<typeof zReceiveShopAdvance>;
-export type ReceiveShopAdvanceInput = z.output<typeof zReceiveShopAdvance>;
+export type ReceiveShopAdvanceInput = z.input<typeof zReceiveShopAdvance>;
 export type ShopAdvanceListQueryInput = z.input<typeof zShopAdvanceListQuery>;
 export type ShopAdvanceListQuery = z.output<typeof zShopAdvanceListQuery>;
 export type DeleteShopAdvanceInput = z.output<typeof zDeleteShopAdvance>;

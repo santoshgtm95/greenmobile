@@ -1997,6 +1997,10 @@ export interface ShopAdvanceSettlementRow {
   toAccountNumber: string | null;
   toAccountName: string | null;
   amount: number;
+  feeBasisPoints: number;
+  feeAmount: number;
+  feeDirection: BankFeeDirection;
+  actualAmount: number;
   settlementDate: string;
   settlementDay: string;
   notes: string | null;
@@ -2042,7 +2046,8 @@ const SHOP_ADVANCE_SETTLEMENT_SELECT = `
   SELECT sas.id, sas.shopAdvanceId, sas.settlementNumber, sas.settlementDate, sas.settlementDay,
          sas.toType, sas.toShopAccountId,
          sas.toBankName, sas.toBankKey, sas.toAccountNumber, sas.toAccountName,
-         sas.amount, sas.notes,
+         sas.amount, sas.feeBasisPoints, sas.feeAmount, sas.feeDirection, sas.actualAmount,
+         sas.notes,
          sas.isDeleted, sas.deletedReason,
          sas.createdBy, u.fullName AS createdByName,
          sas.createdAt, sas.updatedAt
@@ -2345,15 +2350,30 @@ export function receiveShopAdvance(
     const settlementDate = localDateTimeToInstant(input.receivedAt);
     const settlementDay = localDateTimeToDay(input.receivedAt);
 
+    const feeBasisPoints = input.feeBasisPoints ?? 0;
+    const feeDirection = input.feeDirection ?? 'RECEIVE';
+    const feeAmount = rateOf(input.amount, feeBasisPoints);
+    const actualAmount =
+      feeDirection === 'RECEIVE'
+        ? input.amount + feeAmount
+        : input.amount - feeAmount;
+
+    if (actualAmount <= 0) {
+      throw errors.validation('Actual repayment amount must be more than zero.', {
+        amount: 'Actual amount is zero or negative',
+      });
+    }
+
     db.prepare(
       `INSERT INTO "ShopAdvanceSettlement" (
          id, shopAdvanceId, settlementNumber, settlementDate, settlementDay,
          toType, toShopAccountId,
          toBankName, toBankKey, toAccountNumber, toAccountName,
-         amount, notes,
+         amount, feeBasisPoints, feeAmount, feeDirection, actualAmount,
+         notes,
          isDeleted, deletedReason,
          createdBy, createdAt, updatedAt
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
     ).run(
       settlementId,
       advance.id,
@@ -2367,6 +2387,10 @@ export function receiveShopAdvance(
       toAccountNumber,
       toAccountName,
       input.amount,
+      feeBasisPoints,
+      feeAmount,
+      feeDirection,
+      actualAmount,
       input.notes?.trim() || null,
       actor.id,
       now,
@@ -2375,14 +2399,14 @@ export function receiveShopAdvance(
 
     if (input.toType === 'CASH') {
       adjustCashInHand(
-        input.amount,
+        actualAmount,
         `Shop Advance Repayment · ${settlementNumber} (${advance.advanceNumber})`,
         actor.id,
         db,
       );
     } else if (toShopAccountId) {
       db.prepare(`UPDATE "ShopBankAccount" SET balance = balance + ?, updatedAt = ? WHERE id = ?`).run(
-        input.amount,
+        actualAmount,
         now,
         toShopAccountId,
       );
@@ -2429,16 +2453,17 @@ export function deleteShopAdvanceSettlement(
         WHERE id = ?`,
     ).run(reason, now, id);
 
+    const delta = settlement.actualAmount || settlement.amount;
     if (settlement.toType === 'CASH') {
       adjustCashInHand(
-        -settlement.amount,
+        -delta,
         `Deleted repayment ${settlement.settlementNumber} (${reason})`,
         actor.id,
         db,
       );
     } else if (settlement.toShopAccountId) {
       db.prepare(`UPDATE "ShopBankAccount" SET balance = balance - ?, updatedAt = ? WHERE id = ?`).run(
-        settlement.amount,
+        delta,
         now,
         settlement.toShopAccountId,
       );

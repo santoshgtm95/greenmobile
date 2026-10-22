@@ -8,7 +8,13 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControl,
+  FormControlLabel,
+  FormLabel,
+  InputAdornment,
   MenuItem,
+  Radio,
+  RadioGroup,
   Stack,
   TextField,
   ToggleButton,
@@ -25,7 +31,18 @@ import { useMoneyFormatter } from '../hooks/useSettings';
 import { PosApiError } from '@shared/errors';
 import { nowLocalDateTime } from '@shared/datetime';
 import type { ShopAdvance, ShopBankAccount } from '@shared/api';
-import type { ShopAdvanceSourceType } from '@shared/domain';
+import type { BankFeeDirection, ShopAdvanceSourceType } from '@shared/domain';
+import { formatRate, parseRate, rateOf } from '@shared/money';
+
+const MAX_FEE_BASIS_POINTS = 10_000;
+
+function formatPercent(basisPoints: number | null): string {
+  if (basisPoints === null || basisPoints === 0) return '0';
+  const whole = Math.floor(basisPoints / 100);
+  const frac = basisPoints % 100;
+  if (frac === 0) return String(whole);
+  return `${whole}.${String(frac).padStart(2, '0').replace(/0+$/, '')}`;
+}
 
 export default function ShopAdvanceReceiveDialog({
   advance,
@@ -43,6 +60,8 @@ export default function ShopAdvanceReceiveDialog({
   const [toType, setToType] = useState<ShopAdvanceSourceType>('SHOP_ACCOUNT');
   const [toShopAccountId, setToShopAccountId] = useState(shopAccounts[0]?.id ?? '');
   const [amount, setAmount] = useState(advance.remaining);
+  const [percentText, setPercentText] = useState('0');
+  const [feeDirection, setFeeDirection] = useState<BankFeeDirection>('RECEIVE');
   const [receivedAt, setReceivedAt] = useState(nowLocalDateTime());
   const [notes, setNotes] = useState('');
 
@@ -51,6 +70,24 @@ export default function ShopAdvanceReceiveDialog({
 
   const exceedsRemaining = amount > advance.remaining;
 
+  const feeBasisPoints = (() => {
+    if (percentText.trim() === '') return 0;
+    const bp = parseRate(percentText);
+    return bp === null || bp > MAX_FEE_BASIS_POINTS ? null : bp;
+  })();
+
+  const percentError =
+    feeBasisPoints === null
+      ? 'Enter a number from 0 to 100'
+      : (fieldErrors.feeBasisPoints ?? null);
+
+  const feeAmount = feeBasisPoints === null ? 0 : rateOf(amount, feeBasisPoints);
+
+  const actualRepaymentAmount =
+    feeDirection === 'RECEIVE'
+      ? amount + feeAmount
+      : amount - feeAmount;
+
   const save = useMutation({
     mutationFn: () =>
       api.banking.receiveShopAdvance({
@@ -58,6 +95,8 @@ export default function ShopAdvanceReceiveDialog({
         toType,
         toShopAccountId: toType === 'SHOP_ACCOUNT' ? toShopAccountId : undefined,
         amount,
+        feeBasisPoints: feeBasisPoints ?? 0,
+        feeDirection,
         receivedAt,
         notes: notes.trim() || undefined,
       }),
@@ -75,6 +114,8 @@ export default function ShopAdvanceReceiveDialog({
   const canSave =
     amount > 0 &&
     !exceedsRemaining &&
+    feeBasisPoints !== null &&
+    actualRepaymentAmount > 0 &&
     (toType !== 'SHOP_ACCOUNT' || Boolean(toShopAccountId)) &&
     receivedAt;
 
@@ -259,6 +300,86 @@ export default function ShopAdvanceReceiveDialog({
               </Stack>
             )}
           </Box>
+
+          {/* Percent and Fees below Repayment Amount */}
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ alignItems: { sm: 'center' } }}>
+            <TextField
+              label="Percent"
+              value={percentText}
+              onChange={(e) => setPercentText(e.target.value)}
+              onBlur={() => setPercentText(formatPercent(feeBasisPoints))}
+              inputMode="decimal"
+              error={Boolean(percentError)}
+              helperText={percentError ?? '0 to 100'}
+              slotProps={{
+                input: {
+                  endAdornment: <InputAdornment position="end">%</InputAdornment>,
+                },
+              }}
+              sx={{ width: { xs: '100%', sm: 140 } }}
+            />
+            <TextField
+              label="Fees"
+              value={money(feeAmount)}
+              slotProps={{
+                input: {
+                  readOnly: true,
+                },
+              }}
+              helperText={feeBasisPoints ? `${formatRate(feeBasisPoints)} of repayment` : ' '}
+              sx={{
+                width: { xs: '100%', sm: 160 },
+                '& .MuiInputBase-input': {
+                  fontVariantNumeric: 'tabular-nums',
+                },
+              }}
+            />
+            <FormControl sx={{ pt: { sm: 0.5 } }}>
+              <RadioGroup
+                row
+                value={feeDirection}
+                onChange={(e) => setFeeDirection(e.target.value as BankFeeDirection)}
+              >
+                <FormControlLabel
+                  value="RECEIVE"
+                  control={<Radio size="small" />}
+                  label={<Typography variant="body2">Receive</Typography>}
+                />
+                <FormControlLabel
+                  value="PAY"
+                  control={<Radio size="small" />}
+                  label={<Typography variant="body2">Pay</Typography>}
+                />
+              </RadioGroup>
+              <FormLabel sx={{ fontSize: 12 }}>The fee is</FormLabel>
+            </FormControl>
+          </Stack>
+
+          {/* Actual Repayment Amount */}
+          <TextField
+            label="Actual Repayment Amount"
+            fullWidth
+            value={money(actualRepaymentAmount)}
+            slotProps={{
+              input: {
+                readOnly: true,
+              },
+            }}
+            helperText={
+              feeAmount > 0
+                ? `${money(amount)} ${
+                    feeDirection === 'RECEIVE' ? 'plus' : 'less'
+                  } ${money(feeAmount)} fee ${feeDirection === 'RECEIVE' ? 'received' : 'paid'}`
+                : 'Credited to shop balance'
+            }
+            sx={{
+              '& .MuiInputBase-input': {
+                fontVariantNumeric: 'tabular-nums',
+                fontWeight: 700,
+                color: actualRepaymentAmount > 0 ? 'success.main' : 'error.main',
+              },
+            }}
+          />
 
           {/* Notes */}
           <TextField
