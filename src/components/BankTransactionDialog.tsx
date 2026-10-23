@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import {
   Alert,
   Button,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -17,13 +16,9 @@ import {
   RadioGroup,
   Stack,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from "@mui/material";
-import CallMadeIcon from "@mui/icons-material/CallMade";
-import CallReceivedIcon from "@mui/icons-material/CallReceived";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
@@ -33,7 +28,6 @@ import { PosApiError } from "@shared/errors";
 import {
   BANK_FEE_DIRECTIONS,
   BANK_FEE_DIRECTION_LABELS,
-  BANK_TRANSACTION_TYPE_LABELS,
   type BankFeeDirection,
   type BankTransactionType,
 } from "@shared/domain";
@@ -68,18 +62,15 @@ function formatPercent(basisPoints: number | null): string {
  * are — and a change to how a fee is entered cannot reach one and miss another.
  */
 export type BankMovementMode =
-  | { kind: "transaction" }
   | { kind: "advance" }
   | { kind: "withdraw"; advance: BankAdvance };
 
 const TITLES: Record<BankMovementMode["kind"], string> = {
-  transaction: "New transaction",
   advance: "New advance",
   withdraw: "Withdraw from advance",
 };
 
 const SAVE_LABELS: Record<BankMovementMode["kind"], string> = {
-  transaction: "Record transaction",
   advance: "Record advance",
   withdraw: "Record withdrawal",
 };
@@ -99,12 +90,12 @@ function selectable(id: string | null, accounts: BankAccount[]): string {
  */
 export default function BankTransactionDialog({
   accounts,
-  mode = { kind: "transaction" },
+  mode,
   onClose,
   onSaved,
 }: {
   accounts: BankAccount[];
-  mode?: BankMovementMode;
+  mode: BankMovementMode;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -116,9 +107,7 @@ export default function BankTransactionDialog({
   */
   const reverse = mode.kind === "withdraw" ? mode.advance : null;
 
-  const [type, setType] = useState<BankTransactionType>(
-    mode.kind === "advance" ? "RECEIVE" : "TRANSFER",
-  );
+  const type: BankTransactionType = mode.kind === "advance" ? "RECEIVE" : "TRANSFER";
   // Default to now, so the common case is one field the user never touches.
   const [transactionAt, setTransactionAt] = useState(nowLocalDateTime());
   const [fromAccountId, setFromAccountId] = useState(
@@ -294,7 +283,7 @@ export default function BankTransactionDialog({
   const feeAmount =
     feeBasisPoints === null ? 0 : rateOf(amount, feeBasisPoints);
 
-  const actualAmount = amountAfterFee(amount, feeAmount, feeDirection, type, otherFees);
+  const actualAmount = amountAfterFee(amount, feeAmount, feeDirection, type);
 
   /*
     What a withdrawal may take. Checked here so the user sees it while typing,
@@ -331,13 +320,10 @@ export default function BankTransactionDialog({
       // No type is sent for an advance or a withdrawal: each channel fixes its
       // own, so the renderer cannot record a "withdrawal" that is a receipt.
       if (mode.kind === "advance") return api.banking.openAdvance(movement);
-      if (mode.kind === "withdraw") {
-        return api.banking.withdrawAdvance({
-          advanceId: mode.advance.id,
-          ...movement,
-        });
-      }
-      return api.banking.createTransaction({ type, ...movement });
+      return api.banking.withdrawAdvance({
+        advanceId: mode.advance.id,
+        ...movement,
+      });
     },
     onSuccess: onSaved,
     onError: (err) => {
@@ -416,29 +402,6 @@ export default function BankTransactionDialog({
               <strong>{formatMoney(reverse.remaining, currency)}</strong> left
               to collect.
             </Alert>
-          )}
-
-          {mode.kind === "transaction" && (
-            <ToggleButtonGroup
-              exclusive
-              fullWidth
-              color="primary"
-              value={type}
-              onChange={(_e, next: BankTransactionType | null) => {
-                if (!next) return;
-                setType(next);
-                setFieldErrors({});
-              }}
-            >
-              <ToggleButton value="TRANSFER">
-                <CallMadeIcon fontSize="small" sx={{ mr: 1 }} />
-                {BANK_TRANSACTION_TYPE_LABELS.TRANSFER}
-              </ToggleButton>
-              <ToggleButton value="RECEIVE">
-                <CallReceivedIcon fontSize="small" sx={{ mr: 1 }} />
-                {BANK_TRANSACTION_TYPE_LABELS.RECEIVE}
-              </ToggleButton>
-            </ToggleButtonGroup>
           )}
 
           <Typography variant="caption" color="text.secondary">

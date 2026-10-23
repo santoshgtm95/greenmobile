@@ -268,46 +268,51 @@ async function captureScreens(win: BrowserWindow, outDir: string): Promise<Check
          return true;
        };
 
-       if (!type('Amount', '1000000')) return { error: 'no Amount field' };
-       if (!type('Percentage', '0.5')) return { error: 'no Percentage field' };
+       const text = () => dialog.textContent.replace(/\\s+/g, ' ');
+
+       // Cash In is the default.
+       if (!type('Amount to send', '1000000')) return { error: 'no Amount to send field' };
+       if (!type('Fee', '0.5')) return { error: 'no Fee field' };
        await wait(400);
+       const cashIn = text();
 
-       const read = (label) => { const i = field(label); return i ? i.value : null; };
-       const received = { fee: read('Fees'), actual: read('Actual amount') };
-
-       const pay = dialog.querySelector('input[type="radio"][value="PAY"]');
-       if (!pay) return { error: 'no Pay radio' };
-       pay.click();
+       const out = [...dialog.querySelectorAll('button')].find((b) => b.textContent.includes('Cash Out'));
+       if (!out) return { error: 'no Cash Out button' };
+       out.click();
        await wait(400);
-       const paid = { fee: read('Fees'), actual: read('Actual amount') };
+       const cashOut = text();
 
-       return { received, paid };
+       const included = dialog.querySelector('input[type="checkbox"]');
+       if (!included) return { error: 'no fee-included checkbox' };
+       included.click();
+       if (!type('Amount received', '1005000')) return { error: 'no Amount received field' };
+       await wait(400);
+       const cashOutIncluded = text();
+
+       return { cashIn, cashOut, cashOutIncluded };
      })()`,
-  )) as {
-    error?: string;
-    received?: { fee: string | null; actual: string | null };
-    paid?: { fee: string | null; actual: string | null };
-  };
+  )) as { error?: string; cashIn?: string; cashOut?: string; cashOutIncluded?: string };
 
+  const has = (t: string | undefined, part: string) => (t ?? '').includes(part);
   checks.push({
-    name: 'the form works the fee out as you type — 0.5% of 1,000,000 is 5,000',
-    pass: filled.received?.fee === '5,000.00',
-    detail: filled.error ?? `fee ${filled.received?.fee}`,
+    name: 'Cash In: 0.5% of 1,000,000 is a 5,000 fee the shop gives',
+    pass: has(filled.cashIn, 'Fee we give (0.5%)5,000.00'),
+    detail: filled.error ?? filled.cashIn?.slice(0, 160),
   });
   checks.push({
-    name: 'a fee received is added — actual amount 1,005,000',
-    pass: filled.received?.actual === '1,005,000.00',
-    detail: filled.error ?? `actual ${filled.received?.actual}`,
+    name: 'Cash In: the customer hands over 995,000 cash',
+    pass: has(filled.cashIn, 'Take cash from customer995,000.00'),
+    detail: filled.error ?? filled.cashIn?.slice(0, 160),
   });
   checks.push({
-    name: 'a fee paid is subtracted — actual amount 995,000',
-    pass: filled.paid?.actual === '995,000.00',
-    detail: filled.error ?? `actual ${filled.paid?.actual}`,
+    name: 'Cash Out: the shop keeps the fee and gives 995,000 cash',
+    pass: has(filled.cashOut, 'Fee we keep (0.5%)5,000.00') && has(filled.cashOut, 'Give cash to customer995,000.00'),
+    detail: filled.error ?? filled.cashOut?.slice(0, 160),
   });
   checks.push({
-    name: 'switching direction does not change the fee itself',
-    pass: filled.paid?.fee === '5,000.00',
-    detail: filled.error ?? `fee ${filled.paid?.fee}`,
+    name: 'Cash Out with the fee included: 1,005,000 sent gives 1,000,000 cash',
+    pass: has(filled.cashOutIncluded, 'Give cash to customer1,000,000.00'),
+    detail: filled.error ?? filled.cashOutIncluded?.slice(0, 160),
   });
 
   const filledShot = await win.webContents.capturePage();
@@ -1081,19 +1086,20 @@ const SCRIPT = `
   /*
     The three fee figures on the summary strip.
 
-    By this point the shop has a 5,000 fee received (on the 1,000,000 receipt)
-    and a 1,000 fee paid (on the 100,000 receipt). Note that the PAID one sits on
-    a RECEIVE row: totalling fees by the row's type instead of the fee's own
-    direction would file it as money earned, which is the mistake these pin.
+    By this point the shop has two Cash Outs with fees: 5,000 on the 1,000,000
+    and 1,000 on the 100,000. The second was SENT as a fee paid; a Cash Out
+    always keeps its fee, so both count as earned.
   */
   const withFees = ok(await b.banking.overview({ from: todayDay, to: todayDay }));
+  add('a Cash Out always keeps its fee, whatever direction was sent',
+      feeNotTrusted?.feeDirection === 'RECEIVE', feeNotTrusted?.feeDirection);
   add('fees earned are totalled on their own',
-      withFees?.totals?.feeReceived === 500000, String(withFees?.totals?.feeReceived));
-  add('a fee paid on a receipt counts as paid, not earned',
-      withFees?.totals?.feePaid === 1000, String(withFees?.totals?.feePaid));
+      withFees?.totals?.feeReceived === 501000, String(withFees?.totals?.feeReceived));
+  add('no fee is counted as paid when only Cash Outs carried one',
+      withFees?.totals?.feePaid === 0, String(withFees?.totals?.feePaid));
   add('the actual total is the net with fees on the right side',
       withFees?.totals?.netAfterFees ===
-        (withFees?.totals?.net ?? 0) + 500000 - 1000,
+        (withFees?.totals?.net ?? 0) + 501000,
       withFees?.totals?.net + ' net -> ' + withFees?.totals?.netAfterFees + ' actual');
 
   // --- Customer advances: the shop's own example, end to end --------------------

@@ -12,7 +12,9 @@
  *   both sides made them disagree
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createTestDatabase, type TestDatabase } from './helpers/test-db';
+import fs from 'node:fs';
+import path from 'node:path';
+import { createTestDatabase, MIGRATIONS_DIR, type TestDatabase } from './helpers/test-db';
 import { completeFirstRunSetup } from '../electron/services/auth.service';
 import { getSessionUser, setSessionUser, type SessionUser } from '../electron/session';
 import {
@@ -116,11 +118,13 @@ function receive(
     feeBasisPoints: number;
     otherFees: number;
     feeDirection: BankFeeDirection;
+    feeIncluded: boolean;
   }> = {},
 ) {
   return createBankTransaction(
     {
       type: 'RECEIVE',
+      feeIncluded: overrides.feeIncluded,
       transactionAt: at(overrides.day),
       fromAccountId: overrides.from,
       fromAccountNumber: '09-111-2222',
@@ -597,35 +601,33 @@ describe('the fee on a movement', () => {
     expect(parsed.feeDirection).toBe('RECEIVE');
   });
 
-  it('totals fees by the direction of the fee, not the type of the movement', () => {
-    // The distinction that makes this worth a test: the fee PAID here sits on a
-    // RECEIVE row. Splitting fees by the row's type would file it under money
-    // earned; splitting by the fee's own direction — which is what the shop
-    // actually chose on the form — files it correctly under money paid out.
-    receive(100_000_000, { feeBasisPoints: 50, feeDirection: 'RECEIVE' });
-    receive(100_000, { feeBasisPoints: 100, feeDirection: 'PAY' });
-    transfer(400_000, { feeBasisPoints: 25, feeDirection: 'RECEIVE' });
+  it('fixes the fee direction by type: Cash Out keeps the fee, Cash In gives it', () => {
+    // Whatever direction is sent, an ordinary movement is stored the one way
+    // that makes sense for its type.
+    const cashOut = receive(100_000_000, { feeBasisPoints: 50, feeDirection: 'PAY' });
+    const cashIn = transfer(400_000, { feeBasisPoints: 25, feeDirection: 'RECEIVE' });
+    expect(cashOut.feeDirection).toBe('RECEIVE');
+    expect(cashIn.feeDirection).toBe('PAY');
 
     const { totals } = bankingOverview(ALL_TIME, ctx.db);
-
-    expect(totals.feeReceived).toBe(500_000 + 1_000);
+    expect(totals.feeReceived).toBe(500_000);
     expect(totals.feePaid).toBe(1_000);
   });
 
   it('adds fees into the actual total on the side each one belongs to', () => {
-    receive(100_000_000, { feeBasisPoints: 50, feeDirection: 'RECEIVE' });
-    receive(100_000, { feeBasisPoints: 100, feeDirection: 'PAY' });
-    transfer(550_000);
+    receive(100_000_000, { feeBasisPoints: 50 });
+    transfer(100_000, { feeBasisPoints: 100 });
+    transfer(450_000);
 
     const { totals } = bankingOverview(ALL_TIME, ctx.db);
 
-    expect(totals.received).toBe(100_100_000);
+    expect(totals.received).toBe(100_000_000);
     expect(totals.transferred).toBe(550_000);
-    expect(totals.net).toBe(99_550_000);
+    expect(totals.net).toBe(99_450_000);
     // net + fees earned - fees paid. Written out because getting the paid fee on
     // the wrong side of this is an easy and invisible mistake: it was wrong by
     // twice the fee when this figure was first described.
-    expect(totals.netAfterFees).toBe(99_550_000 + 500_000 - 1_000);
+    expect(totals.netAfterFees).toBe(99_450_000 + 500_000 - 1_000);
   });
 
   it('reports no fees rather than nothing when none were charged', () => {
@@ -947,6 +949,55 @@ describe('balances', () => {
 // Cash in hand
 // -----------------------------------------------------------------------------
 
+describe('registered account balances', () => {
+  it('keeps the opening balance once transactions are recorded', () => {
+    const shop = saveShopBankAccount(
+      { bankAccountId: kpay, accountNumber: '001-22-3333', accountName: 'Green Mobile', balance: 2_000_000, isActive: true },
+      actor,
+      ctx.db,
+    );
+    expect(getShopBankAccount(shop.id, ctx.db).balance).toBe(2_000_000);
+
+    transfer(300_000, { otherFees: 1_000 }); // Cash In from this number
+    receive(100_000); // Cash Out into this number
+    expect(getShopBankAccount(shop.id, ctx.db).balance).toBe(2_000_000 - 301_000 + 100_000);
+    // The provider shows the same money.
+    expect(bankingOverview(ALL_TIME, ctx.db).accounts.find((a) => a.accountId === kpay)!.balance).toBe(1_799_000);
+  });
+
+  it('upgrading keeps every balance the screen showed before', () => {
+    // Recreate what the old code left behind: openings written into the stored
+    // balance, internal transfers added to it as well.
+    const a = saveShopBankAccount(
+      { bankAccountId: kpay, accountNumber: '001-22-3333', accountName: 'Green Mobile', balance: 2_000_000, isActive: true },
+      actor,
+      ctx.db,
+    );
+    const b = saveShopBankAccount(
+      { bankAccountId: kpay, accountNumber: '777', accountName: 'Green Mobile 2', balance: 500_000, isActive: true },
+      actor,
+      ctx.db,
+    );
+    createInternalTransfer(
+      { fromShopAccountId: a.id, toShopAccountId: b.id, amount: 200_000, transferAt: at(), notes: undefined },
+      actor,
+      ctx.db,
+    );
+    const setStored = ctx.db.prepare(`UPDATE "ShopBankAccount" SET balance = ? WHERE id = ?`);
+    setStored.run(1_800_000, a.id);
+    setStored.run(700_000, b.id);
+    transfer(300_000, { otherFees: 1_000 }); // from A's number
+
+    // Old screen: A had transactions, so only movements counted (opening lost):
+    // -300,000 - 200,000. B had none, so its stored figure: 700,000.
+    ctx.db.exec(
+      fs.readFileSync(path.join(MIGRATIONS_DIR, '0013_shop_account_opening_balance', 'migration.sql'), 'utf8'),
+    );
+    expect(getShopBankAccount(a.id, ctx.db).balance).toBe(-500_000);
+    expect(getShopBankAccount(b.id, ctx.db).balance).toBe(700_000);
+  });
+});
+
 describe('cash in hand', () => {
   it('distinguishes "never counted" from "counted zero"', () => {
     const before = cashInHand(ctx.db);
@@ -997,11 +1048,29 @@ describe('cash in hand', () => {
     expect(cashInHand(ctx.db).amount).toBe(502_500); // 1,000,000 - 497,500
   });
 
-  it('Account Receive (Cash Out) + Fee Pay: actual is amount + fee and subtracts from cash in hand', () => {
+  it('Cash Out with the fee already included: the fee is the part above the cash', () => {
     saveCashCount({ amount: 1_000_000, notes: 'Morning till' }, actor, ctx.db);
-    // Amount: 500,000, Fee Pay: 2,500 (50 bps) -> Actual: 502,500
-    receive(500_000, { feeBasisPoints: 50, feeDirection: 'PAY' });
-    expect(cashInHand(ctx.db).amount).toBe(497_500); // 1,000,000 - 502,500
+    // Customer wants 500,000 at 0.5% and sends 502,500.
+    const row = receive(502_500, { feeBasisPoints: 50, feeIncluded: true });
+    expect(row.feeAmount).toBe(2_500);
+    expect(cashInHand(ctx.db).amount).toBe(500_000); // 1,000,000 - 500,000 cash given
+    // The whole 502,500 arrived in the account.
+    expect(bankingOverview(ALL_TIME, ctx.db).accounts.find((a) => a.accountId === kpay)!.balance).toBe(502_500);
+  });
+
+  it('refuses "fee included" on a Cash In', () => {
+    const parsed = zCreateBankTransaction.safeParse({
+      type: 'TRANSFER',
+      transactionAt: at(),
+      fromAccountId: kpay,
+      fromAccountNumber: '001',
+      fromName: 'Shop',
+      toAccountNumber: '002',
+      toName: 'Customer',
+      amount: 1_000,
+      feeIncluded: true,
+    });
+    expect(parsed.success).toBe(false);
   });
 
   it('Account Transfer (Cash In) + Fee Pay: actual is amount - fee and adds to cash in hand', () => {
@@ -1011,17 +1080,17 @@ describe('cash in hand', () => {
     expect(cashInHand(ctx.db).amount).toBe(1_499_000); // 500,000 + 999,000
   });
 
-  it('Account Transfer (Cash In) + Fee Received: actual is amount + fee and adds to cash in hand', () => {
+  it('Cash In bank charges come out of our account, not the cash', () => {
     saveCashCount({ amount: 500_000, notes: 'Morning till' }, actor, ctx.db);
-    // Amount: 1,000,000, Fee Received: 1,000 (10 bps) -> Actual: 1,001,000
-    transfer(1_000_000, { feeBasisPoints: 10, feeDirection: 'RECEIVE' });
-    expect(cashInHand(ctx.db).amount).toBe(1_501_000); // 500,000 + 1,001,000
+    transfer(1_000_000, { otherFees: 5_000 });
+    expect(cashInHand(ctx.db).amount).toBe(1_500_000); // customer paid the full 1,000,000
+    expect(bankingOverview(ALL_TIME, ctx.db).accounts.find((a) => a.accountId === kpay)!.balance).toBe(-1_005_000);
   });
 
   it('reverses cash in hand adjustment when an ordinary transaction is deleted', () => {
     saveCashCount({ amount: 500_000, notes: 'Morning till' }, actor, ctx.db);
-    const movement = transfer(1_000_000, { feeBasisPoints: 10, feeDirection: 'RECEIVE' });
-    expect(cashInHand(ctx.db).amount).toBe(1_501_000);
+    const movement = transfer(1_000_000, { feeBasisPoints: 10 });
+    expect(cashInHand(ctx.db).amount).toBe(1_499_000);
     deleteBankTransaction(movement.id, 'Entered by mistake', actor, ctx.db);
     expect(cashInHand(ctx.db).amount).toBe(500_000);
   });

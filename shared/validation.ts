@@ -611,7 +611,16 @@ const OWN_ACCOUNT_ARRIVED = {
 };
 
 export const zCreateBankTransaction = z
-  .object({ type: zBankTransactionType, ...bankMovementFields })
+  .object({
+    type: zBankTransactionType,
+    ...bankMovementFields,
+    /** Cash Out only: the customer's transfer already contains the fee. */
+    feeIncluded: z.boolean().optional(),
+  })
+  .refine((v) => !v.feeIncluded || v.type === 'RECEIVE', {
+    message: 'Only a Cash Out can include the fee in the amount',
+    path: ['feeIncluded'],
+  })
   // The shop's own account is on the side the money moved, so that per-account
   // balances and the headline totals can never tell different stories. The main
   // process checks this too; here it puts the message on the right field.

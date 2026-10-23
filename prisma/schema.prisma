@@ -638,7 +638,8 @@ model InternalTransfer {
   fromAccountName   String
   toAccountNumber   String
   toAccountName     String
-  amount            Int  feeBasisPoints    Int      @default(0)  feeAmount         Int      @default(0)  feeDirection      String   @default("RECEIVE")  actualAmount      Int      @default(0)  notes             String?
+  amount            Int
+  notes             String?
   outTransactionId  String?
   inTransactionId   String?
   isDeleted         Boolean  @default(false)

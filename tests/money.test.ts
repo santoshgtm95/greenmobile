@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   amountAfterFee,
+  bankFee,
   parseMoney,
   toMinor,
   toMajor,
@@ -150,12 +151,13 @@ describe('the amount after a fee', () => {
     expect(amountAfterFee(MILLION, whole, 'PAY')).toBe(0);
   });
 
-  it('always adds other fees, whichever way the percentage fee went', () => {
-    // 1,000,000 + 5,000 fee received + 2,000 other → 1,007,000
-    expect(amountAfterFee(MILLION, FIVE_THOUSAND, 'RECEIVE', 'TRANSFER', 200_000)).toBe(100_700_000);
-    // 1,000,000 − 5,000 fee paid + 2,000 other → 997,000
-    expect(amountAfterFee(MILLION, FIVE_THOUSAND, 'PAY', 'TRANSFER', 200_000)).toBe(99_700_000);
-    expect(amountAfterFee(MILLION, 0, 'RECEIVE', 'RECEIVE', 200_000)).toBe(100_200_000);
+  it('a fee included in the amount is the part above the cash', () => {
+    // Customer wants 1,000,000 cash at 0.5% and sends 1,005,000.
+    expect(bankFee(100_500_000, 50, true)).toBe(500_000);
+    expect(amountAfterFee(100_500_000, bankFee(100_500_000, 50, true), 'RECEIVE', 'RECEIVE')).toBe(MILLION);
+    // Not included: 0.5% of what arrived.
+    expect(bankFee(MILLION, 50)).toBe(500_000);
+    expect(bankFee(MILLION, 0, true)).toBe(0);
   });
 });
 

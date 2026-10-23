@@ -40,7 +40,7 @@ import { useDebounced } from "../hooks/useDebounced";
 import ExportMenu from "../components/ExportMenu";
 import BankAccountsDialog from "../components/BankAccountsDialog";
 import RegisterShopAccountsDialog from "../components/RegisterShopAccountsDialog";
-import BankTransactionDialog from "../components/BankTransactionDialog";
+import CashTransactionDialog from "../components/CashTransactionDialog";
 import CashCountDialog from "../components/CashCountDialog";
 import BankBalanceDialog from "../components/BankBalanceDialog";
 import SummaryCard from "../components/SummaryCard";
@@ -668,7 +668,6 @@ export default function BankingPage() {
                         row.feeAmount,
                         row.feeDirection,
                         row.type,
-                        row.otherFees,
                       ),
                     )}
                   </TableCell>
@@ -751,7 +750,7 @@ export default function BankingPage() {
       )}
 
       {newTransactionOpen && (
-        <BankTransactionDialog
+        <CashTransactionDialog
           accounts={accounts.data ?? []}
           onClose={() => setNewTransactionOpen(false)}
           onSaved={() => {

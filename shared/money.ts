@@ -171,7 +171,8 @@ export function percentageDiscount(minor: number, basisPoints: number): number {
  *   1,000,000 with a 5,000 fee received → 1,005,000
  *   1,000,000 with a 5,000 fee paid     →   995,000
  *
- * Other fees are a flat charge that is always added, whatever the direction.
+ * Other fees (bank charges) are NOT part of this: they come out of the shop's
+ * own account only and never change what the customer pays or receives.
  *
  * Derived, never stored: every operand is already on the row, so there is
  * nothing here that could drift out of step with them.
@@ -181,17 +182,23 @@ export function amountAfterFee(
   fee: number,
   direction: BankFeeDirection,
   type: BankTransactionType = "TRANSFER",
-  otherFees = 0,
 ): number {
-  const afterFee =
-    type === "RECEIVE"
-      ? direction === "RECEIVE"
-        ? subtractMoney(amount, fee)
-        : addMoney(amount, fee)
-      : direction === "RECEIVE"
-        ? addMoney(amount, fee)
-        : subtractMoney(amount, fee);
-  return addMoney(afterFee, otherFees);
+  if (type === "RECEIVE") {
+    return direction === "RECEIVE" ? subtractMoney(amount, fee) : addMoney(amount, fee);
+  }
+  return direction === "RECEIVE" ? addMoney(amount, fee) : subtractMoney(amount, fee);
+}
+
+/**
+ * The fee on a bank movement.
+ *
+ * Normally a percentage of the amount. When `included` is set, the amount
+ * already contains the fee — a customer who wants 1,000,000 in cash at 0.5%
+ * sends 1,005,000 — so the fee is the part of it above the cash:
+ * 1,005,000 → 1,000,000 cash + 5,000 fee.
+ */
+export function bankFee(amount: number, basisPoints: number, included = false): number {
+  return included ? taxFromInclusive(amount, basisPoints).tax : rateOf(amount, basisPoints);
 }
 
 /**

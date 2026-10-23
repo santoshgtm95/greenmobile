@@ -57,7 +57,7 @@ import {
   type ShopAdvanceDestinationType,
   type ShopAdvanceStatus,
 } from '../../shared/domain';
-import { amountAfterFee, formatMoney, rateOf } from '../../shared/money';
+import { amountAfterFee, bankFee, formatMoney, rateOf } from '../../shared/money';
 import type {
   BankAdvanceListQuery,
   BankTransactionListQuery,
@@ -313,17 +313,17 @@ export function listShopBankAccounts(
       `SELECT s.id, s.bankAccountId, s.accountNumber, s.accountName, s.balance, s.isActive,
               s.createdAt, s.updatedAt,
               b.name AS bankName, b.key AS bankKey,
-              COALESCE((SELECT SUM(t.amount) FROM "BankTransaction" t
+              COALESCE((SELECT SUM(t.amount - t.otherFees) FROM "BankTransaction" t
                          WHERE t.type = 'RECEIVE' AND t.toAccountId = s.bankAccountId
                            AND t.toAccountNumber = s.accountNumber AND t.isDeleted = 0), 0)
-              - COALESCE((SELECT SUM(t.amount) FROM "BankTransaction" t
+              - COALESCE((SELECT SUM(t.amount + t.otherFees) FROM "BankTransaction" t
                          WHERE t.type = 'TRANSFER' AND t.fromAccountId = s.bankAccountId
                            AND t.fromAccountNumber = s.accountNumber AND t.isDeleted = 0), 0)
               + COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
                            WHERE i.toShopAccountId = s.id AND i.isDeleted = 0), 0)
               - COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
                            WHERE i.fromShopAccountId = s.id AND i.isDeleted = 0), 0)
-              + COALESCE((SELECT SUM(sas.amount) FROM "ShopAdvanceSettlement" sas
+              + COALESCE((SELECT SUM(sas.actualAmount) FROM "ShopAdvanceSettlement" sas
                            WHERE sas.toShopAccountId = s.id AND sas.isDeleted = 0), 0)
               - COALESCE((SELECT SUM(sa.amount) FROM "ShopAdvance" sa
                            WHERE sa.fromShopAccountId = s.id AND sa.isDeleted = 0), 0) AS calculatedBalance,
@@ -340,7 +340,8 @@ export function listShopBankAccounts(
 
   return rows.map((r) => ({
     ...r,
-    balance: r.txCount > 0 ? r.calculatedBalance : (r.balance ?? 0),
+    // The stored balance is the opening balance; every movement since is added.
+    balance: (r.balance ?? 0) + r.calculatedBalance,
   }));
 }
 
@@ -350,17 +351,17 @@ export function getShopBankAccount(id: string, db: Db = getDatabase()): ShopBank
       `SELECT s.id, s.bankAccountId, s.accountNumber, s.accountName, s.balance, s.isActive,
               s.createdAt, s.updatedAt,
               b.name AS bankName, b.key AS bankKey,
-              COALESCE((SELECT SUM(t.amount) FROM "BankTransaction" t
+              COALESCE((SELECT SUM(t.amount - t.otherFees) FROM "BankTransaction" t
                          WHERE t.type = 'RECEIVE' AND t.toAccountId = s.bankAccountId
                            AND t.toAccountNumber = s.accountNumber AND t.isDeleted = 0), 0)
-              - COALESCE((SELECT SUM(t.amount) FROM "BankTransaction" t
+              - COALESCE((SELECT SUM(t.amount + t.otherFees) FROM "BankTransaction" t
                          WHERE t.type = 'TRANSFER' AND t.fromAccountId = s.bankAccountId
                            AND t.fromAccountNumber = s.accountNumber AND t.isDeleted = 0), 0)
               + COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
                            WHERE i.toShopAccountId = s.id AND i.isDeleted = 0), 0)
               - COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
                            WHERE i.fromShopAccountId = s.id AND i.isDeleted = 0), 0)
-              + COALESCE((SELECT SUM(sas.amount) FROM "ShopAdvanceSettlement" sas
+              + COALESCE((SELECT SUM(sas.actualAmount) FROM "ShopAdvanceSettlement" sas
                            WHERE sas.toShopAccountId = s.id AND sas.isDeleted = 0), 0)
               - COALESCE((SELECT SUM(sa.amount) FROM "ShopAdvance" sa
                            WHERE sa.fromShopAccountId = s.id AND sa.isDeleted = 0), 0) AS calculatedBalance,
@@ -376,7 +377,7 @@ export function getShopBankAccount(id: string, db: Db = getDatabase()): ShopBank
   if (!row) throw errors.notFound('shop bank account');
   return {
     ...row,
-    balance: row.txCount > 0 ? row.calculatedBalance : (row.balance ?? 0),
+    balance: (row.balance ?? 0) + row.calculatedBalance,
   };
 }
 
@@ -732,8 +733,15 @@ export function createBankTransaction(
   // openBankAdvance and withdrawFromBankAdvance, which is why it is a parameter
   // of the internal writer and not a field the renderer could send.
   return transaction(() => {
-    const row = insertMovement(input, null, actor, db);
-    const actual = amountAfterFee(row.amount, row.feeAmount, row.feeDirection, row.type, row.otherFees);
+    // Cash In: the shop gives the fee. Cash Out: the shop keeps it. Fixed by the
+    // type so the two can never be recorded the wrong way round.
+    const row = insertMovement(
+      { ...input, feeDirection: input.type === 'TRANSFER' ? 'PAY' : 'RECEIVE' },
+      null,
+      actor,
+      db,
+    );
+    const actual = amountAfterFee(row.amount, row.feeAmount, row.feeDirection, row.type);
     if (row.type === 'TRANSFER') {
       adjustCashInHand(actual, `Account Transfer (Cash In) · ${row.transactionNumber}`, actor.id, db);
     } else if (row.type === 'RECEIVE') {
@@ -800,7 +808,7 @@ function insertMovement(
     // from the renderer — the same rule the cart follows for prices (§68). The
     // form shows a running figure with this exact function, so what the user saw
     // and what is stored cannot drift apart.
-    const feeAmount = rateOf(input.amount, input.feeBasisPoints);
+    const feeAmount = bankFee(input.amount, input.feeBasisPoints, input.feeIncluded);
 
     db.prepare(
       `INSERT INTO "BankTransaction" (id, transactionNumber, type, transactionDate, transactionDay,
@@ -857,6 +865,7 @@ function insertMovement(
           (feeAmount > 0
             ? ` (fee ${feeAmount} ${BANK_FEE_DIRECTION_LABELS[input.feeDirection].toLowerCase()})`
             : '') +
+          (input.feeIncluded ? ' (fee included in the amount)' : '') +
           (input.otherFees ? ` (other fees ${input.otherFees})` : ''),
         // The calculated fee too, not just the rate that was sent in.
         newValues: { ...input, feeAmount, advanceRole: advance?.role ?? null },
@@ -905,17 +914,17 @@ export function deleteBankTransaction(
 
     // If an ordinary transaction that adjusted cash in hand is deleted, reverse its cash adjustment
     if (before.advanceRole === null) {
-      const actual = amountAfterFee(before.amount, before.feeAmount, before.feeDirection, before.type, before.otherFees);
+      const actual = amountAfterFee(before.amount, before.feeAmount, before.feeDirection, before.type);
       if (before.type === 'TRANSFER') {
         adjustCashInHand(-actual, `Deleted ${before.transactionNumber} (${reason})`, actor.id, db);
       } else if (before.type === 'RECEIVE') {
         adjustCashInHand(actual, `Deleted ${before.transactionNumber} (${reason})`, actor.id, db);
       }
     } else if (before.advanceRole === 'WITHDRAWAL' && (!before.fromAccountId || before.toName?.toLowerCase() === 'cash')) {
-      const actual = amountAfterFee(before.amount, before.feeAmount, before.feeDirection, before.type, before.otherFees);
+      const actual = amountAfterFee(before.amount, before.feeAmount, before.feeDirection, before.type);
       adjustCashInHand(actual, `Deleted withdrawal ${before.transactionNumber} (${reason})`, actor.id, db);
     } else if (before.advanceRole === 'DEPOSIT' && (!before.toAccountId || before.toName?.toLowerCase() === 'cash' || before.toName?.toLowerCase() === 'cash in hand')) {
-      const actual = amountAfterFee(before.amount, before.feeAmount, before.feeDirection, before.type, before.otherFees);
+      const actual = amountAfterFee(before.amount, before.feeAmount, before.feeDirection, before.type);
       adjustCashInHand(-actual, `Deleted advance deposit ${before.transactionNumber} (${reason})`, actor.id, db);
     }
 
@@ -1121,7 +1130,7 @@ export function openBankAdvance(
       db,
     );
     if (isCash) {
-      const actual = amountAfterFee(deposit.amount, deposit.feeAmount, deposit.feeDirection, deposit.type, deposit.otherFees);
+      const actual = amountAfterFee(deposit.amount, deposit.feeAmount, deposit.feeDirection, deposit.type);
       adjustCashInHand(actual, `Advance deposit (Cash) · ${deposit.transactionNumber}`, actor.id, db);
     }
 
@@ -1203,7 +1212,7 @@ export function withdrawFromBankAdvance(
     );
 
     if (isCash) {
-      const actual = amountAfterFee(row.amount, row.feeAmount, row.feeDirection, row.type, row.otherFees);
+      const actual = amountAfterFee(row.amount, row.feeAmount, row.feeDirection, row.type);
       adjustCashInHand(-actual, `Advance withdrawal (Cash) · ${deposit.transactionNumber}`, actor.id, db);
     }
 
@@ -1363,10 +1372,6 @@ export function saveBankBalances(
           count++;
         }
 
-        db.prepare(
-          `UPDATE "ShopBankAccount" SET balance = ?, updatedAt = ? WHERE id = ?`,
-        ).run(item.balance, now, shopAccount.id);
-
         recordAudit(
           {
             userId: actor.id,
@@ -1384,14 +1389,10 @@ export function saveBankBalances(
       for (const item of input.balances) {
         const account = usableAccount(item.accountId, db);
 
-        const currentBalanceRow = db
-          .prepare(
-            `SELECT COALESCE((SELECT SUM(amount) FROM "BankTransaction" WHERE type = 'RECEIVE' AND toAccountId = ? AND isDeleted = 0), 0)
-                  - COALESCE((SELECT SUM(amount) FROM "BankTransaction" WHERE type = 'TRANSFER' AND fromAccountId = ? AND isDeleted = 0), 0) AS balance`,
-          )
-          .get(item.accountId, item.accountId) as { balance: number } | undefined;
-
-        const currentBalance = currentBalanceRow?.balance ?? 0;
+        const currentBalance =
+          bankingOverview({ from: businessDay(), to: businessDay() }, db).accounts.find(
+            (a) => a.accountId === item.accountId,
+          )?.balance ?? 0;
         const delta = item.balance - currentBalance;
 
         if (delta === 0) continue;
@@ -1527,17 +1528,19 @@ export function bankingOverview(
                 WHERE t.isDeleted = 0 AND t.transactionDay BETWEEN ? AND ?
                   AND ((t.type = 'RECEIVE' AND t.toAccountId = a.id)
                     OR (t.type = 'TRANSFER' AND t.fromAccountId = a.id))) AS count,
-              COALESCE((SELECT SUM(t.amount) FROM "BankTransaction" t
+              COALESCE((SELECT SUM(s.balance) FROM "ShopBankAccount" s
+                         WHERE s.bankAccountId = a.id), 0)
+                + COALESCE((SELECT SUM(t.amount - t.otherFees) FROM "BankTransaction" t
                          WHERE t.type = 'RECEIVE' AND t.toAccountId = a.id
                            AND t.isDeleted = 0), 0)
-                - COALESCE((SELECT SUM(t.amount) FROM "BankTransaction" t
+                - COALESCE((SELECT SUM(t.amount + t.otherFees) FROM "BankTransaction" t
                              WHERE t.type = 'TRANSFER' AND t.fromAccountId = a.id
                                AND t.isDeleted = 0), 0)
                 + COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
                              WHERE i.toAccountId = a.id AND i.isDeleted = 0), 0)
                 - COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
                              WHERE i.fromAccountId = a.id AND i.isDeleted = 0), 0)
-                + COALESCE((SELECT SUM(sas.amount) FROM "ShopAdvanceSettlement" sas
+                + COALESCE((SELECT SUM(sas.actualAmount) FROM "ShopAdvanceSettlement" sas
                              JOIN "ShopBankAccount" s ON s.id = sas.toShopAccountId
                             WHERE s.bankAccountId = a.id AND sas.isDeleted = 0), 0)
                 - COALESCE((SELECT SUM(sa.amount) FROM "ShopAdvance" sa
@@ -1860,20 +1863,6 @@ export function createInternalTransfer(
       now,
     );
 
-    // Update balances directly on ShopBankAccount
-    const newFromBal = fromShopAccount.balance - input.amount;
-    const newToBal = toShopAccount.balance + input.amount;
-    db.prepare(`UPDATE "ShopBankAccount" SET balance = ?, updatedAt = ? WHERE id = ?`).run(
-      newFromBal,
-      now,
-      fromShopAccount.id,
-    );
-    db.prepare(`UPDATE "ShopBankAccount" SET balance = ?, updatedAt = ? WHERE id = ?`).run(
-      newToBal,
-      now,
-      toShopAccount.id,
-    );
-
     recordAudit(
       {
         userId: actor.id,
@@ -1909,28 +1898,6 @@ export function deleteInternalTransfer(
           SET isDeleted = 1, deletedReason = ?, updatedAt = ?
         WHERE id = ?`,
     ).run(reason, now, id);
-
-    const fromAccount = db
-      .prepare(`SELECT id, balance FROM "ShopBankAccount" WHERE id = ?`)
-      .get(transfer.fromShopAccountId) as { id: string; balance: number } | undefined;
-    if (fromAccount) {
-      db.prepare(`UPDATE "ShopBankAccount" SET balance = ?, updatedAt = ? WHERE id = ?`).run(
-        fromAccount.balance + transfer.amount,
-        now,
-        fromAccount.id,
-      );
-    }
-
-    const toAccount = db
-      .prepare(`SELECT id, balance FROM "ShopBankAccount" WHERE id = ?`)
-      .get(transfer.toShopAccountId) as { id: string; balance: number } | undefined;
-    if (toAccount) {
-      db.prepare(`UPDATE "ShopBankAccount" SET balance = ?, updatedAt = ? WHERE id = ?`).run(
-        toAccount.balance - transfer.amount,
-        now,
-        toAccount.id,
-      );
-    }
 
     recordAudit(
       {
@@ -2272,12 +2239,6 @@ export function createShopAdvance(
         actor.id,
         db,
       );
-    } else if (fromShopAccountId) {
-      db.prepare(`UPDATE "ShopBankAccount" SET balance = balance - ?, updatedAt = ? WHERE id = ?`).run(
-        input.amount,
-        now,
-        fromShopAccountId,
-      );
     }
 
     recordAudit(
@@ -2404,12 +2365,6 @@ export function receiveShopAdvance(
         actor.id,
         db,
       );
-    } else if (toShopAccountId) {
-      db.prepare(`UPDATE "ShopBankAccount" SET balance = balance + ?, updatedAt = ? WHERE id = ?`).run(
-        actualAmount,
-        now,
-        toShopAccountId,
-      );
     }
 
     recordAudit(
@@ -2461,12 +2416,6 @@ export function deleteShopAdvanceSettlement(
         actor.id,
         db,
       );
-    } else if (settlement.toShopAccountId) {
-      db.prepare(`UPDATE "ShopBankAccount" SET balance = balance - ?, updatedAt = ? WHERE id = ?`).run(
-        delta,
-        now,
-        settlement.toShopAccountId,
-      );
     }
 
     recordAudit(
@@ -2516,12 +2465,6 @@ export function deleteShopAdvance(
         `Deleted shop advance ${advance.advanceNumber} (${reason})`,
         actor.id,
         db,
-      );
-    } else if (advance.fromShopAccountId) {
-      db.prepare(`UPDATE "ShopBankAccount" SET balance = balance + ?, updatedAt = ? WHERE id = ?`).run(
-        advance.amount,
-        now,
-        advance.fromShopAccountId,
       );
     }
 

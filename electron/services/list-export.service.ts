@@ -436,7 +436,7 @@ function bankTransactionList(query: BankTransactionListQuery, db: Db): Body {
           // against a bank statement, and a blank cell there reads as missing
           // data rather than as "same as the amount".
           otherFees: row.otherFees > 0 ? row.otherFees : null,
-          actualAmount: amountAfterFee(row.amount, row.feeAmount, row.feeDirection, row.type, row.otherFees),
+          actualAmount: amountAfterFee(row.amount, row.feeAmount, row.feeDirection, row.type),
           notes: row.notes,
           createdByName: row.createdByName,
           state: row.isDeleted ? 'Deleted' : 'Recorded',
