@@ -101,6 +101,7 @@ export const CHANNELS = {
     listShopAccounts: 'banking:listShopAccounts',
     saveShopAccount: 'banking:saveShopAccount',
     deleteShopAccount: 'banking:deleteShopAccount',
+    getShopAccountHistory: 'banking:getShopAccountHistory',
     listInternalTransfers: 'banking:listInternalTransfers',
     createInternalTransfer: 'banking:createInternalTransfer',
     deleteInternalTransfer: 'banking:deleteInternalTransfer',

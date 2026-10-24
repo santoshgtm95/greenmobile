@@ -59,6 +59,12 @@ import {
 } from '../../shared/domain';
 import { amountAfterFee, bankFee, formatMoney, rateOf } from '../../shared/money';
 import type {
+  ShopBankAccountHistoryResult,
+  ShopBankAccountTransactionItem,
+} from '../../shared/api';
+import {
+  zShopBankAccountHistoryQuery,
+  type ShopBankAccountHistoryQueryInput,
   BankAdvanceListQuery,
   BankTransactionListQuery,
   CreateBankTransactionInput,
@@ -539,10 +545,432 @@ export function deleteShopBankAccount(
     return { deleted: true as const };
   }, db);
 }
+export function getShopBankAccountHistory(
+  rawQuery: ShopBankAccountHistoryQueryInput,
+  db: Db = getDatabase(),
+): ShopBankAccountHistoryResult {
+  const query = zShopBankAccountHistoryQuery.parse(rawQuery);
+  const account = getShopBankAccount(query.id, db);
 
-// -----------------------------------------------------------------------------
-// Transactions
-// -----------------------------------------------------------------------------
+  const items: ShopBankAccountTransactionItem[] = [];
+
+  // 1. BankTransaction
+  const bankTxRows = db
+    .prepare(
+      `SELECT t.id, t.transactionNumber, t.transactionDate, t.transactionDay,
+              t.type, t.amount, t.feeBasisPoints, t.feeAmount, t.feeDirection, t.otherFees,
+              t.fromAccountId, t.fromAccountNumber, t.fromName,
+              t.toAccountId, t.toAccountNumber, t.toName,
+              t.notes, t.advanceRole,
+              fb.name AS fromBankName, fb.key AS fromBankKey,
+              tb.name AS toBankName, tb.key AS toBankKey,
+              u.fullName AS createdByName
+         FROM "BankTransaction" t
+         LEFT JOIN "BankAccount" fb ON fb.id = t.fromAccountId
+         LEFT JOIN "BankAccount" tb ON tb.id = t.toAccountId
+         LEFT JOIN "User" u ON u.id = t.createdBy
+        WHERE ((t.toAccountId = ? AND t.toAccountNumber = ?)
+           OR (t.fromAccountId = ? AND t.fromAccountNumber = ?))
+          AND t.isDeleted = 0
+        ORDER BY t.transactionDate ASC, t.createdAt ASC`,
+    )
+    .all(
+      account.bankAccountId,
+      account.accountNumber,
+      account.bankAccountId,
+      account.accountNumber,
+    ) as Array<{
+      id: string;
+      transactionNumber: string;
+      transactionDate: string;
+      transactionDay: string;
+      type: BankTransactionType;
+      amount: number;
+      feeBasisPoints: number;
+      feeAmount: number;
+      feeDirection: BankFeeDirection;
+      otherFees: number;
+      fromAccountId: string | null;
+      fromAccountNumber: string;
+      fromName: string;
+      toAccountId: string | null;
+      toAccountNumber: string;
+      toName: string;
+      notes: string | null;
+      advanceRole: BankAdvanceRole | null;
+      fromBankName: string | null;
+      fromBankKey: string | null;
+      toBankName: string | null;
+      toBankKey: string | null;
+      createdByName: string | null;
+    }>;
+
+  for (const t of bankTxRows) {
+    const isToThis =
+      t.toAccountId === account.bankAccountId && t.toAccountNumber === account.accountNumber;
+    const isFromThis =
+      t.fromAccountId === account.bankAccountId && t.fromAccountNumber === account.accountNumber;
+
+    if (isToThis && isFromThis) {
+      // same account transfer — count only once as IN
+    }
+
+    if (isToThis) {
+      const netCredited = t.amount - (t.otherFees ?? 0);
+      let typeLabel = 'Account Receive (Cash Out)';
+      if (t.advanceRole === 'DEPOSIT') {
+        typeLabel = 'Customer Advance Deposit';
+      } else if (t.advanceRole === 'WITHDRAWAL') {
+        typeLabel = 'Customer Advance Return';
+      } else if (t.type === 'TRANSFER') {
+        typeLabel = 'Account Transfer Received';
+      }
+
+      const fromLabel = t.fromName
+        ? `${t.fromBankName ? t.fromBankName + ' · ' : ''}${t.fromName} (${t.fromAccountNumber || '-'})`
+        : t.fromAccountNumber || '-';
+      const toLabel = `${account.bankName} (${account.accountNumber}) · ${account.accountName}`;
+
+      items.push({
+        id: t.id,
+        date: t.transactionDate,
+        day: t.transactionDay,
+        reference: t.transactionNumber,
+        source: 'BANK_TRANSACTION',
+        type: t.type,
+        typeLabel,
+        direction: 'IN',
+        from: fromLabel,
+        fromAccount: t.fromAccountNumber || undefined,
+        to: toLabel,
+        toAccount: account.accountNumber,
+        amount: t.amount,
+        inAmount: netCredited,
+        outAmount: 0,
+        feeAmount: t.feeAmount ?? 0,
+        feeDirection: t.feeDirection,
+        netAmount: netCredited,
+        runningBalance: 0,
+        notes: t.notes || null,
+        createdByName: t.createdByName || null,
+      });
+    } else if (isFromThis) {
+      const netDebited = t.amount + (t.otherFees ?? 0);
+      let typeLabel = 'Account Transfer (Cash In)';
+      if (t.advanceRole === 'WITHDRAWAL') {
+        typeLabel = 'Customer Advance Withdrawal';
+      } else if (t.type === 'RECEIVE') {
+        typeLabel = 'Account Receive Sent';
+      }
+
+      const fromLabel = `${account.bankName} (${account.accountNumber}) · ${account.accountName}`;
+      const toLabel = t.toName
+        ? `${t.toBankName ? t.toBankName + ' · ' : ''}${t.toName} (${t.toAccountNumber || '-'})`
+        : t.toAccountNumber || '-';
+
+      items.push({
+        id: t.id,
+        date: t.transactionDate,
+        day: t.transactionDay,
+        reference: t.transactionNumber,
+        source: 'BANK_TRANSACTION',
+        type: t.type,
+        typeLabel,
+        direction: 'OUT',
+        from: fromLabel,
+        fromAccount: account.accountNumber,
+        to: toLabel,
+        toAccount: t.toAccountNumber || undefined,
+        amount: t.amount,
+        inAmount: 0,
+        outAmount: netDebited,
+        feeAmount: t.feeAmount ?? 0,
+        feeDirection: t.feeDirection,
+        netAmount: -netDebited,
+        runningBalance: 0,
+        notes: t.notes || null,
+        createdByName: t.createdByName || null,
+      });
+    }
+  }
+
+  // 2. InternalTransfer
+  const internalRows = db
+    .prepare(
+      `SELECT i.id, i.transferNumber, i.transferDate, i.transferDay,
+              i.fromShopAccountId, i.toShopAccountId,
+              i.fromAccountId, i.toAccountId,
+              i.fromAccountNumber, i.fromAccountName,
+              i.toAccountNumber, i.toAccountName,
+              i.amount, i.notes,
+              fb.name AS fromBankName, fb.key AS fromBankKey,
+              tb.name AS toBankName, tb.key AS toBankKey,
+              u.fullName AS createdByName
+         FROM "InternalTransfer" i
+         LEFT JOIN "BankAccount" fb ON fb.id = i.fromAccountId
+         LEFT JOIN "BankAccount" tb ON tb.id = i.toAccountId
+         LEFT JOIN "User" u ON u.id = i.createdBy
+        WHERE (i.toShopAccountId = ? OR i.fromShopAccountId = ?)
+          AND i.isDeleted = 0
+        ORDER BY i.transferDate ASC, i.createdAt ASC`,
+    )
+    .all(account.id, account.id) as Array<{
+      id: string;
+      transferNumber: string;
+      transferDate: string;
+      transferDay: string;
+      fromShopAccountId: string;
+      toShopAccountId: string;
+      fromAccountNumber: string;
+      fromAccountName: string;
+      toAccountNumber: string;
+      toAccountName: string;
+      amount: number;
+      notes: string | null;
+      fromBankName: string | null;
+      fromBankKey: string | null;
+      toBankName: string | null;
+      toBankKey: string | null;
+      createdByName: string | null;
+    }>;
+
+  for (const i of internalRows) {
+    if (i.toShopAccountId === account.id) {
+      items.push({
+        id: i.id,
+        date: i.transferDate,
+        day: i.transferDay,
+        reference: i.transferNumber,
+        source: 'INTERNAL_TRANSFER',
+        type: 'INTERNAL_TRANSFER_IN',
+        typeLabel: 'Internal Transfer (Received)',
+        direction: 'IN',
+        from: `${i.fromBankName || 'Shop Account'} (${i.fromAccountNumber}) · ${i.fromAccountName}`,
+        fromAccount: i.fromAccountNumber,
+        to: `${account.bankName} (${account.accountNumber}) · ${account.accountName}`,
+        toAccount: account.accountNumber,
+        amount: i.amount,
+        inAmount: i.amount,
+        outAmount: 0,
+        feeAmount: 0,
+        netAmount: i.amount,
+        runningBalance: 0,
+        notes: i.notes || null,
+        createdByName: i.createdByName || null,
+      });
+    } else if (i.fromShopAccountId === account.id) {
+      items.push({
+        id: i.id,
+        date: i.transferDate,
+        day: i.transferDay,
+        reference: i.transferNumber,
+        source: 'INTERNAL_TRANSFER',
+        type: 'INTERNAL_TRANSFER_OUT',
+        typeLabel: 'Internal Transfer (Sent)',
+        direction: 'OUT',
+        from: `${account.bankName} (${account.accountNumber}) · ${account.accountName}`,
+        fromAccount: account.accountNumber,
+        to: `${i.toBankName || 'Shop Account'} (${i.toAccountNumber}) · ${i.toAccountName}`,
+        toAccount: i.toAccountNumber,
+        amount: i.amount,
+        inAmount: 0,
+        outAmount: i.amount,
+        feeAmount: 0,
+        netAmount: -i.amount,
+        runningBalance: 0,
+        notes: i.notes || null,
+        createdByName: i.createdByName || null,
+      });
+    }
+  }
+
+  // 3. ShopAdvance (money sent OUT from this account)
+  const advanceRows = db
+    .prepare(
+      `SELECT sa.id, sa.advanceNumber, sa.advanceDate, sa.advanceDay,
+              sa.recipientName, sa.recipientPhone,
+              sa.toBankName, sa.toAccountNumber, sa.toAccountName,
+              sa.toType,
+              sa.amount, sa.notes,
+              u.fullName AS createdByName
+         FROM "ShopAdvance" sa
+         LEFT JOIN "User" u ON u.id = sa.createdBy
+        WHERE sa.fromShopAccountId = ?
+          AND sa.isDeleted = 0
+        ORDER BY sa.advanceDate ASC, sa.createdAt ASC`,
+    )
+    .all(account.id) as Array<{
+      id: string;
+      advanceNumber: string;
+      advanceDate: string;
+      advanceDay: string;
+      recipientName: string;
+      recipientPhone: string | null;
+      toBankName: string | null;
+      toAccountNumber: string | null;
+      toAccountName: string | null;
+      toType: string;
+      amount: number;
+      notes: string | null;
+      createdByName: string | null;
+    }>;
+
+  for (const sa of advanceRows) {
+    const toLabel =
+      sa.toType === 'CASH'
+        ? `${sa.recipientName}${sa.recipientPhone ? ' (' + sa.recipientPhone + ')' : ''} (Cash)`
+        : `${sa.recipientName}${sa.recipientPhone ? ' (' + sa.recipientPhone + ')' : ''}${
+            sa.toAccountNumber
+              ? ' · ' + (sa.toBankName || 'Account') + ': ' + sa.toAccountNumber
+              : ''
+          }`;
+    items.push({
+      id: sa.id,
+      date: sa.advanceDate,
+      day: sa.advanceDay,
+      reference: sa.advanceNumber,
+      source: 'SHOP_ADVANCE',
+      type: 'SHOP_ADVANCE',
+      typeLabel: 'Shop Advance',
+      direction: 'OUT',
+      from: `${account.bankName} (${account.accountNumber}) · ${account.accountName}`,
+      fromAccount: account.accountNumber,
+      to: toLabel,
+      toAccount: sa.toAccountNumber || undefined,
+      amount: sa.amount,
+      inAmount: 0,
+      outAmount: sa.amount,
+      feeAmount: 0,
+      netAmount: -sa.amount,
+      runningBalance: 0,
+      notes: sa.notes || null,
+      createdByName: sa.createdByName || null,
+    });
+  }
+
+  // 4. ShopAdvanceSettlement (repayments received INTO this account)
+  const settlementRows = db
+    .prepare(
+      `SELECT sas.id, sas.settlementNumber, sas.settlementDate, sas.settlementDay,
+              sas.amount, sas.feeBasisPoints, sas.feeAmount, sas.feeDirection, sas.actualAmount,
+              sas.notes,
+              sa.advanceNumber, sa.recipientName, sa.recipientPhone,
+              u.fullName AS createdByName
+         FROM "ShopAdvanceSettlement" sas
+         JOIN "ShopAdvance" sa ON sa.id = sas.shopAdvanceId
+         LEFT JOIN "User" u ON u.id = sas.createdBy
+        WHERE sas.toShopAccountId = ?
+          AND sas.isDeleted = 0
+        ORDER BY sas.settlementDate ASC, sas.createdAt ASC`,
+    )
+    .all(account.id) as Array<{
+      id: string;
+      settlementNumber: string;
+      settlementDate: string;
+      settlementDay: string;
+      amount: number;
+      feeBasisPoints: number;
+      feeAmount: number;
+      feeDirection: BankFeeDirection;
+      actualAmount: number;
+      notes: string | null;
+      advanceNumber: string;
+      recipientName: string;
+      recipientPhone: string | null;
+      createdByName: string | null;
+    }>;
+
+  for (const sas of settlementRows) {
+    const actual = sas.actualAmount || sas.amount;
+    const fromLabel = `${sas.recipientName}${sas.recipientPhone ? ' (' + sas.recipientPhone + ')' : ''} (Adv #${sas.advanceNumber})`;
+    items.push({
+      id: sas.id,
+      date: sas.settlementDate,
+      day: sas.settlementDay,
+      reference: sas.settlementNumber,
+      source: 'SHOP_ADVANCE_SETTLEMENT',
+      type: 'REPAYMENT',
+      typeLabel: 'Advance Repayment Received',
+      direction: 'IN',
+      from: fromLabel,
+      to: `${account.bankName} (${account.accountNumber}) · ${account.accountName}`,
+      toAccount: account.accountNumber,
+      amount: sas.amount,
+      inAmount: actual,
+      outAmount: 0,
+      feeAmount: sas.feeAmount ?? 0,
+      feeDirection: sas.feeDirection,
+      netAmount: actual,
+      runningBalance: 0,
+      notes: sas.notes || null,
+      createdByName: sas.createdByName || null,
+    });
+  }
+
+  // Sort chronologically (date ASC, id ASC) to compute running balance
+  items.sort((a, b) => {
+    const d = a.date.localeCompare(b.date);
+    if (d !== 0) return d;
+    return a.id.localeCompare(b.id);
+  });
+
+  // Compute running balance from 0 (opening = current balance - net of all transactions)
+  const totalIn = items.reduce((sum, item) => sum + item.inAmount, 0);
+  const totalOut = items.reduce((sum, item) => sum + item.outAmount, 0);
+  const net = totalIn - totalOut;
+  const currentBalance = account.balance ?? 0;
+  const openingBalance = currentBalance - net;
+
+  let running = openingBalance;
+  for (const item of items) {
+    if (item.direction === 'IN') {
+      running += item.inAmount;
+    } else {
+      running -= item.outAmount;
+    }
+    item.runningBalance = running;
+  }
+
+  // Apply filters (direction, search, date range) AFTER running balance computed
+  let filtered = items;
+  if (query.direction && query.direction !== 'ALL') {
+    filtered = filtered.filter((i) => i.direction === query.direction);
+  }
+  if (query.from) {
+    filtered = filtered.filter((i) => i.day >= query.from!);
+  }
+  if (query.to) {
+    filtered = filtered.filter((i) => i.day <= query.to!);
+  }
+  if (query.search && query.search.trim()) {
+    const s = query.search.toLowerCase().trim();
+    filtered = filtered.filter(
+      (i) =>
+        i.reference.toLowerCase().includes(s) ||
+        i.from.toLowerCase().includes(s) ||
+        i.to.toLowerCase().includes(s) ||
+        i.typeLabel.toLowerCase().includes(s) ||
+        (i.notes && i.notes.toLowerCase().includes(s)) ||
+        (i.createdByName && i.createdByName.toLowerCase().includes(s)),
+    );
+  }
+
+  // Reverse so newest is first in the list
+  filtered.reverse();
+
+  return {
+    account: {
+      ...account,
+      isActive: (account.isActive ? 1 : 0) as 0 | 1,
+    },
+    openingBalance,
+    currentBalance,
+    totalIn,
+    totalOut,
+    net,
+    transactions: filtered,
+  };
+}
 
 export interface BankTransactionRow {
   id: string;
@@ -563,7 +991,7 @@ export interface BankTransactionRow {
   amount: number;
   /** Basis points of the amount: 50 == 0.5%. */
   feeBasisPoints: number;
-  /** Minor units, worked out here and stored — never recomputed on read. */
+  /** Minor units, worked out here and stored  Enever recomputed on read. */
   feeAmount: number;
   feeDirection: BankFeeDirection;
   /** Minor units, typed by the user and added to the actual amount. */
@@ -912,8 +1340,11 @@ export function deleteBankTransaction(
       `UPDATE "BankTransaction" SET isDeleted = 1, deletedReason = ?, updatedAt = ? WHERE id = ?`,
     ).run(reason, nowInstant(), id);
 
-    // If an ordinary transaction that adjusted cash in hand is deleted, reverse its cash adjustment
-    if (before.advanceRole === null) {
+    // If an ordinary transaction that adjusted cash in hand is deleted, reverse its cash adjustment.
+    // Balance adjustments never touch cash in hand, so skip them.
+    const isBalanceAdjustment =
+      before.fromName === 'Balance adjustment' || before.toName === 'Balance adjustment';
+    if (before.advanceRole === null && !isBalanceAdjustment) {
       const actual = amountAfterFee(before.amount, before.feeAmount, before.feeDirection, before.type);
       if (before.type === 'TRANSFER') {
         adjustCashInHand(-actual, `Deleted ${before.transactionNumber} (${reason})`, actor.id, db);

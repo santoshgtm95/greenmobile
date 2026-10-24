@@ -35,6 +35,7 @@ import {
   zShopAdvanceListQuery,
   zDeleteShopAdvance,
   zDeleteShopAdvanceSettlement,
+  zShopBankAccountHistoryQuery,
 } from '../../shared/validation';
 import {
   bankingOverview,
@@ -47,6 +48,7 @@ import {
   deleteShopAdvance,
   deleteShopAdvanceSettlement,
   deleteShopBankAccount,
+  getShopBankAccountHistory,
   getBankAdvance,
   getShopAdvance,
   listBankAccounts,
@@ -110,6 +112,12 @@ export function registerBankingIpc(): void {
     { access: 'permission', permission: 'banking.delete' },
     zIdOnly,
     ({ id }) => deleteShopBankAccount(id, requireUser()),
+  );
+  handle(
+    CHANNELS.banking.getShopAccountHistory,
+    { access: 'permission', permission: 'banking.view' },
+    zShopBankAccountHistoryQuery,
+    (query) => getShopBankAccountHistory(query),
   );
 
   handle(

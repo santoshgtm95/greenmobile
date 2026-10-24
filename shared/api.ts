@@ -57,6 +57,7 @@ import type {
   ShopAdvanceListQueryInput,
   DeleteShopAdvanceInput,
   DeleteShopAdvanceSettlementInput,
+  ShopBankAccountHistoryQueryInput,
   AddServiceItemInput,
   AddServicePaymentInput,
   ChangeServiceStatusInput,
@@ -497,6 +498,40 @@ export interface ShopAdvanceDetailResult {
   settlements: ShopAdvanceSettlement[];
 }
 
+export interface ShopBankAccountTransactionItem {
+  id: string;
+  date: string;
+  day: string;
+  reference: string;
+  source: 'BANK_TRANSACTION' | 'INTERNAL_TRANSFER' | 'SHOP_ADVANCE' | 'SHOP_ADVANCE_SETTLEMENT';
+  type: string;
+  typeLabel: string;
+  direction: 'IN' | 'OUT';
+  from: string;
+  fromAccount?: string;
+  to: string;
+  toAccount?: string;
+  amount: number;
+  inAmount: number;
+  outAmount: number;
+  feeAmount: number;
+  feeDirection?: BankFeeDirection;
+  netAmount: number;
+  runningBalance: number;
+  notes: string | null;
+  createdByName: string | null;
+}
+
+export interface ShopBankAccountHistoryResult {
+  account: ShopBankAccount;
+  openingBalance: number;
+  currentBalance: number;
+  totalIn: number;
+  totalOut: number;
+  net: number;
+  transactions: ShopBankAccountTransactionItem[];
+}
+
 export interface InternalTransferListResult {
   rows: InternalTransfer[];
   total: number;
@@ -922,6 +957,7 @@ export interface PosApi {
     listShopAccounts(input?: LookupQueryInput): Promise<ShopBankAccount[]>;
     saveShopAccount(input: SaveShopBankAccountInput): Promise<ShopBankAccount>;
     deleteShopAccount(input: { id: string }): Promise<{ deleted: true }>;
+    getShopAccountHistory(query: ShopBankAccountHistoryQueryInput): Promise<ShopBankAccountHistoryResult>;
     /**
      * transferTotal / receiveTotal are the listed rows split BY TYPE, so they add
      * up to the value on screen. The overview's received / transferred are money

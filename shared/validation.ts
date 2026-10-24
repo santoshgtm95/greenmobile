@@ -823,6 +823,14 @@ export const zDeleteShopAdvanceSettlement = z.object({
   reason: z.string().trim().min(1, 'Give a reason for deleting this repayment').max(300),
 });
 
+export const zShopBankAccountHistoryQuery = z.object({
+  id: zId,
+  search: zShortText.optional(),
+  direction: z.enum(['ALL', 'IN', 'OUT']).default('ALL'),
+  from: zBusinessDay.optional(),
+  to: zBusinessDay.optional(),
+});
+
 export const zDeleteInternalTransfer = z.object({
   id: zId,
   reason: z.string().trim().min(1, 'Give a reason for deleting this transfer').max(300),
@@ -1047,6 +1055,8 @@ export type ShopAdvanceListQueryInput = z.input<typeof zShopAdvanceListQuery>;
 export type ShopAdvanceListQuery = z.output<typeof zShopAdvanceListQuery>;
 export type DeleteShopAdvanceInput = z.output<typeof zDeleteShopAdvance>;
 export type DeleteShopAdvanceSettlementInput = z.output<typeof zDeleteShopAdvanceSettlement>;
+export type ShopBankAccountHistoryQueryInput = z.input<typeof zShopBankAccountHistoryQuery>;
+export type ShopBankAccountHistoryQuery = z.output<typeof zShopBankAccountHistoryQuery>;
 
 export type CreateServiceOrderFormValues = z.input<typeof zCreateServiceOrder>;
 export type CreateServiceOrderInput = z.output<typeof zCreateServiceOrder>;

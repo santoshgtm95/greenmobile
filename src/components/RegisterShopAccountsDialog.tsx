@@ -24,6 +24,7 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
+import HistoryIcon from '@mui/icons-material/History';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
@@ -31,6 +32,7 @@ import { PosApiError } from '@shared/errors';
 import { useAuth } from '../hooks/useAuth';
 import { useMoneyFormatter } from '../hooks/useSettings';
 import type { ShopBankAccount } from '@shared/api';
+import ShopAccountHistoryDialog from './ShopAccountHistoryDialog';
 
 /**
  * Register and manage the shop's own banking accounts.
@@ -52,6 +54,7 @@ export default function RegisterShopAccountsDialog({
 
   const { can } = useAuth();
   const [editing, setEditing] = useState<ShopBankAccount | null>(null);
+  const [historyAccount, setHistoryAccount] = useState<ShopBankAccount | null>(null);
   const [bankAccountId, setBankAccountId] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [accountName, setAccountName] = useState('');
@@ -123,6 +126,7 @@ export default function RegisterShopAccountsDialog({
   const rows = shopAccounts.data ?? [];
 
   return (
+    <>
     <Dialog open fullWidth maxWidth="md" onClose={onClose}>
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <AccountBalanceWalletIcon color="primary" />
@@ -291,6 +295,12 @@ export default function RegisterShopAccountsDialog({
                   </TableCell>
                   <TableCell align="right">
                     <Stack direction="row" spacing={0.5} sx={{ justifyContent: 'flex-end' }}>
+                      <Tooltip title="View transaction history">
+                        <IconButton size="small" onClick={() => setHistoryAccount(account)}>
+                          <HistoryIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+
                       <Tooltip title="Edit account details or switch off">
                         <IconButton
                           size="small"
@@ -341,5 +351,13 @@ export default function RegisterShopAccountsDialog({
         <Button onClick={onClose}>Close</Button>
       </DialogActions>
     </Dialog>
+
+      {historyAccount && (
+        <ShopAccountHistoryDialog
+          account={historyAccount}
+          onClose={() => setHistoryAccount(null)}
+        />
+      )}
+    </>
   );
 }
