@@ -33,7 +33,7 @@ import SummaryCard from '../components/SummaryCard';
 import AccountSide from '../components/AccountSide';
 import AdvanceDetailDialog from '../components/AdvanceDetailDialog';
 import CustomerAdvanceDialog from '../components/CustomerAdvanceDialog';
-import BankTransactionDialog from '../components/BankTransactionDialog';
+import AdvanceWithdrawDialog from '../components/AdvanceWithdrawDialog';
 import { PosApiError } from '@shared/errors';
 import { formatInstant, businessDay } from '@shared/datetime';
 import { BANK_ADVANCE_STATUS_LABELS, type BankAdvanceStatus } from '@shared/domain';
@@ -347,9 +347,9 @@ export default function AdvancesPage() {
       )}
 
       {withdrawing && (
-        <BankTransactionDialog
+        <AdvanceWithdrawDialog
           accounts={accounts.data ?? []}
-          mode={{ kind: 'withdraw', advance: withdrawing }}
+          advance={withdrawing}
           onClose={() => setWithdrawing(null)}
           onSaved={() => {
             setWithdrawing(null);

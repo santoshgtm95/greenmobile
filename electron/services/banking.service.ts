@@ -57,7 +57,15 @@ import {
   type ShopAdvanceDestinationType,
   type ShopAdvanceStatus,
 } from '../../shared/domain';
-import { amountAfterFee, bankFee, formatMoney, rateOf } from '../../shared/money';
+import {
+  addMoney,
+  amountAfterFee,
+  bankFee,
+  formatMoney,
+  rateOf,
+  subtractMoney,
+  taxFromInclusive,
+} from '../../shared/money';
 import type {
   ShopBankAccountHistoryResult,
   ShopBankAccountTransactionItem,
@@ -78,6 +86,7 @@ import {
   BankAccountBalanceAdjustment,
   CreateInternalTransferInput,
   InternalTransferListQuery,
+  CashHistoryQuery,
   CreateShopAdvanceInput,
   ReceiveShopAdvanceInput,
   ShopAdvanceListQuery,
@@ -322,7 +331,7 @@ export function listShopBankAccounts(
               COALESCE((SELECT SUM(t.amount - t.otherFees) FROM "BankTransaction" t
                          WHERE t.type = 'RECEIVE' AND t.toAccountId = s.bankAccountId
                            AND t.toAccountNumber = s.accountNumber AND t.isDeleted = 0), 0)
-              - COALESCE((SELECT SUM(t.amount + t.otherFees) FROM "BankTransaction" t
+              - COALESCE((SELECT SUM(t.amount + t.otherFees - CASE WHEN t.advanceRole = 'WITHDRAWAL' THEN t.feeAmount ELSE 0 END) FROM "BankTransaction" t
                          WHERE t.type = 'TRANSFER' AND t.fromAccountId = s.bankAccountId
                            AND t.fromAccountNumber = s.accountNumber AND t.isDeleted = 0), 0)
               + COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
@@ -360,7 +369,7 @@ export function getShopBankAccount(id: string, db: Db = getDatabase()): ShopBank
               COALESCE((SELECT SUM(t.amount - t.otherFees) FROM "BankTransaction" t
                          WHERE t.type = 'RECEIVE' AND t.toAccountId = s.bankAccountId
                            AND t.toAccountNumber = s.accountNumber AND t.isDeleted = 0), 0)
-              - COALESCE((SELECT SUM(t.amount + t.otherFees) FROM "BankTransaction" t
+              - COALESCE((SELECT SUM(t.amount + t.otherFees - CASE WHEN t.advanceRole = 'WITHDRAWAL' THEN t.feeAmount ELSE 0 END) FROM "BankTransaction" t
                          WHERE t.type = 'TRANSFER' AND t.fromAccountId = s.bankAccountId
                            AND t.fromAccountNumber = s.accountNumber AND t.isDeleted = 0), 0)
               + COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
@@ -1137,6 +1146,7 @@ function usableAccount(id: string, db: Db): { id: string; name: string; key: str
  */
 function adjustCashInHand(
   delta: number,
+  source: string,
   note: string,
   actorId: string,
   db: Db,
@@ -1147,9 +1157,9 @@ function adjustCashInHand(
   const now = nowInstant();
 
   db.prepare(
-    `INSERT INTO "CashCount" (id, amount, countedAt, countedDay, notes, createdBy, createdAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(countId, newAmount, now, businessDay(), note, actorId, now);
+    `INSERT INTO "CashCount" (id, amount, countedAt, countedDay, source, notes, createdBy, createdAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(countId, newAmount, now, businessDay(), source, note, actorId, now);
 }
 
 export function createBankTransaction(
@@ -1171,9 +1181,9 @@ export function createBankTransaction(
     );
     const actual = amountAfterFee(row.amount, row.feeAmount, row.feeDirection, row.type);
     if (row.type === 'TRANSFER') {
-      adjustCashInHand(actual, `Account Transfer (Cash In) · ${row.transactionNumber}`, actor.id, db);
+      adjustCashInHand(actual, 'Cash In', `Account Transfer (Cash In) · ${row.transactionNumber}`, actor.id, db);
     } else if (row.type === 'RECEIVE') {
-      adjustCashInHand(-actual, `Receive (Cash Out) · ${row.transactionNumber}`, actor.id, db);
+      adjustCashInHand(-actual, 'Cash Out', `Receive (Cash Out) · ${row.transactionNumber}`, actor.id, db);
     }
     return row;
   }, db);
@@ -1347,16 +1357,20 @@ export function deleteBankTransaction(
     if (before.advanceRole === null && !isBalanceAdjustment) {
       const actual = amountAfterFee(before.amount, before.feeAmount, before.feeDirection, before.type);
       if (before.type === 'TRANSFER') {
-        adjustCashInHand(-actual, `Deleted ${before.transactionNumber} (${reason})`, actor.id, db);
+        adjustCashInHand(-actual, 'Reversal', `Deleted ${before.transactionNumber} (${reason})`, actor.id, db);
       } else if (before.type === 'RECEIVE') {
-        adjustCashInHand(actual, `Deleted ${before.transactionNumber} (${reason})`, actor.id, db);
+        adjustCashInHand(actual, 'Reversal', `Deleted ${before.transactionNumber} (${reason})`, actor.id, db);
       }
     } else if (before.advanceRole === 'WITHDRAWAL' && (!before.fromAccountId || before.toName?.toLowerCase() === 'cash')) {
-      const actual = amountAfterFee(before.amount, before.feeAmount, before.feeDirection, before.type);
-      adjustCashInHand(actual, `Deleted withdrawal ${before.transactionNumber} (${reason})`, actor.id, db);
+      adjustCashInHand(
+        subtractMoney(before.amount, before.feeAmount),
+        'Reversal', `Deleted withdrawal ${before.transactionNumber} (${reason})`,
+        actor.id,
+        db,
+      );
     } else if (before.advanceRole === 'DEPOSIT' && (!before.toAccountId || before.toName?.toLowerCase() === 'cash' || before.toName?.toLowerCase() === 'cash in hand')) {
       const actual = amountAfterFee(before.amount, before.feeAmount, before.feeDirection, before.type);
-      adjustCashInHand(-actual, `Deleted advance deposit ${before.transactionNumber} (${reason})`, actor.id, db);
+      adjustCashInHand(-actual, 'Reversal', `Deleted advance deposit ${before.transactionNumber} (${reason})`, actor.id, db);
     }
 
     recordAudit(
@@ -1562,7 +1576,7 @@ export function openBankAdvance(
     );
     if (isCash) {
       const actual = amountAfterFee(deposit.amount, deposit.feeAmount, deposit.feeDirection, deposit.type);
-      adjustCashInHand(actual, `Advance deposit (Cash) · ${deposit.transactionNumber}`, actor.id, db);
+      adjustCashInHand(actual, 'Customer advance', `Advance deposit (Cash) · ${deposit.transactionNumber}`, actor.id, db);
     }
 
     return getBankAdvance(deposit.id, db).advance;
@@ -1626,7 +1640,8 @@ export function withdrawFromBankAdvance(
       ...movement,
       type: 'TRANSFER',
       feeBasisPoints: movement.feeBasisPoints ?? 0,
-      feeDirection: movement.feeDirection ?? 'RECEIVE',
+      // The shop keeps the fee: it comes out of what the customer is paid.
+      feeDirection: 'RECEIVE',
       otherFees: movement.otherFees ?? 0,
       fromAccountId: isCash ? undefined : (movement.fromAccountId ?? deposit.toAccountId ?? undefined),
       fromAccountNumber: isCash ? '-' : (movement.fromAccountNumber || '-'),
@@ -1643,8 +1658,12 @@ export function withdrawFromBankAdvance(
     );
 
     if (isCash) {
-      const actual = amountAfterFee(row.amount, row.feeAmount, row.feeDirection, row.type);
-      adjustCashInHand(-actual, `Advance withdrawal (Cash) · ${deposit.transactionNumber}`, actor.id, db);
+      adjustCashInHand(
+        -subtractMoney(row.amount, row.feeAmount),
+        'Advance withdrawal', `Advance withdrawal (Cash) · ${deposit.transactionNumber}`,
+        actor.id,
+        db,
+      );
     }
 
     return getBankAdvance(deposit.id, db);
@@ -1680,7 +1699,7 @@ export function cashInHand(db: Db = getDatabase()): CashInHandRow {
       `SELECT c.amount, c.countedAt, c.notes, u.fullName AS countedByName
          FROM "CashCount" c
          LEFT JOIN "User" u ON u.id = c.createdBy
-        ORDER BY c.countedAt DESC, c.createdAt DESC
+        ORDER BY c.countedAt DESC, c.createdAt DESC, c.rowid DESC
         LIMIT 1`,
     )
     .get() as Omit<CashInHandRow, 'recorded'> | undefined;
@@ -1690,6 +1709,46 @@ export function cashInHand(db: Db = getDatabase()): CashInHandRow {
     return { amount: 0, countedAt: null, countedByName: null, notes: null, recorded: false };
   }
   return { ...row, recorded: true };
+}
+
+export interface CashHistoryRow {
+  id: string;
+  countedAt: string;
+  source: string;
+  notes: string | null;
+  /** Positive in, negative out: this entry less the one before it. */
+  change: number;
+  /** Cash in hand after this entry. */
+  balance: number;
+  countedByName: string | null;
+}
+
+/**
+ * Every change to cash in hand, newest first. Each entry stores the new total;
+ * the in/out is the difference from the entry before it — for a count by hand,
+ * that is what the drawer was found to be over or short.
+ */
+export function listCashHistory(
+  query: CashHistoryQuery,
+  db: Db = getDatabase(),
+): { rows: CashHistoryRow[]; total: number } {
+  const rows = db
+    .prepare(
+      `SELECT * FROM (
+         SELECT c.id, c.countedAt, COALESCE(c.source, 'Cash count') AS source, c.notes,
+                c.amount AS balance,
+                c.amount - COALESCE(LAG(c.amount) OVER (ORDER BY c.countedAt, c.createdAt, c.rowid), 0) AS change,
+                u.fullName AS countedByName,
+                ROW_NUMBER() OVER (ORDER BY c.countedAt, c.createdAt, c.rowid) AS seq
+           FROM "CashCount" c
+           LEFT JOIN "User" u ON u.id = c.createdBy
+       )
+       ORDER BY seq DESC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(query.pageSize, query.page * query.pageSize) as Array<CashHistoryRow & { seq: number }>;
+  const total = (db.prepare(`SELECT COUNT(*) AS n FROM "CashCount"`).get() as { n: number }).n;
+  return { rows: rows.map(({ seq: _seq, ...row }) => row), total };
 }
 
 export function saveCashCount(
@@ -1703,8 +1762,8 @@ export function saveCashCount(
     const id = newId();
 
     db.prepare(
-      `INSERT INTO "CashCount" (id, amount, countedAt, countedDay, notes, createdBy, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO "CashCount" (id, amount, countedAt, countedDay, source, notes, createdBy, createdAt)
+       VALUES (?, ?, ?, ?, 'Cash count', ?, ?, ?)`,
       // businessDay(), not now.slice(0, 10): the instant is UTC, and a count
       // taken at 8pm in Yangon belongs to that evening, not to tomorrow.
     ).run(id, input.amount, now, businessDay(), input.notes ?? null, actor.id, now);
@@ -1964,7 +2023,7 @@ export function bankingOverview(
                 + COALESCE((SELECT SUM(t.amount - t.otherFees) FROM "BankTransaction" t
                          WHERE t.type = 'RECEIVE' AND t.toAccountId = a.id
                            AND t.isDeleted = 0), 0)
-                - COALESCE((SELECT SUM(t.amount + t.otherFees) FROM "BankTransaction" t
+                - COALESCE((SELECT SUM(t.amount + t.otherFees - CASE WHEN t.advanceRole = 'WITHDRAWAL' THEN t.feeAmount ELSE 0 END) FROM "BankTransaction" t
                              WHERE t.type = 'TRANSFER' AND t.fromAccountId = a.id
                                AND t.isDeleted = 0), 0)
                 + COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
@@ -2394,6 +2453,10 @@ export interface ShopAdvanceSettlementRow {
   toBankKey: string | null;
   toAccountNumber: string | null;
   toAccountName: string | null;
+  fromBankName: string | null;
+  fromBankKey: string | null;
+  fromAccountNumber: string | null;
+  fromAccountName: string | null;
   amount: number;
   feeBasisPoints: number;
   feeAmount: number;
@@ -2444,6 +2507,7 @@ const SHOP_ADVANCE_SETTLEMENT_SELECT = `
   SELECT sas.id, sas.shopAdvanceId, sas.settlementNumber, sas.settlementDate, sas.settlementDay,
          sas.toType, sas.toShopAccountId,
          sas.toBankName, sas.toBankKey, sas.toAccountNumber, sas.toAccountName,
+         sas.fromBankName, sas.fromBankKey, sas.fromAccountNumber, sas.fromAccountName,
          sas.amount, sas.feeBasisPoints, sas.feeAmount, sas.feeDirection, sas.actualAmount,
          sas.notes,
          sas.isDeleted, sas.deletedReason,
@@ -2666,7 +2730,7 @@ export function createShopAdvance(
     if (input.fromType === 'CASH') {
       adjustCashInHand(
         -input.amount,
-        `Shop Advance · ${advanceNumber} (${input.recipientName.trim()})`,
+        'Shop advance', `Shop Advance · ${advanceNumber} (${input.recipientName.trim()})`,
         actor.id,
         db,
       );
@@ -2701,10 +2765,24 @@ export function receiveShopAdvance(
     if (advance.status === 'SETTLED' || advance.remaining <= 0) {
       throw errors.invalidState('This advance has already been fully settled.');
     }
-    if (input.amount <= 0) {
+    // Cash: the shop PAYS the fee, so it takes in the repayment less the fee.
+    // Transfer: the shop RECEIVES the fee, paid on top of the repayment — or,
+    // when the payer already included it, the part of what arrived above it.
+    const isCash = input.toType === 'CASH';
+    const feeDirection: BankFeeDirection = isCash ? 'PAY' : 'RECEIVE';
+    const feeBasisPoints = input.feeBasisPoints ?? 0;
+    const included = !isCash && Boolean(input.feeIncluded);
+    const split = included
+      ? taxFromInclusive(input.amount, feeBasisPoints)
+      : { net: input.amount, tax: rateOf(input.amount, feeBasisPoints) };
+    const principal = split.net;
+    const feeAmount = split.tax;
+    const actualAmount = isCash ? subtractMoney(principal, feeAmount) : addMoney(principal, feeAmount);
+
+    if (principal <= 0) {
       throw errors.validation('Amount must be more than zero.', { amount: 'Required' });
     }
-    if (input.amount > advance.remaining) {
+    if (principal > advance.remaining) {
       throw errors.validation(
         `Repayment amount cannot exceed remaining balance of ${formatMoney(advance.remaining)}.`,
         { amount: `Maximum is ${formatMoney(advance.remaining)}` },
@@ -2736,36 +2814,27 @@ export function receiveShopAdvance(
       toAccountName = toShopAccount.accountName;
     }
 
+    // Where a transfer came from. The bank is optional ("not listed").
+    const fromBank =
+      !isCash && input.fromAccountId ? getBankAccount(input.fromAccountId, db) : null;
+
     const settlementId = newId();
     const settlementNumber = nextNumber('banking', db);
     const now = nowInstant();
     const settlementDate = localDateTimeToInstant(input.receivedAt);
     const settlementDay = localDateTimeToDay(input.receivedAt);
 
-    const feeBasisPoints = input.feeBasisPoints ?? 0;
-    const feeDirection = input.feeDirection ?? 'RECEIVE';
-    const feeAmount = rateOf(input.amount, feeBasisPoints);
-    const actualAmount =
-      feeDirection === 'RECEIVE'
-        ? input.amount + feeAmount
-        : input.amount - feeAmount;
-
-    if (actualAmount <= 0) {
-      throw errors.validation('Actual repayment amount must be more than zero.', {
-        amount: 'Actual amount is zero or negative',
-      });
-    }
-
     db.prepare(
       `INSERT INTO "ShopAdvanceSettlement" (
          id, shopAdvanceId, settlementNumber, settlementDate, settlementDay,
          toType, toShopAccountId,
          toBankName, toBankKey, toAccountNumber, toAccountName,
+         fromBankName, fromBankKey, fromAccountNumber, fromAccountName,
          amount, feeBasisPoints, feeAmount, feeDirection, actualAmount,
          notes,
          isDeleted, deletedReason,
          createdBy, createdAt, updatedAt
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
     ).run(
       settlementId,
       advance.id,
@@ -2778,7 +2847,11 @@ export function receiveShopAdvance(
       toBankKey,
       toAccountNumber,
       toAccountName,
-      input.amount,
+      fromBank?.name ?? null,
+      fromBank?.key ?? null,
+      isCash ? null : (input.fromAccountNumber?.trim() || null),
+      isCash ? null : (input.fromAccountName?.trim() || null),
+      principal,
       feeBasisPoints,
       feeAmount,
       feeDirection,
@@ -2792,7 +2865,7 @@ export function receiveShopAdvance(
     if (input.toType === 'CASH') {
       adjustCashInHand(
         actualAmount,
-        `Shop Advance Repayment · ${settlementNumber} (${advance.advanceNumber})`,
+        'Shop advance repayment', `Shop Advance Repayment · ${settlementNumber} (${advance.advanceNumber})`,
         actor.id,
         db,
       );
@@ -2804,7 +2877,11 @@ export function receiveShopAdvance(
         action: 'CREATE',
         entityName: 'ShopAdvanceSettlement',
         entityId: settlementId,
-        summary: `Received repayment ${settlementNumber} of ${formatMoney(input.amount)} for advance ${advance.advanceNumber}`,
+        summary:
+          `Received repayment ${settlementNumber} of ${formatMoney(principal)} for advance ${advance.advanceNumber}` +
+          (feeAmount > 0
+            ? ` (${isCash ? '-' : '+'}${formatMoney(feeAmount)} fee ${isCash ? 'paid' : 'received'}${included ? ', included' : ''})`
+            : ''),
         newValues: input,
       },
       db,
@@ -2843,7 +2920,7 @@ export function deleteShopAdvanceSettlement(
     if (settlement.toType === 'CASH') {
       adjustCashInHand(
         -delta,
-        `Deleted repayment ${settlement.settlementNumber} (${reason})`,
+        'Reversal', `Deleted repayment ${settlement.settlementNumber} (${reason})`,
         actor.id,
         db,
       );
@@ -2893,7 +2970,7 @@ export function deleteShopAdvance(
     if (advance.fromType === 'CASH') {
       adjustCashInHand(
         advance.amount,
-        `Deleted shop advance ${advance.advanceNumber} (${reason})`,
+        'Reversal', `Deleted shop advance ${advance.advanceNumber} (${reason})`,
         actor.id,
         db,
       );

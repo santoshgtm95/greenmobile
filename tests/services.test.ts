@@ -340,7 +340,7 @@ describe('status workflow (spec §52)', () => {
     expect(current.order.completedDate).toBeTruthy();
 
     current = changeServiceStatus(
-      { serviceOrderId: order.id, status: 'DELIVERED', note: undefined },
+      { serviceOrderId: order.id, status: 'DELIVERED', note: undefined, paymentMethod: 'CASH' },
       actor,
       ctx.db,
     );
@@ -399,11 +399,50 @@ describe('status workflow (spec §52)', () => {
     expect(delivered.order.balance).toBe(0);
   });
 
+  it('takes the rest of the estimate on delivery: 100,000 quoted, 50,000 deposit', () => {
+    const { order } = intake({ estimate: 100_000, deposit: 50_000 });
+    changeServiceStatus({ serviceOrderId: order.id, status: 'REPAIRING', note: undefined }, actor, ctx.db);
+    changeServiceStatus({ serviceOrderId: order.id, status: 'COMPLETED', note: undefined }, actor, ctx.db);
+
+    // Without a payment it is refused — and nothing is left behind.
+    expect(() =>
+      changeServiceStatus({ serviceOrderId: order.id, status: 'DELIVERED', note: undefined }, actor, ctx.db),
+    ).toThrow(/still owing/i);
+    expect(getServiceOrder(order.id, ctx.db).items).toHaveLength(0);
+
+    const delivered = changeServiceStatus(
+      { serviceOrderId: order.id, status: 'DELIVERED', note: undefined, paymentMethod: 'CASH' },
+      actor,
+      ctx.db,
+    );
+    expect(delivered.order.status).toBe('DELIVERED');
+    expect(delivered.order.finalCost).toBe(100_000);
+    expect(delivered.items.map((i) => [i.description, i.total])).toEqual([['Repair charge', 100_000]]);
+    expect(delivered.payments.map((p) => p.amount).sort()).toEqual([50_000, 50_000]);
+    expect(delivered.order.balance).toBe(0);
+  });
+
+  it('lets the charge differ from the estimate when delivering an unpriced job', () => {
+    const { order } = intake({ estimate: 100_000, deposit: 50_000 });
+    changeServiceStatus({ serviceOrderId: order.id, status: 'REPAIRING', note: undefined }, actor, ctx.db);
+    changeServiceStatus({ serviceOrderId: order.id, status: 'COMPLETED', note: undefined }, actor, ctx.db);
+    const delivered = changeServiceStatus(
+      { serviceOrderId: order.id, status: 'DELIVERED', note: undefined, charge: 80_000, paymentMethod: 'BANK_TRANSFER', referenceNumber: 'TX-9' },
+      actor,
+      ctx.db,
+    );
+    expect(delivered.order.finalCost).toBe(80_000);
+    const last = delivered.payments.find((p) => p.isDeposit === 0)!;
+    expect(last.amount).toBe(30_000);
+    expect(last.paymentMethod).toBe('BANK_TRANSFER');
+    expect(last.referenceNumber).toBe('TX-9');
+  });
+
   it('freezes a delivered job', () => {
     const { order } = intake();
     changeServiceStatus({ serviceOrderId: order.id, status: 'REPAIRING', note: undefined }, actor, ctx.db);
     changeServiceStatus({ serviceOrderId: order.id, status: 'COMPLETED', note: undefined }, actor, ctx.db);
-    changeServiceStatus({ serviceOrderId: order.id, status: 'DELIVERED', note: undefined }, actor, ctx.db);
+    changeServiceStatus({ serviceOrderId: order.id, status: 'DELIVERED', note: undefined, paymentMethod: 'CASH' }, actor, ctx.db);
 
     expect(() =>
       addServiceItem(
@@ -561,7 +600,7 @@ describe('searching and the board (spec §51, §92)', () => {
 
     changeServiceStatus({ serviceOrderId: first.order.id, status: 'REPAIRING', note: undefined }, actor, ctx.db);
     changeServiceStatus({ serviceOrderId: first.order.id, status: 'COMPLETED', note: undefined }, actor, ctx.db);
-    changeServiceStatus({ serviceOrderId: first.order.id, status: 'DELIVERED', note: undefined }, actor, ctx.db);
+    changeServiceStatus({ serviceOrderId: first.order.id, status: 'DELIVERED', note: undefined, paymentMethod: 'CASH' }, actor, ctx.db);
 
     expect(listServiceOrders({ openOnly: true, page: 0, pageSize: 50 }, ctx.db).total).toBe(1);
     expect(listServiceOrders({ openOnly: false, page: 0, pageSize: 50 }, ctx.db).total).toBe(2);

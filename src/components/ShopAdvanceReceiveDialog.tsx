@@ -1,49 +1,44 @@
 import { useState } from 'react';
 import {
   Alert,
-  Box,
   Button,
-  Chip,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControl,
+  Divider,
   FormControlLabel,
-  FormLabel,
   InputAdornment,
   MenuItem,
-  Radio,
-  RadioGroup,
+  Paper,
   Stack,
   TextField,
-  ToggleButton,
   ToggleButtonGroup,
   Typography,
 } from '@mui/material';
-import CallReceivedIcon from '@mui/icons-material/CallReceived';
-import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import LocalAtmIcon from '@mui/icons-material/LocalAtm';
-import { useMutation } from '@tanstack/react-query';
+import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import MoneyField from './MoneyField';
 import { useMoneyFormatter } from '../hooks/useSettings';
 import { PosApiError } from '@shared/errors';
 import { nowLocalDateTime } from '@shared/datetime';
+import { addMoney, bankFee, formatRate, subtractMoney } from '@shared/money';
 import type { ShopAdvance, ShopBankAccount } from '@shared/api';
-import type { BankFeeDirection, ShopAdvanceSourceType } from '@shared/domain';
-import { formatRate, parseRate, rateOf } from '@shared/money';
+import type { ShopAdvanceSourceType } from '@shared/domain';
+import { percentToBasisPoints, Section, SummaryLine, TypeButton } from './MovementParts';
 
-const MAX_FEE_BASIS_POINTS = 10_000;
-
-function formatPercent(basisPoints: number | null): string {
-  if (basisPoints === null || basisPoints === 0) return '0';
-  const whole = Math.floor(basisPoints / 100);
-  const frac = basisPoints % 100;
-  if (frac === 0) return String(whole);
-  return `${whole}.${String(frac).padStart(2, '0').replace(/0+$/, '')}`;
-}
-
+/**
+ * Money lent out by the shop coming back.
+ *
+ * The advance goes down by the repayment.
+ *   Cash      the shop PAYS the fee: cash in hand goes up by repayment − fee.
+ *   Transfer  the shop RECEIVES the fee, on top of the repayment — or, when the
+ *             payer already added it, the part of what arrived above it. The
+ *             account it came from is recorded.
+ */
 export default function ShopAdvanceReceiveDialog({
   advance,
   shopAccounts,
@@ -61,42 +56,43 @@ export default function ShopAdvanceReceiveDialog({
   const [toShopAccountId, setToShopAccountId] = useState(shopAccounts[0]?.id ?? '');
   const [amount, setAmount] = useState(advance.remaining);
   const [percentText, setPercentText] = useState('0');
-  const [feeDirection, setFeeDirection] = useState<BankFeeDirection>('RECEIVE');
+  const [feeIncluded, setFeeIncluded] = useState(false);
+  const [fromBankId, setFromBankId] = useState('');
+  const [fromNumber, setFromNumber] = useState('');
+  const [fromName, setFromName] = useState(advance.recipientName ?? '');
   const [receivedAt, setReceivedAt] = useState(nowLocalDateTime());
   const [notes, setNotes] = useState('');
-
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  const exceedsRemaining = amount > advance.remaining;
+  const providers = useQuery({
+    queryKey: ['bankAccounts', 'active'],
+    queryFn: () => api.banking.listAccounts({ includeInactive: false }),
+  });
 
-  const feeBasisPoints = (() => {
-    if (percentText.trim() === '') return 0;
-    const bp = parseRate(percentText);
-    return bp === null || bp > MAX_FEE_BASIS_POINTS ? null : bp;
-  })();
-
-  const percentError =
-    feeBasisPoints === null
-      ? 'Enter a number from 0 to 100'
-      : (fieldErrors.feeBasisPoints ?? null);
-
-  const feeAmount = feeBasisPoints === null ? 0 : rateOf(amount, feeBasisPoints);
-
-  const actualRepaymentAmount =
-    feeDirection === 'RECEIVE'
-      ? amount + feeAmount
-      : amount - feeAmount;
+  const isCash = toType === 'CASH';
+  const included = !isCash && feeIncluded;
+  const shopAccount = shopAccounts.find((a) => a.id === toShopAccountId) ?? null;
+  const feeBasisPoints = percentToBasisPoints(percentText);
+  // Worked out with the same function the main process uses.
+  const fee = feeBasisPoints === null ? 0 : bankFee(amount, feeBasisPoints, included);
+  const principal = included ? subtractMoney(amount, fee) : amount;
+  const total = isCash ? subtractMoney(amount, fee) : included ? amount : addMoney(amount, fee);
+  const overRemaining = principal > advance.remaining;
+  const left = advance.remaining - principal;
 
   const save = useMutation({
     mutationFn: () =>
       api.banking.receiveShopAdvance({
         shopAdvanceId: advance.id,
         toType,
-        toShopAccountId: toType === 'SHOP_ACCOUNT' ? toShopAccountId : undefined,
+        toShopAccountId: isCash ? undefined : toShopAccountId,
         amount,
         feeBasisPoints: feeBasisPoints ?? 0,
-        feeDirection,
+        feeIncluded: included,
+        fromAccountId: isCash ? undefined : fromBankId || undefined,
+        fromAccountNumber: isCash ? undefined : fromNumber.trim(),
+        fromAccountName: isCash ? undefined : fromName.trim(),
         receivedAt,
         notes: notes.trim() || undefined,
       }),
@@ -112,299 +108,259 @@ export default function ShopAdvanceReceiveDialog({
   });
 
   const canSave =
-    amount > 0 &&
-    !exceedsRemaining &&
+    !save.isPending &&
+    principal > 0 &&
+    !overRemaining &&
     feeBasisPoints !== null &&
-    actualRepaymentAmount > 0 &&
-    (toType !== 'SHOP_ACCOUNT' || Boolean(toShopAccountId)) &&
-    receivedAt;
+    (isCash || (shopAccount !== null && fromNumber.trim() !== '' && fromName.trim() !== '')) &&
+    Boolean(receivedAt);
 
   return (
     <Dialog open fullWidth maxWidth="sm" onClose={save.isPending ? undefined : onClose}>
-      <DialogTitle>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-          <CallReceivedIcon color="success" />
-          <span>Receive Advance Repayment</span>
-        </Stack>
-      </DialogTitle>
-
-      <DialogContent>
-        <Stack spacing={2.5} sx={{ pt: 1 }}>
+      <DialogTitle>Receive advance repayment</DialogTitle>
+      <DialogContent dividers>
+        <Stack spacing={2.5}>
           {error && <Alert severity="error">{error}</Alert>}
 
-          {/* Advance Info Banner */}
-          <Box
-            sx={{
-              p: 2,
-              borderRadius: 1.5,
-              bgcolor: 'action.hover',
-              border: '1px solid',
-              borderColor: 'divider',
+          <Alert
+            severity="info"
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                sx={{ whiteSpace: 'nowrap' }}
+                onClick={() =>
+                  setAmount(
+                    included
+                      ? addMoney(advance.remaining, bankFee(advance.remaining, feeBasisPoints ?? 0))
+                      : advance.remaining,
+                  )
+                }
+              >
+                Full amount
+              </Button>
+            }
+          >
+            <strong>{advance.advanceNumber}</strong> · {advance.recipientName}
+            {advance.recipientPhone ? ` (${advance.recipientPhone})` : ''} was advanced{' '}
+            {money(advance.amount)} and has repaid {money(advance.received)}.{' '}
+            <strong>{money(advance.remaining)}</strong> still owed.
+          </Alert>
+
+          <ToggleButtonGroup
+            exclusive
+            fullWidth
+            color="primary"
+            value={toType}
+            onChange={(_e, next: ShopAdvanceSourceType | null) => {
+              if (!next) return;
+              setToType(next);
+              setFieldErrors({});
             }}
           >
-            <Stack direction="row" sx={{ justifyContent: 'space-between', mb: 1 }}>
-              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
-                {advance.advanceNumber}
-              </Typography>
-              <Chip
-                size="small"
-                label={advance.status}
-                color={advance.status === 'OPEN' ? 'warning' : 'success'}
+            <TypeButton
+              value="CASH"
+              icon={<LocalAtmIcon fontSize="small" />}
+              title="Cash"
+              caption="Paid in cash into the drawer"
+            />
+            <TypeButton
+              value="SHOP_ACCOUNT"
+              icon={<AccountBalanceIcon fontSize="small" />}
+              title="Transfer"
+              caption="Sent to one of our accounts"
+            />
+          </ToggleButtonGroup>
+
+          {!isCash && (
+            <Section title="Received in our account">
+              {shopAccounts.length === 0 ? (
+                <Alert severity="warning">
+                  No shop account is registered yet. Add your account numbers with
+                  &quot;Register Accounts&quot; on the Banking screen first.
+                </Alert>
+              ) : (
+                <TextField
+                  select
+                  required
+                  fullWidth
+                  label="Our account"
+                  value={toShopAccountId}
+                  onChange={(e) => setToShopAccountId(e.target.value)}
+                  error={Boolean(fieldErrors.toShopAccountId)}
+                  helperText={
+                    fieldErrors.toShopAccountId ??
+                    (shopAccount ? `Balance ${money(shopAccount.balance)}` : ' ')
+                  }
+                >
+                  {shopAccounts.map((account) => (
+                    <MenuItem key={account.id} value={account.id}>
+                      {account.bankName} · {account.accountNumber} · {account.accountName}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              )}
+            </Section>
+          )}
+
+          {!isCash && (
+            <Section title="Received from">
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                <TextField
+                  select
+                  label="Bank / wallet"
+                  value={fromBankId}
+                  onChange={(e) => setFromBankId(e.target.value)}
+                  sx={{ flex: 1, minWidth: 0 }}
+                >
+                  <MenuItem value="">
+                    <em>Not listed</em>
+                  </MenuItem>
+                  {(providers.data ?? []).map((bank) => (
+                    <MenuItem key={bank.id} value={bank.id}>
+                      {bank.name}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <TextField
+                  required
+                  label="Account number"
+                  value={fromNumber}
+                  onChange={(e) => setFromNumber(e.target.value)}
+                  error={Boolean(fieldErrors.fromAccountNumber)}
+                  helperText={fieldErrors.fromAccountNumber}
+                  sx={{ flex: 1, minWidth: 0 }}
+                />
+                <TextField
+                  required
+                  label="Account name"
+                  value={fromName}
+                  onChange={(e) => setFromName(e.target.value)}
+                  error={Boolean(fieldErrors.fromAccountName)}
+                  helperText={fieldErrors.fromAccountName}
+                  sx={{ flex: 1.3, minWidth: 0 }}
+                />
+              </Stack>
+            </Section>
+          )}
+
+          <Section title="Amount and fee">
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <MoneyField
+                required
+                label={included ? 'Total received' : 'Amount repaid'}
+                value={amount}
+                onChange={setAmount}
+                error={overRemaining || Boolean(fieldErrors.amount)}
+                helperText={
+                  overRemaining
+                    ? `Repays more than the ${money(advance.remaining)} owed`
+                    : fieldErrors.amount
+                }
+                sx={{ flex: 1.4 }}
+              />
+              <TextField
+                label="Fee"
+                value={percentText}
+                onChange={(e) => setPercentText(e.target.value)}
+                onBlur={() => {
+                  if (feeBasisPoints !== null) setPercentText(formatRate(feeBasisPoints).replace('%', ''));
+                }}
+                inputMode="decimal"
+                error={feeBasisPoints === null || Boolean(fieldErrors.feeBasisPoints)}
+                helperText={feeBasisPoints === null ? '0 to 100' : fieldErrors.feeBasisPoints}
+                slotProps={{
+                  input: { endAdornment: <InputAdornment position="end">%</InputAdornment> },
+                }}
+                sx={{ flex: 0.8 }}
               />
             </Stack>
-
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-              {advance.recipientName}
-              {advance.recipientPhone && (
-                <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1 }}>
-                  ({advance.recipientPhone})
-                </Typography>
-              )}
-            </Typography>
-
-            <Stack direction="row" spacing={3} sx={{ mt: 1.5 }}>
-              <Box>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                  Total Advanced
-                </Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                  {money(advance.amount)}
-                </Typography>
-              </Box>
-              <Box>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                  Received So Far
-                </Typography>
-                <Typography variant="body2" color="success.main" sx={{ fontWeight: 600 }}>
-                  {money(advance.received)}
-                </Typography>
-              </Box>
-              <Box>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                  Remaining
-                </Typography>
-                <Typography variant="body2" color="warning.main" sx={{ fontWeight: 700 }}>
-                  {money(advance.remaining)}
-                </Typography>
-              </Box>
-            </Stack>
-          </Box>
-
-          {/* Date & Time */}
-          <TextField
-            label="Received Date & Time"
-            type="datetime-local"
-            value={receivedAt}
-            onChange={(e) => setReceivedAt(e.target.value)}
-            slotProps={{ inputLabel: { shrink: true } }}
-            error={Boolean(fieldErrors.receivedAt)}
-            helperText={fieldErrors.receivedAt}
-            fullWidth
-          />
-
-          {/* Receive Into (TO) */}
-          <Box>
-            <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'text.secondary', mb: 1 }}>
-              Receive Into (Shop Destination)
-            </Typography>
-            <ToggleButtonGroup
-              exclusive
-              fullWidth
-              value={toType}
-              onChange={(_e, next) => {
-                if (next) setToType(next);
-              }}
-              sx={{ mb: 1.5 }}
-            >
-              <ToggleButton value="SHOP_ACCOUNT">
-                <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                  <AccountBalanceIcon fontSize="small" />
-                  <span>Shop Account</span>
-                </Stack>
-              </ToggleButton>
-              <ToggleButton value="CASH">
-                <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                  <LocalAtmIcon fontSize="small" />
-                  <span>Cash in Hand</span>
-                </Stack>
-              </ToggleButton>
-            </ToggleButtonGroup>
-
-            {toType === 'CASH' ? (
-              <Box
-                sx={{
-                  p: 1.5,
-                  bgcolor: 'action.hover',
-                  borderRadius: 1,
-                  border: '1px solid',
-                  borderColor: 'divider',
-                }}
-              >
-                <Typography variant="body2" color="text.secondary">
-                  Cash will be added to the cash drawer.
-                </Typography>
-              </Box>
+            {isCash ? (
+              <Typography variant="caption" color="text.secondary">
+                We pay the fee on a cash repayment: it comes off the cash we take in.
+              </Typography>
             ) : (
-              <TextField
-                select
-                fullWidth
-                label="Select Shop Bank Account"
-                value={toShopAccountId}
-                onChange={(e) => setToShopAccountId(e.target.value)}
-                error={Boolean(fieldErrors.toShopAccountId)}
-                helperText={fieldErrors.toShopAccountId}
-              >
-                {shopAccounts.map((account) => (
-                  <MenuItem key={account.id} value={account.id}>
-                    <Stack
-                      direction="row"
-                      spacing={1}
-                      sx={{ alignItems: 'center', width: '100%', justifyContent: 'space-between' }}
-                    >
-                      <span>
-                        <strong>{account.bankName}</strong> ({account.accountNumber}) · {account.accountName}
-                      </span>
-                      <Chip
-                        size="small"
-                        label={money(account.balance)}
-                        color={account.balance > 0 ? 'success' : 'default'}
-                        variant="outlined"
-                      />
-                    </Stack>
-                  </MenuItem>
-                ))}
-              </TextField>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    size="small"
+                    checked={feeIncluded}
+                    onChange={(e) => setFeeIncluded(e.target.checked)}
+                  />
+                }
+                label={
+                  <Typography variant="body2">
+                    They already added the fee to what they sent
+                  </Typography>
+                }
+              />
             )}
-          </Box>
+          </Section>
 
-          {/* Amount Field */}
-          <Box>
-            <MoneyField
-              label="Repayment Amount"
+          <Paper variant="outlined" sx={{ p: 2, bgcolor: 'action.hover' }}>
+            <Stack spacing={0.75}>
+              <SummaryLine strong label={isCash ? 'We take in cash' : 'We receive'} value={money(total)} />
+              <SummaryLine label="Repays the advance" value={money(principal)} />
+              {fee > 0 && (
+                <SummaryLine
+                  label={
+                    isCash
+                      ? `Fee we pay (${formatRate(feeBasisPoints ?? 0)})`
+                      : `Fee we keep (${formatRate(feeBasisPoints ?? 0)}${included ? ', included' : ''})`
+                  }
+                  value={money(fee)}
+                />
+              )}
+              <Divider sx={{ my: 0.5 }} />
+              <SummaryLine
+                label={
+                  isCash
+                    ? 'Cash in hand'
+                    : shopAccount
+                      ? `${shopAccount.bankName} · ${shopAccount.accountNumber}`
+                      : 'Our account'
+                }
+                value={`+${money(total)}`}
+                tone="success.main"
+              />
+              <SummaryLine
+                label={`Left on ${advance.advanceNumber}`}
+                value={overRemaining ? '—' : left === 0 ? 'Settled' : money(left)}
+                tone={left === 0 ? 'success.main' : undefined}
+              />
+            </Stack>
+          </Paper>
+
+          <Stack spacing={2}>
+            <TextField
+              label="Date and time"
+              type="datetime-local"
               required
-              fullWidth
-              value={amount}
-              onChange={setAmount}
-              error={Boolean(fieldErrors.amount) || exceedsRemaining}
-              helperText={
-                exceedsRemaining
-                  ? `Cannot exceed remaining balance of ${money(advance.remaining)}`
-                  : fieldErrors.amount
-              }
+              value={receivedAt}
+              onChange={(e) => setReceivedAt(e.target.value)}
+              slotProps={{ inputLabel: { shrink: true } }}
+              error={Boolean(fieldErrors.receivedAt)}
+              helperText={fieldErrors.receivedAt}
+              sx={{ alignSelf: 'flex-start', minWidth: 260 }}
             />
-            {amount !== advance.remaining && (
-              <Stack direction="row" sx={{ justifyContent: 'flex-end', mt: 0.5 }}>
-                <Button size="small" onClick={() => setAmount(advance.remaining)}>
-                  Full Amount ({money(advance.remaining)})
-                </Button>
-              </Stack>
-            )}
-          </Box>
-
-          {/* Percent and Fees below Repayment Amount */}
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ alignItems: { sm: 'center' } }}>
-            <TextField
-              label="Percent"
-              value={percentText}
-              onChange={(e) => setPercentText(e.target.value)}
-              onBlur={() => setPercentText(formatPercent(feeBasisPoints))}
-              inputMode="decimal"
-              error={Boolean(percentError)}
-              helperText={percentError ?? '0 to 100'}
-              slotProps={{
-                input: {
-                  endAdornment: <InputAdornment position="end">%</InputAdornment>,
-                },
-              }}
-              sx={{ width: { xs: '100%', sm: 140 } }}
-            />
-            <TextField
-              label="Fees"
-              value={money(feeAmount)}
-              slotProps={{
-                input: {
-                  readOnly: true,
-                },
-              }}
-              helperText={feeBasisPoints ? `${formatRate(feeBasisPoints)} of repayment` : ' '}
-              sx={{
-                width: { xs: '100%', sm: 160 },
-                '& .MuiInputBase-input': {
-                  fontVariantNumeric: 'tabular-nums',
-                },
-              }}
-            />
-            <FormControl sx={{ pt: { sm: 0.5 } }}>
-              <RadioGroup
-                row
-                value={feeDirection}
-                onChange={(e) => setFeeDirection(e.target.value as BankFeeDirection)}
-              >
-                <FormControlLabel
-                  value="RECEIVE"
-                  control={<Radio size="small" />}
-                  label={<Typography variant="body2">Receive</Typography>}
-                />
-                <FormControlLabel
-                  value="PAY"
-                  control={<Radio size="small" />}
-                  label={<Typography variant="body2">Pay</Typography>}
-                />
-              </RadioGroup>
-              <FormLabel sx={{ fontSize: 12 }}>The fee is</FormLabel>
-            </FormControl>
+            <TextField label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} fullWidth />
           </Stack>
-
-          {/* Actual Repayment Amount */}
-          <TextField
-            label="Actual Repayment Amount"
-            fullWidth
-            value={money(actualRepaymentAmount)}
-            slotProps={{
-              input: {
-                readOnly: true,
-              },
-            }}
-            helperText={
-              feeAmount > 0
-                ? `${money(amount)} ${
-                    feeDirection === 'RECEIVE' ? 'plus' : 'less'
-                  } ${money(feeAmount)} fee ${feeDirection === 'RECEIVE' ? 'received' : 'paid'}`
-                : 'Credited to shop balance'
-            }
-            sx={{
-              '& .MuiInputBase-input': {
-                fontVariantNumeric: 'tabular-nums',
-                fontWeight: 700,
-                color: actualRepaymentAmount > 0 ? 'success.main' : 'error.main',
-              },
-            }}
-          />
-
-          {/* Notes */}
-          <TextField
-            label="Notes"
-            multiline
-            rows={2}
-            fullWidth
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="e.g. First partial repayment by cash"
-          />
         </Stack>
       </DialogContent>
-
       <DialogActions>
         <Button onClick={onClose} disabled={save.isPending}>
           Cancel
         </Button>
         <Button
           variant="contained"
-          color="success"
-          onClick={() => save.mutate()}
-          disabled={!canSave || save.isPending}
+          disabled={!canSave}
+          onClick={() => {
+            setError(null);
+            setFieldErrors({});
+            save.mutate();
+          }}
         >
-          {save.isPending ? 'Recording…' : 'Record Repayment'}
+          {save.isPending ? 'Saving…' : 'Record repayment'}
         </Button>
       </DialogActions>
     </Dialog>

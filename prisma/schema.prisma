@@ -715,6 +715,11 @@ model ShopAdvanceSettlement {
   toBankKey         String?
   toAccountNumber   String?
   toAccountName     String?
+  /// On a transfer, the payer's bank/wallet, account number and name.
+  fromBankName      String?
+  fromBankKey       String?
+  fromAccountNumber String?
+  fromAccountName   String?
   amount            Int
   feeBasisPoints    Int      @default(0)
   feeAmount         Int      @default(0)

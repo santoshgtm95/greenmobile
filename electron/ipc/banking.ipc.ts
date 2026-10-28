@@ -30,6 +30,7 @@ import {
   zCreateInternalTransfer,
   zDeleteInternalTransfer,
   zInternalTransferListQuery,
+  zCashHistoryQuery,
   zCreateShopAdvance,
   zReceiveShopAdvance,
   zShopAdvanceListQuery,
@@ -55,6 +56,7 @@ import {
   listBankAdvances,
   listBankTransactions,
   listInternalTransfers,
+  listCashHistory,
   listShopAdvances,
   listShopBankAccounts,
   openBankAdvance,
@@ -189,6 +191,13 @@ export function registerBankingIpc(): void {
     { access: 'permission', permission: 'banking.manage' },
     zSaveBankBalances,
     (input) => saveBankBalances(input, requireUser()),
+  );
+
+  handle(
+    CHANNELS.banking.cashHistory,
+    { access: 'permission', permission: 'banking.view' },
+    zCashHistoryQuery,
+    (query) => listCashHistory(query),
   );
 
   handle(

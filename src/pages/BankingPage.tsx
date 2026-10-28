@@ -32,6 +32,7 @@ import PaymentsIcon from "@mui/icons-material/Payments";
 import PercentIcon from "@mui/icons-material/Percent";
 import CalculateOutlinedIcon from "@mui/icons-material/CalculateOutlined";
 import EditIcon from "@mui/icons-material/Edit";
+import HistoryIcon from "@mui/icons-material/History";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuth } from "../hooks/useAuth";
@@ -42,6 +43,7 @@ import BankAccountsDialog from "../components/BankAccountsDialog";
 import RegisterShopAccountsDialog from "../components/RegisterShopAccountsDialog";
 import CashTransactionDialog from "../components/CashTransactionDialog";
 import CashCountDialog from "../components/CashCountDialog";
+import CashHistoryDialog from "../components/CashHistoryDialog";
 import BankBalanceDialog from "../components/BankBalanceDialog";
 import SummaryCard from "../components/SummaryCard";
 import DeleteReasonDialog from "../components/DeleteReasonDialog";
@@ -102,6 +104,7 @@ export default function BankingPage() {
   const [registerAccountsOpen, setRegisterAccountsOpen] = useState(false);
   const [newTransactionOpen, setNewTransactionOpen] = useState(false);
   const [cashOpen, setCashOpen] = useState(false);
+  const [cashHistoryOpen, setCashHistoryOpen] = useState(false);
   const [bankBalanceOpen, setBankBalanceOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -201,7 +204,7 @@ export default function BankingPage() {
               startIcon={<AccountBalanceWalletIcon />}
               onClick={() => setRegisterAccountsOpen(true)}
             >
-              Register Accounts
+              Shop Accounts
             </Button>
             <Button
               variant="contained"
@@ -300,7 +303,10 @@ export default function BankingPage() {
           action={
             can("banking.manage") ? (
               <Tooltip title="Update bank balances">
-                <IconButton size="small" onClick={() => setBankBalanceOpen(true)}>
+                <IconButton
+                  size="small"
+                  onClick={() => setBankBalanceOpen(true)}
+                >
                   <EditIcon fontSize="small" />
                 </IconButton>
               </Tooltip>
@@ -317,17 +323,28 @@ export default function BankingPage() {
           }
           icon={<PaymentsIcon fontSize="small" />}
           action={
-            can("banking.manage") && cash ? (
-              <Tooltip
-                title={
-                  cash.recorded ? "Update the counted figure" : "Record a count"
-                }
-              >
-                <IconButton size="small" onClick={() => setCashOpen(true)}>
-                  <EditIcon fontSize="small" />
+            <Stack direction="row" spacing={0.5}>
+              <Tooltip title="History: every cash in and out">
+                <IconButton
+                  size="small"
+                  aria-label="Cash in hand history"
+                  onClick={() => setCashHistoryOpen(true)}
+                >
+                  <HistoryIcon fontSize="small" />
                 </IconButton>
               </Tooltip>
-            ) : undefined
+              {can("banking.manage") && cash && (
+                <Tooltip
+                  title={
+                    cash.recorded ? "Update the counted figure" : "Record a count"
+                  }
+                >
+                  <IconButton size="small" onClick={() => setCashOpen(true)}>
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </Stack>
           }
         />
       </Box>
@@ -760,6 +777,8 @@ export default function BankingPage() {
           }}
         />
       )}
+
+      {cashHistoryOpen && <CashHistoryDialog onClose={() => setCashHistoryOpen(false)} />}
 
       {cashOpen && cash && (
         <CashCountDialog

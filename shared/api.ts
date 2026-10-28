@@ -51,6 +51,7 @@ import type {
   ShopBankAccountBalanceAdjustment,
   CreateInternalTransferInput,
   InternalTransferListQueryInput,
+  CashHistoryQueryInput,
   DeleteInternalTransferInput,
   CreateShopAdvanceInput,
   ReceiveShopAdvanceInput,
@@ -468,6 +469,10 @@ export interface ShopAdvanceSettlement {
   toBankKey: string | null;
   toAccountNumber: string | null;
   toAccountName: string | null;
+  fromBankName: string | null;
+  fromBankKey: string | null;
+  fromAccountNumber: string | null;
+  fromAccountName: string | null;
   amount: number;
   feeBasisPoints: number;
   feeAmount: number;
@@ -530,6 +535,24 @@ export interface ShopBankAccountHistoryResult {
   totalOut: number;
   net: number;
   transactions: ShopBankAccountTransactionItem[];
+}
+
+export interface CashHistoryEntry {
+  id: string;
+  countedAt: string;
+  /** Cash count, Cash In, Cash Out, Customer advance, Reversal, … */
+  source: string;
+  notes: string | null;
+  /** Positive in, negative out. */
+  change: number;
+  /** Cash in hand after this entry. */
+  balance: number;
+  countedByName: string | null;
+}
+
+export interface CashHistoryResult {
+  rows: CashHistoryEntry[];
+  total: number;
 }
 
 export interface InternalTransferListResult {
@@ -989,6 +1012,8 @@ export interface PosApi {
     withdrawAdvance(input: WithdrawBankAdvanceInput): Promise<BankAdvanceDetail>;
     /** Records a counted cash-in-hand figure. */
     saveCashCount(input: SaveCashCountInput): Promise<CashInHand>;
+    /** Every change to cash in hand, newest first, with its source. */
+    cashHistory(query: CashHistoryQueryInput): Promise<CashHistoryResult>;
     /** Updates bank/wallet account balances to match statements or mobile apps. */
     saveBankBalances(input: SaveBankBalancesInput): Promise<{ updated: true; count: number }>;
     /** Internal transfer between shop bank accounts. */

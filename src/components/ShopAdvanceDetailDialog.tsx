@@ -271,6 +271,13 @@ export default function ShopAdvanceDetailDialog({
                                     <AccountBalanceIcon fontSize="small" color="primary" />
                                     <span>
                                       {s.toBankName} ({s.toAccountNumber})
+                                      {s.fromAccountNumber && (
+                                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                          from {s.fromBankName ? `${s.fromBankName} · ` : ''}
+                                          {s.fromAccountNumber}
+                                          {s.fromAccountName ? ` (${s.fromAccountName})` : ''}
+                                        </Typography>
+                                      )}
                                     </span>
                                   </Stack>
                                 )}

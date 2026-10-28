@@ -648,10 +648,48 @@ export function changeServiceStatus(
       );
     }
 
+    if (input.status === 'DELIVERED') {
+      // A job priced only by its estimate has no lines, so nothing is owed on
+      // paper. Charge it now — as a labour line, so reports and receipts see it.
+      const { items } = getServiceOrder(input.serviceOrderId, db);
+      const charge = input.charge ?? order.estimatedCost;
+      if (items.length === 0 && charge > 0) {
+        addServiceItem(
+          {
+            serviceOrderId: order.id,
+            description: 'Repair charge',
+            quantity: 1,
+            unitCost: 0,
+            sellingPrice: charge,
+            type: 'LABOR',
+          },
+          actor,
+          db,
+        );
+      }
+      // Then take the rest, so the device and the money change hands together.
+      const owing = getServiceOrder(input.serviceOrderId, db).order.balance;
+      if (owing > 0 && input.paymentMethod) {
+        addPaymentInternal(
+          {
+            serviceOrderId: order.id,
+            amount: owing,
+            paymentMethod: input.paymentMethod,
+            referenceNumber: input.referenceNumber,
+            notes: 'Balance on delivery',
+            isDeposit: false,
+          },
+          actor,
+          db,
+        );
+      }
+    }
+
     // Handing the device back is the point at which the money must be settled.
-    if (input.status === 'DELIVERED' && order.balance > 0) {
+    const settled = getServiceOrder(input.serviceOrderId, db).order;
+    if (input.status === 'DELIVERED' && settled.balance > 0) {
       throw errors.invalidState(
-        `${order.balance} is still owing on this job. Record the payment before marking it delivered.`,
+        `${settled.balance} is still owing on this job. Take the payment to mark it delivered.`,
       );
     }
 

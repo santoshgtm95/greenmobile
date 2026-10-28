@@ -136,6 +136,13 @@ export const zPaging = z.object({
   pageSize: z.number().int().min(1).max(200).default(50),
 });
 
+export const zCashHistoryQuery = z.object({
+  page: z.number().int().min(0).max(100_000).default(0),
+  pageSize: z.number().int().min(1).max(200).default(50),
+});
+export type CashHistoryQuery = z.output<typeof zCashHistoryQuery>;
+export type CashHistoryQueryInput = z.input<typeof zCashHistoryQuery>;
+
 export const zDateRange = z.object({
   preset: z.enum(DATE_PRESETS).default('THIS_MONTH'),
   from: zBusinessDay.optional(),
@@ -792,14 +799,28 @@ export const zReceiveShopAdvance = z
     toType: z.enum(['CASH', 'SHOP_ACCOUNT']),
     toShopAccountId: zId.optional(),
     amount: zMinor.refine((v) => v > 0, 'Amount must be more than zero'),
+    // Cash: the shop pays the fee. Transfer: the shop receives it, on top of
+    // the repayment unless the payer already included it.
     feeBasisPoints: zBasisPoints.default(0),
-    feeDirection: z.enum(BANK_FEE_DIRECTIONS).default('RECEIVE'),
+    feeIncluded: z.boolean().optional(),
+    // Transfer only: the account the money came from.
+    fromAccountId: zId.optional(),
+    fromAccountNumber: z.string().trim().max(40).optional(),
+    fromAccountName: z.string().trim().max(200).optional(),
     receivedAt: z
       .string()
       .trim()
       .regex(LOCAL_DATE_TIME_PATTERN, 'Use the date and time picker'),
     notes: zOptionalText,
   })
+  .refine(
+    (d) => d.toType !== 'SHOP_ACCOUNT' || Boolean(d.fromAccountNumber),
+    { message: 'Enter the account number it came from', path: ['fromAccountNumber'] },
+  )
+  .refine(
+    (d) => d.toType !== 'SHOP_ACCOUNT' || Boolean(d.fromAccountName),
+    { message: 'Enter the name on that account', path: ['fromAccountName'] },
+  )
   .refine(
     (d) => d.toType !== 'SHOP_ACCOUNT' || Boolean(d.toShopAccountId),
     { message: 'Choose a shop account to receive into', path: ['toShopAccountId'] },
@@ -905,6 +926,14 @@ export const zChangeServiceStatus = z.object({
   serviceOrderId: zId,
   status: zServiceStatus,
   note: zShortText,
+  /**
+   * DELIVERED only — settle in the same step. `charge` prices a job that has
+   * no lines yet (it defaults to the estimate); `paymentMethod` takes whatever
+   * is still owing.
+   */
+  charge: zMinor.optional(),
+  paymentMethod: zPaymentMethod.optional(),
+  referenceNumber: zShortText,
 });
 
 export const zServiceOrderId = z.object({ serviceOrderId: zId });

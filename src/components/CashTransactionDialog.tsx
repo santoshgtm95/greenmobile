@@ -1,7 +1,6 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import {
   Alert,
-  Box,
   Button,
   Checkbox,
   Dialog,
@@ -15,7 +14,6 @@ import {
   Paper,
   Stack,
   TextField,
-  ToggleButton,
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
@@ -26,13 +24,11 @@ import { api } from "../lib/api";
 import MoneyField from "./MoneyField";
 import { useMoneyFormatter } from "../hooks/useSettings";
 import { PosApiError } from "@shared/errors";
-import { addMoney, bankFee, formatRate, parseRate, subtractMoney } from "@shared/money";
+import { addMoney, bankFee, formatRate, subtractMoney } from "@shared/money";
+import { percentToBasisPoints, Section, SummaryLine, TypeButton } from "./MovementParts";
 import { nowLocalDateTime } from "@shared/datetime";
 import type { BankTransactionType } from "@shared/domain";
 import type { BankAccount } from "@shared/api";
-
-/** 100%, as basis points. */
-const MAX_FEE_BASIS_POINTS = 10_000;
 
 /**
  * Cash In / Cash Out at the counter.
@@ -86,11 +82,7 @@ export default function CashTransactionDialog({
   const own = isCashIn ? "from" : "to";
   const customer = isCashIn ? "to" : "from";
 
-  const feeBasisPoints = (() => {
-    if (percentText.trim() === "") return 0;
-    const bp = parseRate(percentText);
-    return bp === null || bp > MAX_FEE_BASIS_POINTS ? null : bp;
-  })();
+  const feeBasisPoints = percentToBasisPoints(percentText);
   const included = !isCashIn && feeIncluded;
   const fee = feeBasisPoints === null ? 0 : bankFee(amount, feeBasisPoints, included);
   // Both ways, the cash that changes hands is the amount less the fee.
@@ -385,75 +377,5 @@ export default function CashTransactionDialog({
         </Button>
       </DialogActions>
     </Dialog>
-  );
-}
-
-function TypeButton({
-  value,
-  icon,
-  title,
-  caption,
-  ...rest
-}: {
-  value: BankTransactionType;
-  icon: ReactNode;
-  title: string;
-  caption: string;
-}) {
-  // ToggleButtonGroup passes selection props down; forward them to the button.
-  return (
-    <ToggleButton value={value} {...rest} sx={{ py: 1.25, textTransform: "none" }}>
-      <Stack spacing={0.25} sx={{ alignItems: "center" }}>
-        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-          {icon}
-          <Typography sx={{ fontWeight: 700 }}>{title}</Typography>
-        </Stack>
-        <Typography variant="caption" color="text.secondary">
-          {caption}
-        </Typography>
-      </Stack>
-    </ToggleButton>
-  );
-}
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <Stack spacing={1.25}>
-      <Typography variant="overline" color="text.secondary" sx={{ lineHeight: 1.5 }}>
-        {title}
-      </Typography>
-      {children}
-    </Stack>
-  );
-}
-
-function SummaryLine({
-  label,
-  value,
-  tone,
-  strong = false,
-}: {
-  label: string;
-  value: string;
-  tone?: string;
-  strong?: boolean;
-}) {
-  return (
-    <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2, alignItems: "baseline" }}>
-      <Typography variant={strong ? "body1" : "body2"} sx={{ fontWeight: strong ? 700 : 400 }}>
-        {label}
-      </Typography>
-      <Typography
-        variant={strong ? "h6" : "body2"}
-        sx={{
-          fontWeight: strong ? 700 : 600,
-          fontVariantNumeric: "tabular-nums",
-          whiteSpace: "nowrap",
-          color: tone,
-        }}
-      >
-        {value}
-      </Typography>
-    </Box>
   );
 }

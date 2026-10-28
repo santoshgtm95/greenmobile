@@ -33,6 +33,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useMoneyFormatter } from '../hooks/useSettings';
 import MoneyField from './MoneyField';
 import ServicePartPicker from './ServicePartPicker';
+import ServiceDeliverDialog from './ServiceDeliverDialog';
 import { PosApiError } from '@shared/errors';
 import {
   SERVICE_STATUS_LABELS,
@@ -63,6 +64,7 @@ export default function ServiceDetailDialog({
   const [info, setInfo] = useState<string | null>(null);
   const [diagnosis, setDiagnosis] = useState('');
   const [partPickerOpen, setPartPickerOpen] = useState(false);
+  const [delivering, setDelivering] = useState(false);
 
   const [newItem, setNewItem] = useState({
     description: '',
@@ -472,7 +474,15 @@ export default function ServiceDetailDialog({
                   <Divider sx={{ my: 0.5 }} />
                   <Row label="Total charge" value={money(order.finalCost)} bold />
                   <Row label="Paid" value={money(order.amountPaid)} />
-                  {order.balance > 0 ? (
+                  {detail.items.length === 0 && order.estimatedCost > order.amountPaid ? (
+                    // No lines yet: the estimate is what will be charged on delivery.
+                    <Row
+                      label="Owing on the estimate"
+                      value={money(order.estimatedCost - order.amountPaid)}
+                      bold
+                      tone="error"
+                    />
+                  ) : order.balance > 0 ? (
                     <Row label="Still owing" value={money(order.balance)} bold tone="error" />
                   ) : (
                     <Row label="Settled" value={money(order.finalCost)} tone="success" />
@@ -524,7 +534,8 @@ export default function ServiceDetailDialog({
                     key={next}
                     variant={next === 'CANCELLED' ? 'outlined' : 'contained'}
                     color={next === 'CANCELLED' ? 'error' : next === 'DELIVERED' ? 'success' : 'primary'}
-                    onClick={() => changeStatus.mutate(next)}
+                    // Delivering settles the money first, in its own small dialog.
+                    onClick={() => (next === 'DELIVERED' ? setDelivering(true) : changeStatus.mutate(next))}
                     disabled={changeStatus.isPending}
                   >
                     {next === 'CANCELLED' ? 'Cancel job' : `Mark ${SERVICE_STATUS_LABELS[next]}`}
@@ -547,6 +558,16 @@ export default function ServiceDetailDialog({
         <Button onClick={onClose}>Close</Button>
       </DialogActions>
 
+      {delivering && detail && (
+        <ServiceDeliverDialog
+          detail={detail}
+          onClose={() => setDelivering(false)}
+          onDelivered={() => {
+            setDelivering(false);
+            succeed('Payment taken and the job is delivered.');
+          }}
+        />
+      )}
       {partPickerOpen && (
         <ServicePartPicker
           onClose={() => setPartPickerOpen(false)}

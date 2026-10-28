@@ -371,8 +371,8 @@ async function captureScreens(win: BrowserWindow, outDir: string): Promise<Check
          .filter((l) => l.textContent.trim().replace(/\\s*\\*$/, '') === label)
          .map((l) => l.control)[nth];
 
-       // The second "Account name" is the To side: who receives the money.
-       const toName = labelled('Account name', 1)?.value ?? null;
+       // Cash is the default; the customer's name is carried over from the deposit.
+       const toName = labelled('Customer name', 0)?.value ?? null;
 
        const all = [...dialog.querySelectorAll('button')]
          .find((b) => b.textContent.trim() === 'Withdraw all');
@@ -382,8 +382,9 @@ async function captureScreens(win: BrowserWindow, outDir: string): Promise<Check
 
        return {
          toName,
-         amount: labelled('Amount', 0)?.value ?? null,
-         settles: dialog.textContent.includes('This settles the advance'),
+         amount: labelled('Amount to withdraw', 0)?.value ?? null,
+         // "Left on BNK-…" in the summary reads "Settled" once nothing is left.
+         settles: dialog.textContent.includes('Settled'),
        };
      })()`,
   )) as { error?: string; toName?: string | null; amount?: string | null; settles?: boolean };
@@ -529,6 +530,95 @@ async function captureScreens(win: BrowserWindow, outDir: string): Promise<Check
     pass: expenseDeleted.dialogOpen === false && expenseDeleted.after === (expenseDeleted.before ?? 0) - 1,
     detail: expenseDeleted.error ?? `${expenseDeleted.before} rows -> ${expenseDeleted.after}`,
   });
+
+  /*
+    Receive advance repayment: a transfer records the account it came from and
+    the shop receives the fee; cash means the shop pays it.
+  */
+  await win.webContents.executeJavaScript(
+    `(async () => {
+       const b = window.posBridge;
+       const day = new Date();
+       const pad = (n) => String(n).padStart(2, '0');
+       // An advance in cash needs cash in the drawer to lend.
+       await b.banking.saveCashCount({ amount: 50000000, notes: 'Smoke till' });
+       await b.banking.createShopAdvance({
+         fromType: 'CASH', toType: 'CASH', recipientName: 'Ko Smoke', amount: 10000000,
+         advanceAt: day.getFullYear() + '-' + pad(day.getMonth() + 1) + '-' + pad(day.getDate()) + 'T09:00',
+       });
+     })()`,
+  );
+  await win.webContents.executeJavaScript(`window.location.hash = '#/banking/shop-advances'`);
+  await win.webContents.reload();
+  await new Promise<void>((resolve) => win.webContents.once('did-finish-load', () => resolve()));
+  await new Promise((resolve) => setTimeout(resolve, 1600));
+  const repayment = (await win.webContents.executeJavaScript(
+    `(async () => {
+       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+       const open = [...document.querySelectorAll('tbody button')].find((b) => b.textContent.trim() === 'Receive');
+       if (!open) return { error: 'no Receive button' };
+       open.click();
+       await wait(800);
+       const dialog = document.querySelector('[role="dialog"]');
+       if (!dialog) return { error: 'repayment dialog did not open' };
+       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+       const field = (label) => [...dialog.querySelectorAll('label')]
+         .find((l) => l.textContent.replace('*', '').trim() === label)?.control;
+       const fee = field('Fee');
+       setter.call(fee, '1');
+       fee.dispatchEvent(new Event('input', { bubbles: true }));
+       await wait(400);
+       const transfer = {
+         // A select's label has no input control, so the dropdown is found by its text.
+         from: Boolean(field('Account number') && field('Account name'))
+           && dialog.textContent.includes('Received from') && dialog.textContent.includes('Bank / wallet'),
+         keeps: dialog.textContent.includes('Fee we keep (1%)1,000.00'),
+       };
+       const cash = [...dialog.querySelectorAll('button')].find((b) => b.textContent.includes('Paid in cash'));
+       cash.click();
+       await wait(400);
+       return {
+         transfer,
+         cashPays: dialog.textContent.includes('Fee we pay (1%)1,000.00')
+           && dialog.textContent.includes('We take in cash99,000.00'),
+         cashHidesFrom: !field('Account number'),
+       };
+     })()`,
+  )) as { error?: string; transfer?: { from: boolean; keeps: boolean }; cashPays?: boolean; cashHidesFrom?: boolean };
+  checks.push({
+    name: 'a transfer repayment asks for the account it came from, and we receive the fee',
+    pass: repayment.transfer?.from === true && repayment.transfer?.keeps === true,
+    detail: repayment.error ?? JSON.stringify(repayment.transfer),
+  });
+  checks.push({
+    name: 'a cash repayment: we pay the fee and take in 99,000 of 100,000',
+    pass: repayment.cashPays === true && repayment.cashHidesFrom === true,
+    detail: repayment.error ?? `pays ${repayment.cashPays}, hides from ${repayment.cashHidesFrom}`,
+  });
+  fs.writeFileSync(path.join(outDir, 'banking-shop-advance-repayment.png'), (await win.webContents.capturePage()).toPNG());
+
+  // Cash in hand history, opened from the card on the Banking screen.
+  await win.webContents.executeJavaScript(`window.location.hash = '#/banking'`);
+  await win.webContents.reload();
+  await new Promise<void>((resolve) => win.webContents.once('did-finish-load', () => resolve()));
+  await new Promise((resolve) => setTimeout(resolve, 1600));
+  const cashHistory = (await win.webContents.executeJavaScript(
+    `(async () => {
+       const open = document.querySelector('button[aria-label="Cash in hand history"]');
+       if (!open) return 'no history button';
+       open.click();
+       await new Promise((r) => setTimeout(r, 900));
+       const dialog = document.querySelector('[role="dialog"]');
+       return dialog ? dialog.textContent : 'no dialog';
+     })()`,
+  )) as string;
+  checks.push({
+    name: 'cash in hand history lists counts and Cash In/Out with their source',
+    pass: cashHistory.includes('Cash in hand history') && cashHistory.includes('Cash count')
+      && cashHistory.includes('Cash Out'),
+    detail: cashHistory.slice(0, 120),
+  });
+  fs.writeFileSync(path.join(outDir, 'banking-cash-history.png'), (await win.webContents.capturePage()).toPNG());
 
   // Last, because it signs out: the sign-in screen is the first thing a shop
   // sees and carries the shop logo (spec §29), so it is worth looking at too.

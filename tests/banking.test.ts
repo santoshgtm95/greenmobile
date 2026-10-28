@@ -38,6 +38,7 @@ import {
   saveShopBankAccount,
   deleteShopBankAccount,
   createInternalTransfer,
+  listCashHistory,
   deleteInternalTransfer,
   getInternalTransfer,
   listInternalTransfers,
@@ -55,6 +56,7 @@ import { formatMoney } from '../shared/money';
 import {
   zCreateBankTransaction,
   zWithdrawBankAdvance,
+  zReceiveShopAdvance,
   type FirstRunSetupInput,
 } from '../shared/validation';
 
@@ -998,6 +1000,44 @@ describe('registered account balances', () => {
   });
 });
 
+describe('cash in hand history', () => {
+  it('lists every change newest first, with its source, in/out and balance after', () => {
+    saveCashCount({ amount: 1_000_000, notes: 'Morning till' }, actor, ctx.db);
+    const cashIn = transfer(300_000); // customer hands over 300,000
+    receive(100_000, { feeBasisPoints: 100 }); // we give 99,000 cash
+    deleteBankTransaction(cashIn.id, 'Wrong account', actor, ctx.db);
+
+    const { rows, total } = listCashHistory({ page: 0, pageSize: 50 }, ctx.db);
+    expect(total).toBe(4);
+    expect(rows.map((r) => [r.source, r.change, r.balance])).toEqual([
+      ['Reversal', -300_000, 901_000],
+      ['Cash Out', -99_000, 1_201_000],
+      ['Cash In', 300_000, 1_300_000],
+      ['Cash count', 1_000_000, 1_000_000],
+    ]);
+    expect(rows[3].notes).toBe('Morning till');
+    expect(rows[0].notes).toContain('Wrong account');
+    expect(rows[0].countedByName).toBe('Owner');
+  });
+
+  it('labels entries recorded before sources were kept', () => {
+    const insert = ctx.db.prepare(
+      `INSERT INTO "CashCount" (id, amount, countedAt, countedDay, source, notes, createdBy, createdAt)
+       VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
+    );
+    const now = new Date().toISOString();
+    insert.run('old-1', 500, now, businessDay(), 'Receive (Cash Out) · BNK-1', actor.id, now);
+    insert.run('old-2', 400, now, businessDay(), 'Shop Advance Repayment · SET-1 (ADV-1)', actor.id, now);
+    insert.run('old-3', 300, now, businessDay(), 'Counted after lunch', actor.id, now);
+    // The column already exists here; run the migration's backfill only.
+    const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, '0015_cash_count_source', 'migration.sql'), 'utf8');
+    ctx.db.exec(sql.slice(sql.indexOf('UPDATE "CashCount"')));
+
+    const sources = listCashHistory({ page: 0, pageSize: 50 }, ctx.db).rows.map((r) => r.source);
+    expect(sources).toEqual(['Cash count', 'Shop advance repayment', 'Cash Out']);
+  });
+});
+
 describe('cash in hand', () => {
   it('distinguishes "never counted" from "counted zero"', () => {
     const before = cashInHand(ctx.db);
@@ -1243,7 +1283,7 @@ describe('customer advances', () => {
   function withdraw(
     advanceId: string,
     amount: number,
-    overrides: Partial<{ day: string; time: string; feeBasisPoints: number }> = {},
+    overrides: Partial<{ day: string; time: string; feeBasisPoints: number; otherFees: number }> = {},
   ) {
     return withdrawFromBankAdvance(
       {
@@ -1257,7 +1297,7 @@ describe('customer advances', () => {
         toName: 'U Aung',
         amount,
         feeBasisPoints: overrides.feeBasisPoints ?? 0,
-        otherFees: 0,
+        otherFees: overrides.otherFees ?? 0,
         feeDirection: 'RECEIVE',
         notes: undefined,
       },
@@ -1267,6 +1307,46 @@ describe('customer advances', () => {
   }
 
   const MILLION = 100_000_000; // 1,000,000.00 in minor units
+
+  it('sends the customer the amount less our fee; bank charges come off our account', () => {
+    const opened = openAdvance(MILLION);
+    const after = withdraw(opened.id, MILLION, { feeBasisPoints: 50, otherFees: 1_000 });
+
+    expect(after.advance.remaining).toBe(0);
+    expect(after.withdrawals[0].feeDirection).toBe('RECEIVE');
+    // +1,000,000 in, then 995,000 sent and 10.00 of bank charges out.
+    const balance = bankingOverview(ALL_TIME, ctx.db).accounts.find((a) => a.accountId === kpay)!.balance;
+    expect(balance).toBe(MILLION - (MILLION - 500_000) - 1_000);
+  });
+
+  it('pays a cash withdrawal from the drawer as the amount less our fee, and undoes it on delete', () => {
+    saveCashCount({ amount: 2 * MILLION, notes: undefined }, actor, ctx.db);
+    const opened = openAdvance(MILLION);
+    const after = withdrawFromBankAdvance(
+      {
+        advanceId: opened.id,
+        transactionAt: at(),
+        withdrawalMethod: 'cash',
+        fromAccountNumber: '-',
+        fromName: 'Cash in hand',
+        toAccountNumber: '',
+        toName: 'U Aung',
+        amount: MILLION,
+        feeBasisPoints: 50,
+        otherFees: 0,
+        // Sent the wrong way on purpose: a withdrawal fee is always the shop's.
+        feeDirection: 'PAY',
+        notes: undefined,
+      },
+      actor,
+      ctx.db,
+    );
+    expect(after.withdrawals[0].feeDirection).toBe('RECEIVE');
+    expect(cashInHand(ctx.db).amount).toBe(2 * MILLION - (MILLION - 500_000));
+
+    deleteBankTransaction(after.withdrawals[0].id, 'Wrong amount', actor, ctx.db);
+    expect(cashInHand(ctx.db).amount).toBe(2 * MILLION);
+  });
 
   it('follows the shop’s own example: 3,000,000 in, 1,000,000 out, then the rest', () => {
     // 03/10/2026: the customer transfers 3,000,000 in.
@@ -2530,15 +2610,13 @@ describe('audit trail', () => {
       );
       expect(cashInHand(ctx.db).amount).toBe(300_000);
 
-      // 1. Receive 100,000 with 1% fee (1,000) direction RECEIVE
-      // Cash increases by 101,000; advance remaining reduces by 100,000
+      // 1. Cash: 100,000 at 1% — the shop PAYS the fee, so 99,000 comes in
       const res1 = receiveShopAdvance(
         {
           shopAdvanceId: adv.id,
           toType: 'CASH',
           amount: 100_000,
           feeBasisPoints: 100,
-          feeDirection: 'RECEIVE',
           receivedAt: at(),
         },
         actor,
@@ -2547,19 +2625,29 @@ describe('audit trail', () => {
       expect(res1.advance.remaining).toBe(100_000);
       expect(res1.advance.received).toBe(100_000);
       expect(res1.settlement.feeAmount).toBe(1_000);
-      expect(res1.settlement.feeDirection).toBe('RECEIVE');
-      expect(res1.settlement.actualAmount).toBe(101_000);
-      expect(cashInHand(ctx.db).amount).toBe(401_000);
+      expect(res1.settlement.feeDirection).toBe('PAY');
+      expect(res1.settlement.actualAmount).toBe(99_000);
+      expect(res1.settlement.fromAccountNumber).toBeNull();
+      expect(cashInHand(ctx.db).amount).toBe(399_000);
 
-      // 2. Receive remaining 100,000 with 2% fee (2,000) direction PAY
-      // Cash increases by 98,000; advance remaining reduces by 100,000 (SETTLED)
+      // 2. Transfer of 102,000 that already includes a 2% fee — the shop
+      // RECEIVES it: repays the remaining 100,000 (SETTLED), fee 2,000.
+      const shop = saveShopBankAccount(
+        { bankAccountId: kpay, accountNumber: '001-22-3333', accountName: 'Green Mobile', isActive: true },
+        actor,
+        ctx.db,
+      );
       const res2 = receiveShopAdvance(
         {
           shopAdvanceId: adv.id,
-          toType: 'CASH',
-          amount: 100_000,
+          toType: 'SHOP_ACCOUNT',
+          toShopAccountId: shop.id,
+          fromAccountId: aya,
+          fromAccountNumber: '09-777-1234',
+          fromAccountName: 'Ko Tun',
+          amount: 102_000,
           feeBasisPoints: 200,
-          feeDirection: 'PAY',
+          feeIncluded: true,
           receivedAt: at(),
         },
         actor,
@@ -2569,16 +2657,37 @@ describe('audit trail', () => {
       expect(res2.advance.remaining).toBe(0);
       expect(res2.advance.received).toBe(200_000);
       expect(res2.settlement.feeAmount).toBe(2_000);
-      expect(res2.settlement.feeDirection).toBe('PAY');
-      expect(res2.settlement.actualAmount).toBe(98_000);
-      expect(cashInHand(ctx.db).amount).toBe(499_000);
+      expect(res2.settlement.feeDirection).toBe('RECEIVE');
+      expect(res2.settlement.amount).toBe(100_000);
+      expect(res2.settlement.actualAmount).toBe(102_000);
+      expect(res2.settlement.fromBankName).toBe('AYA Bank');
+      expect(res2.settlement.fromAccountNumber).toBe('09-777-1234');
+      expect(res2.settlement.fromAccountName).toBe('Ko Tun');
+      expect(getShopBankAccount(shop.id, ctx.db).balance).toBe(102_000);
+      expect(cashInHand(ctx.db).amount).toBe(399_000);
 
-      // 3. Delete PAY settlement: reverses actualAmount (98,000) from cash in hand
+      // 3. Deleting each puts back exactly what it moved
       deleteShopAdvanceSettlement(res2.settlement.id, 'Delete partial', actor, ctx.db);
-      expect(cashInHand(ctx.db).amount).toBe(401_000);
+      expect(getShopBankAccount(shop.id, ctx.db).balance).toBe(0);
+      deleteShopAdvanceSettlement(res1.settlement.id, 'Delete partial', actor, ctx.db);
+      expect(cashInHand(ctx.db).amount).toBe(300_000);
       const afterDel = getShopAdvance(adv.id, ctx.db);
       expect(afterDel.advance.status).toBe('OPEN');
-      expect(afterDel.advance.remaining).toBe(100_000);
+      expect(afterDel.advance.remaining).toBe(200_000);
+    });
+
+    it('requires the account a transfer repayment came from', () => {
+      const base = {
+        shopAdvanceId: 'x'.repeat(25),
+        toType: 'SHOP_ACCOUNT' as const,
+        toShopAccountId: 'y'.repeat(25),
+        amount: 1_000,
+        receivedAt: at(),
+      };
+      expect(zReceiveShopAdvance.safeParse(base).success).toBe(false);
+      expect(
+        zReceiveShopAdvance.safeParse({ ...base, fromAccountNumber: '09-1', fromAccountName: 'Ko Tun' }).success,
+      ).toBe(true);
     });
 
     it('refuses deleting advance when repayments exist', () => {
