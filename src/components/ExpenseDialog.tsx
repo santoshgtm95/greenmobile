@@ -14,12 +14,8 @@ import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import MoneyField from './MoneyField';
 import { PosApiError } from '@shared/errors';
-import {
-  PAYMENT_METHODS,
-  PAYMENT_METHOD_LABELS,
-  requiresReference,
-  type PaymentMethod,
-} from '@shared/domain';
+import { requiresReference, type PaymentMethod } from '@shared/domain';
+import ShopAccountSelect from './ShopAccountSelect';
 import { businessDay } from '@shared/datetime';
 import type { Expense, ExpenseCategory } from '@shared/api';
 
@@ -43,6 +39,7 @@ export default function ExpenseDialog({
     description: expense?.description ?? '',
     amount: expense?.amount ?? 0,
     paymentMethod: (expense?.paymentMethod as PaymentMethod) ?? 'CASH',
+    shopAccountId: expense?.shopAccountId ?? '',
     referenceNumber: expense?.referenceNumber ?? '',
     notes: expense?.notes ?? '',
   });
@@ -60,6 +57,7 @@ export default function ExpenseDialog({
         description: form.description.trim(),
         amount: form.amount,
         paymentMethod: form.paymentMethod,
+        shopAccountId: isBank ? form.shopAccountId : undefined,
         referenceNumber: form.referenceNumber.trim() || undefined,
         notes: form.notes.trim() || undefined,
       };
@@ -79,6 +77,8 @@ export default function ExpenseDialog({
   });
 
   const referenceRequired = requiresReference(form.paymentMethod);
+  // Cash comes out of cash in hand; Bank out of the chosen shop account.
+  const isBank = form.paymentMethod !== 'CASH';
 
   return (
     <Dialog open fullWidth maxWidth="sm" onClose={onClose}>
@@ -144,16 +144,34 @@ export default function ExpenseDialog({
             <TextField
               select
               label="Paid by"
-              value={form.paymentMethod}
-              onChange={(e) => set('paymentMethod', e.target.value as PaymentMethod)}
+              value={isBank ? 'BANK' : 'CASH'}
+              onChange={(e) =>
+                // An edited card or mobile expense keeps its method while it stays "Bank".
+                set(
+                  'paymentMethod',
+                  e.target.value === 'CASH'
+                    ? 'CASH'
+                    : expense && expense.paymentMethod !== 'CASH'
+                      ? (expense.paymentMethod as PaymentMethod)
+                      : 'BANK_TRANSFER',
+                )
+              }
+              sx={{ minWidth: 140 }}
             >
-              {PAYMENT_METHODS.map((method) => (
-                <MenuItem key={method} value={method}>
-                  {PAYMENT_METHOD_LABELS[method]}
-                </MenuItem>
-              ))}
+              <MenuItem value="CASH">Cash</MenuItem>
+              <MenuItem value="BANK">Bank</MenuItem>
             </TextField>
           </Stack>
+
+          {isBank && (
+            <ShopAccountSelect
+              label="Paid from account"
+              value={form.shopAccountId}
+              onChange={(id) => set('shopAccountId', id)}
+              error={Boolean(fieldErrors.shopAccountId)}
+              helperText={fieldErrors.shopAccountId}
+            />
+          )}
 
           {referenceRequired && (
             <TextField
@@ -185,6 +203,7 @@ export default function ExpenseDialog({
           disabled={
             save.isPending ||
             !form.categoryId ||
+            (isBank && !form.shopAccountId) ||
             !form.description.trim() ||
             form.amount <= 0
           }

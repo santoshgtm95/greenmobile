@@ -28,6 +28,7 @@ import { api } from '../lib/api';
 import { useMoneyFormatter } from '../hooks/useSettings';
 import { PosApiError } from '@shared/errors';
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABELS, type PaymentMethod } from '@shared/domain';
+import ShopAccountSelect from './ShopAccountSelect';
 import type { SaleDetail } from '@shared/api';
 
 interface RefundLine {
@@ -62,6 +63,8 @@ export default function RefundDialog({
   const [lines, setLines] = useState<Record<string, RefundLine>>({});
   const [reason, setReason] = useState('');
   const [refundMethod, setRefundMethod] = useState<PaymentMethod>('CASH');
+  // A refund not paid in cash comes out of one of the shop's accounts.
+  const [shopAccountId, setShopAccountId] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const selected = Object.values(lines).filter((line) => line.quantity > 0);
@@ -94,6 +97,7 @@ export default function RefundDialog({
         items: selected,
         reason: reason.trim(),
         refundMethod,
+        shopAccountId: refundMethod === 'CASH' ? undefined : shopAccountId,
         notes: undefined,
       }),
     onSuccess: (result) => {
@@ -221,6 +225,9 @@ export default function RefundDialog({
                   ))}
                 </TextField>
               </Stack>
+              {refundMethod !== 'CASH' && (
+                <ShopAccountSelect label="Paid from account" value={shopAccountId} onChange={setShopAccountId} />
+              )}
 
               <Box sx={{ p: 2, borderRadius: 1, bgcolor: 'background.default' }}>
                 <Stack direction="row" sx={{ alignItems: 'baseline' }}>
@@ -254,7 +261,12 @@ export default function RefundDialog({
             setError(null);
             refund.mutate();
           }}
-          disabled={refund.isPending || selected.length === 0 || !reason.trim()}
+          disabled={
+            refund.isPending ||
+            selected.length === 0 ||
+            !reason.trim() ||
+            (refundMethod !== 'CASH' && !shopAccountId)
+          }
         >
           {refund.isPending ? 'Processing…' : 'Confirm refund'}
         </Button>

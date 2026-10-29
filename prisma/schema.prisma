@@ -78,6 +78,7 @@ model User {
   internalTransfers  InternalTransfer[]
   shopAdvances       ShopAdvance[]
   shopAdvanceSettlements ShopAdvanceSettlement[]
+  shopAccountEntries ShopAccountEntry[]
   auditLogs          AuditLog[]
 
   @@index([role])
@@ -308,6 +309,10 @@ model Payment {
   amount          Int
   /// CASH | BANK_TRANSFER | CREDIT_CARD | DEBIT_CARD | MOBILE_PAYMENT | OTHER
   paymentMethod   String
+  /// The shop account the money went through; null = cash in hand.
+  shopAccountId     String?
+  /// True once recording it moved money (everything since the upgrade).
+  moneyLinked       Boolean  @default(false)
   referenceNumber String?
   /// UTC instant.
   paymentDate     String
@@ -343,6 +348,8 @@ model SaleReturn {
   refundAmount Int
   /// CASH | BANK_TRANSFER | CREDIT_CARD | DEBIT_CARD | MOBILE_PAYMENT | OTHER
   refundMethod String  @default("CASH")
+  /// The shop account the refund was paid from; null = cash in hand.
+  shopAccountId     String?
   /// COMPLETED | CANCELLED
   status       String  @default("COMPLETED")
   notes        String?
@@ -414,6 +421,10 @@ model Expense {
   amount          Int
   /// CASH | BANK_TRANSFER | CREDIT_CARD | DEBIT_CARD | MOBILE_PAYMENT | OTHER
   paymentMethod   String
+  /// The shop account the money went through; null = cash in hand.
+  shopAccountId     String?
+  /// True once recording it moved money (everything since the upgrade).
+  moneyLinked       Boolean  @default(false)
   referenceNumber String?
   notes           String?
   isDeleted       Boolean @default(false)
@@ -550,6 +561,10 @@ model ServicePayment {
   amount          Int
   /// CASH | BANK_TRANSFER | CREDIT_CARD | DEBIT_CARD | MOBILE_PAYMENT | OTHER
   paymentMethod   String
+  /// The shop account the money went through; null = cash in hand.
+  shopAccountId     String?
+  /// True once recording it moved money (everything since the upgrade).
+  moneyLinked       Boolean  @default(false)
   referenceNumber String?
   /// UTC instant.
   paymentDate     String
@@ -618,6 +633,7 @@ model ShopBankAccount {
   transfersIn  InternalTransfer[] @relation("ShopTransfersIn")
   advancesOut  ShopAdvance[]      @relation("ShopAdvanceSource")
   advancesIn   ShopAdvanceSettlement[] @relation("ShopAdvanceSettlementTarget")
+  entries      ShopAccountEntry[]
 
   @@index([bankAccountId])
   @@index([isActive])
@@ -874,4 +890,26 @@ model Setting {
   updatedBy String?
 
   @@index([key])
+}
+
+/// Money a sale, service payment, expense, product purchase or refund moved
+/// into (positive) or out of (negative) a registered shop account. Never edited:
+/// undoing something writes an opposite entry.
+model ShopAccountEntry {
+  id            String   @id
+  shopAccountId String
+  entryDate     String
+  entryDay      String
+  amount        Int
+  source        String
+  reference     String
+  notes         String?
+  createdBy     String
+  createdAt     String
+
+  shopAccount   ShopBankAccount @relation(fields: [shopAccountId], references: [id], onDelete: Restrict)
+  creator       User            @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@index([shopAccountId])
+  @@index([entryDay])
 }

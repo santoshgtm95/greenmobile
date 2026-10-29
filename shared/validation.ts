@@ -322,6 +322,8 @@ export const zCreateProduct = z.object({
   ...productFields,
   initialStock: zStock.default(0),
   serials: z.array(zSerialEntry).max(500).optional(),
+  /** Who paid for the opening stock: a shop account, or cash in hand when omitted. */
+  purchaseShopAccountId: zId.optional(),
 });
 
 export const zUpdateProduct = z.object({
@@ -423,12 +425,27 @@ export const zSaleItem = z.object({
   productSerialId: zId.optional(),
 });
 
-export const zSalePayment = z.object({
-  amount: zMinor,
-  paymentMethod: zPaymentMethod,
-  referenceNumber: zShortText,
-  notes: zShortText,
-});
+/**
+ * Where money moves: cash goes to or from cash in hand; every other method
+ * must name the shop account it went into or came out of.
+ */
+const paidThroughAccount = (v: { paymentMethod?: string; shopAccountId?: string }) =>
+  !v.paymentMethod || v.paymentMethod === 'CASH' || Boolean(v.shopAccountId);
+const CHOOSE_SHOP_ACCOUNT = {
+  message: 'Choose which shop account the money went through',
+  path: ['shopAccountId'],
+};
+
+export const zSalePayment = z
+  .object({
+    amount: zMinor,
+    paymentMethod: zPaymentMethod,
+    /** Required unless the method is cash. */
+    shopAccountId: zId.optional(),
+    referenceNumber: zShortText,
+    notes: zShortText,
+  })
+  .refine(paidThroughAccount, CHOOSE_SHOP_ACCOUNT);
 
 export const zCreateSale = z.object({
   customerId: zId.optional(),
@@ -468,8 +485,10 @@ export const zRefundSale = z.object({
     .min(1, 'Select at least one item to refund'),
   reason: z.string().trim().min(1, 'Give a reason for the refund').max(300),
   refundMethod: zPaymentMethod.default('CASH'),
+  /** The account the refund is paid from, unless it is paid in cash. */
+  shopAccountId: zId.optional(),
   notes: zOptionalText,
-});
+}).refine((v) => paidThroughAccount({ paymentMethod: v.refundMethod, shopAccountId: v.shopAccountId }), CHOOSE_SHOP_ACCOUNT);
 
 // -----------------------------------------------------------------------------
 // Expenses (spec §19, §43, §73)
@@ -482,12 +501,16 @@ const expenseFields = {
   description: z.string().trim().min(1, 'Describe what this was for').max(300),
   amount: zMinor.refine((v) => v > 0, 'Amount must be more than zero'),
   paymentMethod: zPaymentMethod,
+  /** Paid by bank: the shop account it came out of. Cash: cash in hand. */
+  shopAccountId: zId.optional(),
   referenceNumber: zShortText,
   notes: zOptionalText,
 };
 
-export const zCreateExpense = z.object(expenseFields);
-export const zUpdateExpense = z.object({ id: zId, ...expenseFields });
+export const zCreateExpense = z.object(expenseFields).refine(paidThroughAccount, CHOOSE_SHOP_ACCOUNT);
+export const zUpdateExpense = z
+  .object({ id: zId, ...expenseFields })
+  .refine(paidThroughAccount, CHOOSE_SHOP_ACCOUNT);
 
 export const zDeleteExpense = z.object({
   id: zId,
@@ -882,7 +905,12 @@ export const zCreateServiceOrder = z.object({
   customerPhone: zPhone,
   depositAmount: zMinor.default(0),
   depositMethod: zPaymentMethod.default('CASH'),
-});
+  /** The account the deposit went into, unless it was cash. */
+  depositShopAccountId: zId.optional(),
+}).refine(
+  (v) => v.depositAmount === 0 || paidThroughAccount({ paymentMethod: v.depositMethod, shopAccountId: v.depositShopAccountId }),
+  { message: 'Choose which shop account the deposit went into', path: ['depositShopAccountId'] },
+);
 
 export const zUpdateServiceOrder = z.object({
   id: zId,
@@ -914,13 +942,16 @@ export const zAddServiceItem = z.object({
   type: zServiceItemType,
 });
 
-export const zAddServicePayment = z.object({
-  serviceOrderId: zId,
-  amount: zMinor.refine((v) => v > 0, 'Amount must be more than zero'),
-  paymentMethod: zPaymentMethod,
-  referenceNumber: zShortText,
-  notes: zShortText,
-});
+export const zAddServicePayment = z
+  .object({
+    serviceOrderId: zId,
+    amount: zMinor.refine((v) => v > 0, 'Amount must be more than zero'),
+    paymentMethod: zPaymentMethod,
+    shopAccountId: zId.optional(),
+    referenceNumber: zShortText,
+    notes: zShortText,
+  })
+  .refine(paidThroughAccount, CHOOSE_SHOP_ACCOUNT);
 
 export const zChangeServiceStatus = z.object({
   serviceOrderId: zId,
@@ -933,8 +964,9 @@ export const zChangeServiceStatus = z.object({
    */
   charge: zMinor.optional(),
   paymentMethod: zPaymentMethod.optional(),
+  shopAccountId: zId.optional(),
   referenceNumber: zShortText,
-});
+}).refine(paidThroughAccount, CHOOSE_SHOP_ACCOUNT);
 
 export const zServiceOrderId = z.object({ serviceOrderId: zId });
 

@@ -341,7 +341,9 @@ export function listShopBankAccounts(
               + COALESCE((SELECT SUM(sas.actualAmount) FROM "ShopAdvanceSettlement" sas
                            WHERE sas.toShopAccountId = s.id AND sas.isDeleted = 0), 0)
               - COALESCE((SELECT SUM(sa.amount) FROM "ShopAdvance" sa
-                           WHERE sa.fromShopAccountId = s.id AND sa.isDeleted = 0), 0) AS calculatedBalance,
+                           WHERE sa.fromShopAccountId = s.id AND sa.isDeleted = 0), 0)
+              + COALESCE((SELECT SUM(e.amount) FROM "ShopAccountEntry" e
+                           WHERE e.shopAccountId = s.id), 0) AS calculatedBalance,
               (SELECT COUNT(*) FROM "BankTransaction" t
                 WHERE ((t.toAccountId = s.bankAccountId AND t.toAccountNumber = s.accountNumber)
                    OR (t.fromAccountId = s.bankAccountId AND t.fromAccountNumber = s.accountNumber))
@@ -379,7 +381,9 @@ export function getShopBankAccount(id: string, db: Db = getDatabase()): ShopBank
               + COALESCE((SELECT SUM(sas.actualAmount) FROM "ShopAdvanceSettlement" sas
                            WHERE sas.toShopAccountId = s.id AND sas.isDeleted = 0), 0)
               - COALESCE((SELECT SUM(sa.amount) FROM "ShopAdvance" sa
-                           WHERE sa.fromShopAccountId = s.id AND sa.isDeleted = 0), 0) AS calculatedBalance,
+                           WHERE sa.fromShopAccountId = s.id AND sa.isDeleted = 0), 0)
+              + COALESCE((SELECT SUM(e.amount) FROM "ShopAccountEntry" e
+                           WHERE e.shopAccountId = s.id), 0) AS calculatedBalance,
               (SELECT COUNT(*) FROM "BankTransaction" t
                 WHERE ((t.toAccountId = s.bankAccountId AND t.toAccountNumber = s.accountNumber)
                    OR (t.fromAccountId = s.bankAccountId AND t.fromAccountNumber = s.accountNumber))
@@ -537,6 +541,15 @@ export function deleteShopBankAccount(
       );
     }
 
+    const inUseEntries = db
+      .prepare(`SELECT COUNT(*) AS c FROM "ShopAccountEntry" WHERE shopAccountId = ?`)
+      .get(id) as { c: number };
+    if (inUseEntries.c > 0) {
+      throw errors.invalidState(
+        `"${before.accountNumber}" (${before.accountName}) has sales, expenses or other payments recorded against it, so it cannot be deleted. Deactivate it instead.`,
+      );
+    }
+
     db.prepare(`DELETE FROM "ShopBankAccount" WHERE id = ?`).run(id);
 
     recordAudit(
@@ -664,7 +677,8 @@ export function getShopBankAccountHistory(
         createdByName: t.createdByName || null,
       });
     } else if (isFromThis) {
-      const netDebited = t.amount + (t.otherFees ?? 0);
+      const netDebited =
+        t.amount + (t.otherFees ?? 0) - (t.advanceRole === 'WITHDRAWAL' ? (t.feeAmount ?? 0) : 0);
       let typeLabel = 'Account Transfer (Cash In)';
       if (t.advanceRole === 'WITHDRAWAL') {
         typeLabel = 'Customer Advance Withdrawal';
@@ -916,6 +930,50 @@ export function getShopBankAccountHistory(
     });
   }
 
+  // 5. Sales, service payments, expenses, product purchases, refunds
+  const entryRows = db
+    .prepare(
+      `SELECT e.id, e.entryDate, e.entryDay, e.amount, e.source, e.reference, e.notes,
+              u.fullName AS createdByName
+         FROM "ShopAccountEntry" e
+         LEFT JOIN "User" u ON u.id = e.createdBy
+        WHERE e.shopAccountId = ?`,
+    )
+    .all(account.id) as Array<{
+      id: string;
+      entryDate: string;
+      entryDay: string;
+      amount: number;
+      source: string;
+      reference: string;
+      notes: string | null;
+      createdByName: string | null;
+    }>;
+  const accountLabel = `${account.bankName} (${account.accountNumber}) · ${account.accountName}`;
+  for (const e of entryRows) {
+    const isIn = e.amount > 0;
+    items.push({
+      id: e.id,
+      date: e.entryDate,
+      day: e.entryDay,
+      reference: e.reference,
+      source: 'SHOP_ACCOUNT_ENTRY',
+      type: e.source,
+      typeLabel: e.source,
+      direction: isIn ? 'IN' : 'OUT',
+      from: isIn ? e.source : accountLabel,
+      to: isIn ? accountLabel : e.source,
+      amount: Math.abs(e.amount),
+      inAmount: isIn ? e.amount : 0,
+      outAmount: isIn ? 0 : -e.amount,
+      feeAmount: 0,
+      netAmount: e.amount,
+      runningBalance: 0,
+      notes: e.notes,
+      createdByName: e.createdByName,
+    });
+  }
+
   // Sort chronologically (date ASC, id ASC) to compute running balance
   items.sort((a, b) => {
     const d = a.date.localeCompare(b.date);
@@ -1144,7 +1202,7 @@ function usableAccount(id: string, db: Db): { id: string; name: string; key: str
  * An Account Transfer (Cash In) receives cash from the customer, adding actual amount to cash in hand.
  * A Receive (Cash Out) pays cash to the customer, deducting actual amount from cash in hand.
  */
-function adjustCashInHand(
+export function adjustCashInHand(
   delta: number,
   source: string,
   note: string,
@@ -2035,7 +2093,10 @@ export function bankingOverview(
                             WHERE s.bankAccountId = a.id AND sas.isDeleted = 0), 0)
                 - COALESCE((SELECT SUM(sa.amount) FROM "ShopAdvance" sa
                              JOIN "ShopBankAccount" s ON s.id = sa.fromShopAccountId
-                            WHERE s.bankAccountId = a.id AND sa.isDeleted = 0), 0) AS balance
+                            WHERE s.bankAccountId = a.id AND sa.isDeleted = 0), 0)
+                + COALESCE((SELECT SUM(e.amount) FROM "ShopAccountEntry" e
+                             JOIN "ShopBankAccount" s ON s.id = e.shopAccountId
+                            WHERE s.bankAccountId = a.id), 0) AS balance
          FROM "BankAccount" a
         WHERE a.isActive = 1
            -- A retired account holding money must stay on screen, or the figure
@@ -2048,6 +2109,8 @@ export function bankingOverview(
                        WHERE s.bankAccountId = a.id AND sa.isDeleted = 0)
            OR EXISTS (SELECT 1 FROM "ShopAdvanceSettlement" sas JOIN "ShopBankAccount" s ON s.id = sas.toShopAccountId
                        WHERE s.bankAccountId = a.id AND sas.isDeleted = 0)
+           OR EXISTS (SELECT 1 FROM "ShopAccountEntry" e JOIN "ShopBankAccount" s ON s.id = e.shopAccountId
+                       WHERE s.bankAccountId = a.id)
         ORDER BY a.name ASC`,
     )
     .all(

@@ -347,6 +347,8 @@ export interface Expense {
   /** Minor units. */
   amount: number;
   paymentMethod: string;
+  /** The shop account it was paid from; null = cash in hand. */
+  shopAccountId: string | null;
   referenceNumber: string | null;
   notes: string | null;
   isDeleted: SqliteBool;
@@ -508,7 +510,13 @@ export interface ShopBankAccountTransactionItem {
   date: string;
   day: string;
   reference: string;
-  source: 'BANK_TRANSACTION' | 'INTERNAL_TRANSFER' | 'SHOP_ADVANCE' | 'SHOP_ADVANCE_SETTLEMENT';
+  source:
+    | 'BANK_TRANSACTION'
+    | 'INTERNAL_TRANSFER'
+    | 'SHOP_ADVANCE'
+    | 'SHOP_ADVANCE_SETTLEMENT'
+    /** A sale, service payment, expense, product purchase or refund. */
+    | 'SHOP_ACCOUNT_ENTRY';
   type: string;
   typeLabel: string;
   direction: 'IN' | 'OUT';

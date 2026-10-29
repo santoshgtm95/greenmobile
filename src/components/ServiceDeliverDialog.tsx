@@ -17,8 +17,9 @@ import { api } from '../lib/api';
 import MoneyField from './MoneyField';
 import { useMoneyFormatter } from '../hooks/useSettings';
 import { SummaryLine } from './MovementParts';
+import ShopAccountSelect from './ShopAccountSelect';
 import { PosApiError } from '@shared/errors';
-import { PAYMENT_METHODS, PAYMENT_METHOD_LABELS, type PaymentMethod } from '@shared/domain';
+import type { PaymentMethod } from '@shared/domain';
 import type { ServiceOrderDetail } from '@shared/api';
 
 /**
@@ -44,6 +45,7 @@ export default function ServiceDeliverDialog({
   const [charge, setCharge] = useState(unpriced ? order.estimatedCost : order.finalCost);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
   const [referenceNumber, setReferenceNumber] = useState('');
+  const [shopAccountId, setShopAccountId] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const remaining = Math.max(0, charge - order.amountPaid);
@@ -57,6 +59,7 @@ export default function ServiceDeliverDialog({
         note: undefined,
         charge: unpriced ? charge : undefined,
         paymentMethod: remaining > 0 ? paymentMethod : undefined,
+        shopAccountId: remaining > 0 && paymentMethod !== 'CASH' ? shopAccountId : undefined,
         referenceNumber: referenceNumber.trim() || undefined,
       }),
     onSuccess: onDelivered,
@@ -103,29 +106,27 @@ export default function ServiceDeliverDialog({
           )}
 
           {remaining > 0 && (
-            <Stack direction="row" spacing={2}>
+            <TextField
+              select
+              label="Paid by"
+              value={paymentMethod === 'CASH' ? 'CASH' : 'BANK'}
+              // Cash goes into cash in hand; Bank into the chosen shop account.
+              onChange={(e) => setPaymentMethod(e.target.value === 'CASH' ? 'CASH' : 'BANK_TRANSFER')}
+            >
+              <MenuItem value="CASH">Cash</MenuItem>
+              <MenuItem value="BANK">Bank</MenuItem>
+            </TextField>
+          )}
+          {remaining > 0 && paymentMethod !== 'CASH' && (
+            <>
+              <ShopAccountSelect label="Received into" value={shopAccountId} onChange={setShopAccountId} />
               <TextField
-                select
-                label="Method"
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
-                sx={{ flex: 1 }}
-              >
-                {PAYMENT_METHODS.map((method) => (
-                  <MenuItem key={method} value={method}>
-                    {PAYMENT_METHOD_LABELS[method]}
-                  </MenuItem>
-                ))}
-              </TextField>
-              {paymentMethod !== 'CASH' && (
-                <TextField
-                  label="Reference"
-                  value={referenceNumber}
-                  onChange={(e) => setReferenceNumber(e.target.value)}
-                  sx={{ flex: 1 }}
-                />
-              )}
-            </Stack>
+                label="Reference"
+                value={referenceNumber}
+                onChange={(e) => setReferenceNumber(e.target.value)}
+                helperText="Transfer reference, so it can be matched to the statement"
+              />
+            </>
           )}
         </Stack>
       </DialogContent>
@@ -136,7 +137,7 @@ export default function ServiceDeliverDialog({
         <Button
           variant="contained"
           color="success"
-          disabled={deliver.isPending}
+          disabled={deliver.isPending || (remaining > 0 && paymentMethod !== 'CASH' && !shopAccountId)}
           onClick={() => {
             setError(null);
             deliver.mutate();

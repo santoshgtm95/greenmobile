@@ -11,6 +11,8 @@ import { newId } from '../utils/id';
 import { nowInstant, addMonthsInstant } from '../../shared/datetime';
 import { errors } from '../../shared/errors';
 import { generateEan13Candidate } from '../../shared/barcode';
+import { moveMoney } from './money.service';
+import { addMoney, multiplyMoney } from '../../shared/money';
 import { recordAudit } from './audit.service';
 import { applyStockMovement } from './inventory.service';
 import { getShopSettings } from './settings.service';
@@ -238,6 +240,22 @@ export function createProduct(
     if (input.isSerialized && input.serials?.length) {
       addSerialsInternal(id, input.serials, input.purchasePrice, actor, db, settings.allowNegativeStock);
     }
+
+    // Paying for the opening stock: out of cash in hand, or the chosen shop account.
+    const purchaseCost = input.isSerialized
+      ? addMoney(0, ...(input.serials ?? []).map((serial) => serial.purchasePrice ?? input.purchasePrice))
+      : multiplyMoney(input.purchasePrice, input.initialStock);
+    moveMoney(
+      {
+        shopAccountId: input.purchaseShopAccountId ?? null,
+        amount: -purchaseCost,
+        source: 'Product purchase',
+        reference: input.sku,
+        notes: input.name,
+      },
+      actor,
+      db,
+    );
 
     recordAudit(
       {

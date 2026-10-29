@@ -18,7 +18,8 @@ import { api } from '../lib/api';
 import MoneyField from './MoneyField';
 import CustomerPickerDialog, { type PickedCustomer } from './CustomerPickerDialog';
 import { PosApiError } from '@shared/errors';
-import { PAYMENT_METHODS, PAYMENT_METHOD_LABELS, type PaymentMethod } from '@shared/domain';
+import type { PaymentMethod } from '@shared/domain';
+import ShopAccountSelect from './ShopAccountSelect';
 
 /**
  * Taking a device in (spec §52 step 1).
@@ -50,6 +51,7 @@ export default function ServiceIntakeDialog({
     expectedDate: '',
     depositAmount: 0,
     depositMethod: 'CASH' as PaymentMethod,
+    depositShopAccountId: '',
     notes: '',
   });
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +81,8 @@ export default function ServiceIntakeDialog({
         notes: form.notes.trim() || undefined,
         depositAmount: form.depositAmount,
         depositMethod: form.depositMethod,
+        depositShopAccountId:
+          form.depositAmount > 0 && form.depositMethod !== 'CASH' ? form.depositShopAccountId : undefined,
       }),
     onSuccess: (detail) => onCreated(detail.order.id),
     onError: (err) => {
@@ -92,6 +96,7 @@ export default function ServiceIntakeDialog({
   });
 
   const canSubmit =
+    !(form.depositAmount > 0 && form.depositMethod !== 'CASH' && !form.depositShopAccountId) &&
     form.deviceBrand.trim() &&
     form.deviceModel.trim() &&
     form.problemDescription.trim() &&
@@ -246,15 +251,22 @@ export default function ServiceIntakeDialog({
               <TextField
                 select
                 label="Deposit paid by"
-                value={form.depositMethod}
-                onChange={(e) => set('depositMethod', e.target.value as PaymentMethod)}
+                value={form.depositMethod === 'CASH' ? 'CASH' : 'BANK'}
+                // Cash goes into cash in hand; Bank into the chosen shop account.
+                onChange={(e) => set('depositMethod', e.target.value === 'CASH' ? 'CASH' : 'BANK_TRANSFER')}
+                sx={{ minWidth: 150 }}
               >
-                {PAYMENT_METHODS.map((method) => (
-                  <MenuItem key={method} value={method}>
-                    {PAYMENT_METHOD_LABELS[method]}
-                  </MenuItem>
-                ))}
+                <MenuItem value="CASH">Cash</MenuItem>
+                <MenuItem value="BANK">Bank</MenuItem>
               </TextField>
+            )}
+            {form.depositAmount > 0 && form.depositMethod !== 'CASH' && (
+              <ShopAccountSelect
+                label="Received into"
+                value={form.depositShopAccountId}
+                onChange={(id) => set('depositShopAccountId', id)}
+                sx={{ flex: 1 }}
+              />
             )}
           </Stack>
 

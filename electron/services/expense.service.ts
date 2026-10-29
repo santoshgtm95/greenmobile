@@ -13,6 +13,7 @@ import { nowInstant, businessDay } from '../../shared/datetime';
 import { errors } from '../../shared/errors';
 import { recordAudit } from './audit.service';
 import { nextNumber } from './sequence.service';
+import { moveMoney } from './money.service';
 import type { SessionUser } from '../session';
 import type { PaymentMethod } from '../../shared/domain';
 import type {
@@ -32,6 +33,10 @@ export interface ExpenseRow {
   description: string;
   amount: number;
   paymentMethod: PaymentMethod;
+  /** The shop account it was paid from; null = cash in hand. */
+  shopAccountId: string | null;
+  /** 1 when recording it took the money out (everything since the upgrade). */
+  moneyLinked: number;
   referenceNumber: string | null;
   notes: string | null;
   isDeleted: number;
@@ -42,7 +47,8 @@ export interface ExpenseRow {
 
 const EXPENSE_SELECT = `
   SELECT e.id, e.expenseNumber, e.categoryId, c.name AS categoryName, e.expenseDate, e.expenseDay,
-         e.description, e.amount, e.paymentMethod, e.referenceNumber, e.notes, e.isDeleted,
+         e.description, e.amount, e.paymentMethod, e.shopAccountId, e.moneyLinked,
+         e.referenceNumber, e.notes, e.isDeleted,
          e.createdBy, u.fullName AS createdByName, e.createdAt
     FROM "Expense" e
     JOIN "ExpenseCategory" c ON c.id = e.categoryId
@@ -121,11 +127,13 @@ export function createExpense(
     // ordering still works for several expenses entered on the same day.
     const expenseDay = input.expenseDay;
     const expenseDate = businessDayToInstant(expenseDay, now);
+    const shopAccountId = paidFrom(input);
 
     db.prepare(
       `INSERT INTO "Expense" (id, expenseNumber, categoryId, expenseDate, expenseDay, description,
-         amount, paymentMethod, referenceNumber, notes, isDeleted, createdBy, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+         amount, paymentMethod, shopAccountId, moneyLinked, referenceNumber, notes, isDeleted,
+         createdBy, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?, ?)`,
     ).run(
       id,
       number,
@@ -135,6 +143,7 @@ export function createExpense(
       input.description,
       input.amount,
       input.paymentMethod,
+      shopAccountId,
       input.referenceNumber ?? null,
       input.notes ?? null,
       actor.id,
@@ -151,6 +160,12 @@ export function createExpense(
         summary: `Expense ${number} — ${category.name}, ${input.amount} (${input.description})`,
         newValues: input,
       },
+      db,
+    );
+
+    moveMoney(
+      { shopAccountId, amount: -input.amount, source: 'Expense', reference: number, notes: input.description },
+      actor,
       db,
     );
 
@@ -171,11 +186,37 @@ export function updateExpense(
 
     const now = nowInstant();
     const expenseDate = businessDayToInstant(input.expenseDay, before.expenseDate);
+    const shopAccountId = paidFrom(input);
+
+    // A changed amount or payer: put the old money back, then take the new.
+    // Expenses from before the upgrade never took any, so they are left alone.
+    if (
+      before.moneyLinked &&
+      (before.amount !== input.amount || before.shopAccountId !== shopAccountId)
+    ) {
+      moveMoney(
+        {
+          shopAccountId: before.shopAccountId,
+          amount: before.amount,
+          source: 'Reversal',
+          reference: before.expenseNumber,
+          notes: 'Expense edited',
+          reversal: true,
+        },
+        actor,
+        db,
+      );
+      moveMoney(
+        { shopAccountId, amount: -input.amount, source: 'Expense', reference: before.expenseNumber, notes: input.description },
+        actor,
+        db,
+      );
+    }
 
     db.prepare(
       `UPDATE "Expense"
           SET categoryId = ?, expenseDate = ?, expenseDay = ?, description = ?, amount = ?,
-              paymentMethod = ?, referenceNumber = ?, notes = ?, updatedAt = ?
+              paymentMethod = ?, shopAccountId = ?, referenceNumber = ?, notes = ?, updatedAt = ?
         WHERE id = ?`,
     ).run(
       input.categoryId,
@@ -184,6 +225,7 @@ export function updateExpense(
       input.description,
       input.amount,
       input.paymentMethod,
+      shopAccountId,
       input.referenceNumber ?? null,
       input.notes ?? null,
       now,
@@ -223,6 +265,21 @@ export function deleteExpense(
       id,
     );
 
+    if (before.moneyLinked) {
+      moveMoney(
+        {
+          shopAccountId: before.shopAccountId,
+          amount: before.amount,
+          source: 'Reversal',
+          reference: before.expenseNumber,
+          notes: `Expense deleted — ${reason}`,
+          reversal: true,
+        },
+        actor,
+        db,
+      );
+    }
+
     recordAudit(
       {
         userId: actor.id,
@@ -235,6 +292,11 @@ export function deleteExpense(
       db,
     );
   }, db);
+}
+
+/** Cash comes out of cash in hand; anything else out of the chosen shop account. */
+function paidFrom(input: { paymentMethod: PaymentMethod; shopAccountId?: string }): string | null {
+  return input.paymentMethod === 'CASH' ? null : (input.shopAccountId ?? null);
 }
 
 /**

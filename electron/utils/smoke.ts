@@ -1010,6 +1010,10 @@ const SCRIPT = `
       String(afterAccountDelete?.length));
 
   const bankAt = todayDay + 'T10:30';
+  // Sales, expenses and purchases earlier in the run move cash too, so the
+  // banking checks below measure the change from here.
+  const cashBeforeBanking =
+    ok(await b.banking.overview({ from: todayDay, to: todayDay }))?.cashInHand?.amount ?? 0;
 
   const received = ok(await b.banking.createTransaction({
     type: 'RECEIVE', transactionAt: bankAt, toAccountId: kbz.id,
@@ -1106,7 +1110,9 @@ const SCRIPT = `
       columnsAddUp === afterInternal?.bankBalance, String(columnsAddUp));
 
   // Cash in hand reflects movements from transactions
-  add('cash in hand updated by transactions', afterInternal?.cashInHand?.recorded === true && afterInternal?.cashInHand?.amount === -950000);
+  add('cash in hand updated by transactions',
+      afterInternal?.cashInHand?.recorded === true && afterInternal?.cashInHand?.amount === cashBeforeBanking - 950000,
+      String((afterInternal?.cashInHand?.amount ?? 0) - cashBeforeBanking));
   const counted = ok(await b.banking.saveCashCount({ amount: 275000, notes: 'Smoke count' }));
   add('cash in hand saved', counted?.amount === 275000 && counted?.recorded === true,
       String(counted?.amount));

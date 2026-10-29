@@ -28,6 +28,7 @@ import {
   taxFromInclusive,
   allocateProportionally,
 } from '../../shared/money';
+import { moveMoney } from './money.service';
 import { recordAudit } from './audit.service';
 import { nextNumber } from './sequence.service';
 import { getShopSettings, effectiveTaxRate } from './settings.service';
@@ -421,18 +422,20 @@ export function createSale(
     }
 
     const insertPayment = db.prepare(
-      `INSERT INTO "Payment" (id, saleId, amount, paymentMethod, referenceNumber, paymentDate,
-         paymentDay, notes, createdBy, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO "Payment" (id, saleId, amount, paymentMethod, shopAccountId, moneyLinked,
+         referenceNumber, paymentDate, paymentDay, notes, createdBy, createdAt)
+       VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`,
     );
 
     for (const payment of input.payments) {
       if (payment.amount <= 0) continue;
+      const shopAccountId = payment.paymentMethod === 'CASH' ? null : (payment.shopAccountId ?? null);
       insertPayment.run(
         newId(),
         saleId,
         payment.amount,
         payment.paymentMethod,
+        shopAccountId,
         payment.referenceNumber ?? null,
         now,
         day,
@@ -440,7 +443,21 @@ export function createSale(
         actor.id,
         now,
       );
+      // Everything but cash lands in the shop account it was paid into.
+      if (shopAccountId) {
+        moveMoney(
+          { shopAccountId, amount: payment.amount, source: 'Sale', reference: invoiceNumber },
+          actor,
+          db,
+        );
+      }
     }
+    // Cash goes in the drawer, less the change handed back.
+    moveMoney(
+      { shopAccountId: null, amount: subtractMoney(cashPaid, changeAmount), source: 'Sale', reference: invoiceNumber },
+      actor,
+      db,
+    );
 
     recordAudit(
       {
@@ -615,6 +632,44 @@ export function cancelSale(
         WHERE id = ?`,
     ).run(`Cancelled: ${reason}`, nowInstant(), saleId);
 
+    // Only payments taken since the upgrade put money anywhere, so only they come back out.
+    const linked = db
+      .prepare(`SELECT amount, shopAccountId FROM "Payment" WHERE saleId = ? AND moneyLinked = 1`)
+      .all(saleId) as { amount: number; shopAccountId: string | null }[];
+    let cashIn = 0;
+    for (const payment of linked) {
+      if (payment.shopAccountId) {
+        moveMoney(
+          {
+            shopAccountId: payment.shopAccountId,
+            amount: -payment.amount,
+            source: 'Reversal',
+            reference: sale.invoiceNumber,
+            notes: `Sale cancelled — ${reason}`,
+            reversal: true,
+          },
+          actor,
+          db,
+        );
+      } else {
+        cashIn = addMoney(cashIn, payment.amount);
+      }
+    }
+    if (cashIn > 0) {
+      moveMoney(
+        {
+          shopAccountId: null,
+          amount: -subtractMoney(cashIn, sale.changeAmount),
+          source: 'Reversal',
+          reference: sale.invoiceNumber,
+          notes: `Sale cancelled — ${reason}`,
+          reversal: true,
+        },
+        actor,
+        db,
+      );
+    }
+
     recordAudit(
       {
         userId: actor.id,
@@ -666,13 +721,14 @@ export function refundSale(
     const day = businessDay();
 
     let refundTotal = 0;
+    const refundAccountId = input.refundMethod === 'CASH' ? null : (input.shopAccountId ?? null);
 
     // The header goes in first so its items have a parent to reference; the
     // total is filled in once every line has been priced.
     db.prepare(
       `INSERT INTO "SaleReturn" (id, returnNumber, saleId, customerId, returnDate, returnDay,
-         reason, refundAmount, refundMethod, status, notes, createdBy, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, 'COMPLETED', ?, ?, ?)`,
+         reason, refundAmount, refundMethod, shopAccountId, status, notes, createdBy, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'COMPLETED', ?, ?, ?)`,
     ).run(
       returnId,
       returnNumber,
@@ -682,6 +738,7 @@ export function refundSale(
       day,
       input.reason,
       input.refundMethod,
+      refundAccountId,
       input.notes ?? null,
       actor.id,
       now,
@@ -780,6 +837,13 @@ export function refundSale(
     }
 
     db.prepare(`UPDATE "SaleReturn" SET refundAmount = ? WHERE id = ?`).run(refundTotal, returnId);
+
+    // The refund is paid out now, from the drawer or the chosen account.
+    moveMoney(
+      { shopAccountId: refundAccountId, amount: -refundTotal, source: 'Refund', reference: returnNumber, notes: sale.invoiceNumber },
+      actor,
+      db,
+    );
 
     const refundedTotal = addMoney(sale.refundedAmount, refundTotal);
     const fullyReturned = (

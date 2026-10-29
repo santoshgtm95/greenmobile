@@ -204,7 +204,9 @@ export default function PosPage() {
   };
 
   const completeSale = useMutation({
-    mutationFn: (payments: Array<{ amount: number; paymentMethod: string; referenceNumber?: string }>) =>
+    mutationFn: (
+      payments: Array<{ amount: number; paymentMethod: string; shopAccountId?: string; referenceNumber?: string }>,
+    ) =>
       api.sales.create({
         ...quoteInput,
         payments: payments as never,

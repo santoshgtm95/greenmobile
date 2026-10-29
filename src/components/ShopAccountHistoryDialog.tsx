@@ -47,6 +47,7 @@ const SOURCE_COLORS: Record<
   INTERNAL_TRANSFER: 'info',
   SHOP_ADVANCE: 'warning',
   SHOP_ADVANCE_SETTLEMENT: 'success',
+  SHOP_ACCOUNT_ENTRY: 'secondary',
 };
 
 const SOURCE_LABELS: Record<ShopBankAccountTransactionItem['source'], string> = {
@@ -54,6 +55,7 @@ const SOURCE_LABELS: Record<ShopBankAccountTransactionItem['source'], string> = 
   INTERNAL_TRANSFER: 'Transfer',
   SHOP_ADVANCE: 'Advance',
   SHOP_ADVANCE_SETTLEMENT: 'Repayment',
+  SHOP_ACCOUNT_ENTRY: 'Shop',
 };
 
 // ---------------------------------------------------------------------------

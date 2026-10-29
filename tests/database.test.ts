@@ -42,6 +42,7 @@ const EXPECTED_TABLES = [
   'ServiceOrder',
   'ServicePayment',
   'Setting',
+  'ShopAccountEntry',
   'ShopAdvance',
   'ShopAdvanceSettlement',
   'ShopBankAccount',

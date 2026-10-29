@@ -20,15 +20,16 @@ import AddIcon from '@mui/icons-material/Add';
 import MoneyField from './MoneyField';
 import { useMoneyFormatter } from '../hooks/useSettings';
 import {
-  PAYMENT_METHODS,
-  PAYMENT_METHOD_LABELS,
   requiresReference,
   type PaymentMethod,
 } from '@shared/domain';
+import ShopAccountSelect from './ShopAccountSelect';
 
 interface PaymentLine {
   amount: number;
   paymentMethod: PaymentMethod;
+  /** Every method but cash lands in a shop account. */
+  shopAccountId: string;
   referenceNumber: string;
 }
 
@@ -59,12 +60,17 @@ export default function PaymentDialog({
   submitting: boolean;
   onClose: () => void;
   onConfirm: (
-    payments: Array<{ amount: number; paymentMethod: string; referenceNumber?: string }>,
+    payments: Array<{
+      amount: number;
+      paymentMethod: string;
+      shopAccountId?: string;
+      referenceNumber?: string;
+    }>,
   ) => void;
 }) {
   const money = useMoneyFormatter();
   const [lines, setLines] = useState<PaymentLine[]>([
-    { amount: grandTotal, paymentMethod: 'CASH', referenceNumber: '' },
+    { amount: grandTotal, paymentMethod: 'CASH', shopAccountId: '', referenceNumber: '' },
   ]);
 
   const paid = lines.reduce((sum, line) => sum + line.amount, 0);
@@ -79,6 +85,9 @@ export default function PaymentDialog({
 
   const missingReference = lines.some(
     (l) => requiresReference(l.paymentMethod) && !l.referenceNumber.trim(),
+  );
+  const missingAccount = lines.some(
+    (l) => l.amount > 0 && l.paymentMethod !== 'CASH' && !l.shopAccountId,
   );
 
   const quickOptions = useMemo(() => quickCashOptions(grandTotal), [grandTotal]);
@@ -122,21 +131,20 @@ export default function PaymentDialog({
           )}
 
           {lines.map((line, index) => (
-            <Stack key={index} direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+            <Stack key={index} spacing={1}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
               <TextField
                 select
-                label="Method"
-                value={line.paymentMethod}
+                label="Paid by"
+                value={line.paymentMethod === 'CASH' ? 'CASH' : 'BANK'}
+                // Cash goes into cash in hand; Bank into the shop account chosen below.
                 onChange={(e) =>
-                  update(index, { paymentMethod: e.target.value as PaymentMethod })
+                  update(index, { paymentMethod: e.target.value === 'CASH' ? 'CASH' : 'BANK_TRANSFER' })
                 }
-                sx={{ minWidth: 170 }}
+                sx={{ minWidth: 130 }}
               >
-                {PAYMENT_METHODS.map((method) => (
-                  <MenuItem key={method} value={method}>
-                    {PAYMENT_METHOD_LABELS[method]}
-                  </MenuItem>
-                ))}
+                <MenuItem value="CASH">Cash</MenuItem>
+                <MenuItem value="BANK">Bank</MenuItem>
               </TextField>
 
               <MoneyField
@@ -165,6 +173,14 @@ export default function PaymentDialog({
                 </IconButton>
               )}
             </Stack>
+            {line.paymentMethod !== 'CASH' && (
+              <ShopAccountSelect
+                label="Received into"
+                value={line.shopAccountId}
+                onChange={(shopAccountId) => update(index, { shopAccountId })}
+              />
+            )}
+            </Stack>
           ))}
 
           {lines.length < 4 && (
@@ -174,12 +190,12 @@ export default function PaymentDialog({
               onClick={() =>
                 setLines((c) => [
                   ...c,
-                  { amount: outstanding, paymentMethod: 'BANK_TRANSFER', referenceNumber: '' },
+                  { amount: outstanding, paymentMethod: 'BANK_TRANSFER', shopAccountId: '', referenceNumber: '' },
                 ])
               }
               sx={{ alignSelf: 'flex-start' }}
             >
-              Split across another method
+              Split: add another payment
             </Button>
           )}
 
@@ -213,7 +229,7 @@ export default function PaymentDialog({
         <Button
           variant="contained"
           size="large"
-          disabled={submitting || overpaidNonCash || missingReference}
+          disabled={submitting || overpaidNonCash || missingReference || missingAccount}
           onClick={() =>
             onConfirm(
               lines
@@ -221,6 +237,7 @@ export default function PaymentDialog({
                 .map((line) => ({
                   amount: line.amount,
                   paymentMethod: line.paymentMethod,
+                  shopAccountId: line.paymentMethod === 'CASH' ? undefined : line.shopAccountId,
                   referenceNumber: line.referenceNumber.trim() || undefined,
                 })),
             )

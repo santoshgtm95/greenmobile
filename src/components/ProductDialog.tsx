@@ -23,6 +23,9 @@ import { formatRate, parseRate } from '@shared/money';
 import { PRODUCT_UNITS } from '@shared/domain';
 import { generateEan13Candidate } from '@shared/barcode';
 import type { Lookup, Product } from '@shared/api';
+import ShopAccountSelect from './ShopAccountSelect';
+import { useMoneyFormatter } from '../hooks/useSettings';
+import { multiplyMoney } from '@shared/money';
 
 /** Product form (spec §40). `product === null` means "create". */
 export default function ProductDialog({
@@ -57,9 +60,15 @@ export default function ProductDialog({
     warrantyMonths: product?.warrantyMonths ?? 0,
     isActive: product ? product.isActive === 1 : true,
     initialStock: 0,
+    // Who pays for the opening stock: cash in hand or a shop account.
+    paidBy: 'CASH' as 'CASH' | 'BANK',
+    purchaseShopAccountId: '',
   });
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const money = useMoneyFormatter();
+  const paysForStock = !isEdit && !form.isSerialized && form.initialStock > 0;
+  const stockCost = paysForStock ? multiplyMoney(form.purchasePrice, form.initialStock) : 0;
 
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -95,6 +104,8 @@ export default function ProductDialog({
         ...common,
         initialStock: form.isSerialized ? 0 : form.initialStock,
         serials: undefined,
+        purchaseShopAccountId:
+          paysForStock && form.paidBy === 'BANK' ? form.purchaseShopAccountId : undefined,
       });
     },
     onSuccess: onSaved,
@@ -287,6 +298,30 @@ export default function ProductDialog({
             </TextField>
           </Stack>
 
+          {paysForStock && (
+            <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start' }}>
+              <TextField
+                select
+                label="Paid by"
+                value={form.paidBy}
+                onChange={(e) => set('paidBy', e.target.value as 'CASH' | 'BANK')}
+                helperText={`Opening stock costs ${money(stockCost)}`}
+                sx={{ minWidth: 200 }}
+              >
+                <MenuItem value="CASH">Cash</MenuItem>
+                <MenuItem value="BANK">Bank</MenuItem>
+              </TextField>
+              {form.paidBy === 'BANK' && (
+                <ShopAccountSelect
+                  label="Paid from account"
+                  value={form.purchaseShopAccountId}
+                  onChange={(id) => set('purchaseShopAccountId', id)}
+                  sx={{ flex: 1 }}
+                />
+              )}
+            </Stack>
+          )}
+
           {isEdit && (
             <Alert severity="info">
               Stock is changed through stock adjustments and IMEI records, not on this form, so
@@ -347,7 +382,12 @@ export default function ProductDialog({
             setFieldErrors({});
             save.mutate();
           }}
-          disabled={save.isPending || !form.name.trim() || !form.sku.trim()}
+          disabled={
+            save.isPending ||
+            !form.name.trim() ||
+            !form.sku.trim() ||
+            (paysForStock && form.paidBy === 'BANK' && !form.purchaseShopAccountId)
+          }
         >
           {save.isPending ? 'Saving…' : 'Save'}
         </Button>

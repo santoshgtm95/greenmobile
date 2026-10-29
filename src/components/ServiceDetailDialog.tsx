@@ -34,6 +34,7 @@ import { useMoneyFormatter } from '../hooks/useSettings';
 import MoneyField from './MoneyField';
 import ServicePartPicker from './ServicePartPicker';
 import ServiceDeliverDialog from './ServiceDeliverDialog';
+import ShopAccountSelect from './ShopAccountSelect';
 import { PosApiError } from '@shared/errors';
 import {
   SERVICE_STATUS_LABELS,
@@ -75,6 +76,7 @@ export default function ServiceDetailDialog({
   const [payment, setPayment] = useState({
     amount: 0,
     paymentMethod: 'CASH' as PaymentMethod,
+    shopAccountId: '',
     referenceNumber: '',
   });
 
@@ -155,11 +157,12 @@ export default function ServiceDetailDialog({
         serviceOrderId,
         amount: payment.amount,
         paymentMethod: payment.paymentMethod,
+        shopAccountId: payment.paymentMethod === 'CASH' ? undefined : payment.shopAccountId,
         referenceNumber: payment.referenceNumber.trim() || undefined,
         notes: undefined,
       }),
     onSuccess: () => {
-      setPayment({ amount: 0, paymentMethod: 'CASH', referenceNumber: '' });
+      setPayment({ amount: 0, paymentMethod: 'CASH', shopAccountId: '', referenceNumber: '' });
       succeed('Payment recorded.');
     },
     onError: fail('Unable to record that payment.'),
@@ -458,12 +461,24 @@ export default function ServiceDetailDialog({
                     <Button
                       variant="contained"
                       onClick={() => addPayment.mutate()}
-                      disabled={addPayment.isPending || payment.amount <= 0}
+                      disabled={
+                        addPayment.isPending ||
+                        payment.amount <= 0 ||
+                        (payment.paymentMethod !== 'CASH' && !payment.shopAccountId)
+                      }
                       sx={{ mt: 0.25 }}
                     >
                       Record
                     </Button>
                   </Stack>
+                )}
+                {editable && manage && order.balance > 0 && payment.paymentMethod !== 'CASH' && (
+                  <ShopAccountSelect
+                    label="Received into"
+                    value={payment.shopAccountId}
+                    onChange={(shopAccountId) => setPayment((f) => ({ ...f, shopAccountId }))}
+                    sx={{ mt: 1.5 }}
+                  />
                 )}
               </Box>
 

@@ -22,6 +22,7 @@ import { errors } from '../../shared/errors';
 import { addMoney, multiplyMoney, subtractMoney } from '../../shared/money';
 import { recordAudit } from './audit.service';
 import { nextNumber } from './sequence.service';
+import { moveMoney } from './money.service';
 import { getShopSettings } from './settings.service';
 import { applyStockMovement } from './inventory.service';
 import { WALK_IN_CUSTOMER_NAME } from './customer.service';
@@ -283,6 +284,7 @@ export function createServiceOrder(
           serviceOrderId: id,
           amount: input.depositAmount,
           paymentMethod: input.depositMethod ?? 'CASH',
+          shopAccountId: input.depositShopAccountId,
           referenceNumber: undefined,
           notes: 'Deposit taken on receipt',
           isDeposit: true,
@@ -557,6 +559,8 @@ function addPaymentInternal(
     serviceOrderId: string;
     amount: number;
     paymentMethod: PaymentMethod;
+    /** Required unless cash; where the money went. */
+    shopAccountId?: string;
     referenceNumber?: string;
     notes?: string;
     isDeposit: boolean;
@@ -565,15 +569,31 @@ function addPaymentInternal(
   db: Db,
 ): void {
   const now = nowInstant();
+  const shopAccountId = input.paymentMethod === 'CASH' ? null : (input.shopAccountId ?? null);
+  const { serviceNumber } = db
+    .prepare(`SELECT serviceNumber FROM "ServiceOrder" WHERE id = ?`)
+    .get(input.serviceOrderId) as { serviceNumber: string };
+  // The money lands in the drawer, or the shop account it was paid into.
+  moveMoney(
+    {
+      shopAccountId,
+      amount: input.amount,
+      source: input.isDeposit ? 'Service deposit' : 'Service payment',
+      reference: serviceNumber,
+    },
+    actor,
+    db,
+  );
   db.prepare(
-    `INSERT INTO "ServicePayment" (id, serviceOrderId, amount, paymentMethod, referenceNumber,
-       paymentDate, paymentDay, isDeposit, notes, createdBy, createdAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO "ServicePayment" (id, serviceOrderId, amount, paymentMethod, shopAccountId, moneyLinked,
+       referenceNumber, paymentDate, paymentDay, isDeposit, notes, createdBy, createdAt)
+     VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     newId(),
     input.serviceOrderId,
     input.amount,
     input.paymentMethod,
+    shopAccountId,
     input.referenceNumber ?? null,
     now,
     businessDay(),
@@ -675,6 +695,7 @@ export function changeServiceStatus(
             serviceOrderId: order.id,
             amount: owing,
             paymentMethod: input.paymentMethod,
+            shopAccountId: input.shopAccountId,
             referenceNumber: input.referenceNumber,
             notes: 'Balance on delivery',
             isDeposit: false,
