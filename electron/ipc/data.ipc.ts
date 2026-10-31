@@ -33,7 +33,11 @@ import {
   writeImportTemplate,
 } from '../services/import.service';
 import { recordAudit } from '../services/audit.service';
-import { exportsDir } from '../utils/paths';
+import { purgeModule } from '../services/data-control.service';
+import { createBackup, resolveBackupDir } from '../services/backup.service';
+import { getShopSettings } from '../services/settings.service';
+import { zPurgeModule } from '../../shared/validation';
+import { backupsDir, exportsDir } from '../utils/paths';
 import { requireUser, requirePermission } from '../session';
 import { errors } from '../../shared/errors';
 import { logger } from '../utils/logger';
@@ -192,6 +196,24 @@ export function registerDataIpc(): void {
       await writeImportTemplate(result.filePath);
       logger.info('Import template saved', { path: result.filePath });
       return { saved: true as const, path: result.filePath };
+    },
+  );
+
+  /**
+   * Settings › Data Control. Permanent, so a safety backup is taken first: if
+   * that fails, nothing is deleted.
+   */
+  handle(
+    CHANNELS.data.purgeModule,
+    { access: 'permission', permission: 'backup.manage' },
+    zPurgeModule,
+    (input) => {
+      const actor = requireUser();
+      const dir = resolveBackupDir(backupsDir(), getShopSettings().backupLocation);
+      const backup = createBackup({ dir, kind: 'SAFETY' });
+      const result = purgeModule(input.module, actor);
+      logger.warn('Module data deleted', { module: input.module, deleted: result.deleted, backup: backup.path });
+      return { ...result, backupPath: backup.path };
     },
   );
 }

@@ -128,6 +128,7 @@ export const CHANNELS = {
     importCommit: 'data:importCommit',
     importCancel: 'data:importCancel',
     importTemplate: 'data:importTemplate',
+    purgeModule: 'data:purgeModule',
   },
   reports: {
     dashboard: 'reports:dashboard',

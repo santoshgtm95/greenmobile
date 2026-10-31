@@ -44,6 +44,8 @@ export default function InternalTransferDialog({
   const [fromShopAccountId, setFromShopAccountId] = useState('');
   const [toShopAccountId, setToShopAccountId] = useState('');
   const [amount, setAmount] = useState(0);
+  // Bank-to-bank charges: taken from the FROM account only.
+  const [bankCharges, setBankCharges] = useState(0);
   const [transferAt, setTransferAt] = useState(nowLocalDateTime());
   const [notes, setNotes] = useState('');
 
@@ -54,7 +56,8 @@ export default function InternalTransferDialog({
   const toAccount = shopAccounts.find((a) => a.id === toShopAccountId) ?? null;
 
   const isFromEmptyOrNegative = Boolean(fromAccount && fromAccount.balance <= 0);
-  const exceedsBalance = Boolean(fromAccount && amount > fromAccount.balance);
+  const leaves = amount + bankCharges;
+  const exceedsBalance = Boolean(fromAccount && leaves > fromAccount.balance);
 
   const save = useMutation({
     mutationFn: () =>
@@ -62,6 +65,7 @@ export default function InternalTransferDialog({
         fromShopAccountId,
         toShopAccountId,
         amount,
+        bankCharges,
         transferAt,
         notes: notes.trim() || undefined,
       }),
@@ -215,7 +219,8 @@ export default function InternalTransferDialog({
             )}
           </Stack>
 
-          {/* AMOUNT */}
+          {/* AMOUNT + BANK CHARGES */}
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
           <MoneyField
             label="Amount"
             required
@@ -234,11 +239,27 @@ export default function InternalTransferDialog({
             helperText={
               fieldErrors.amount ??
               (exceedsBalance && fromAccount
-                ? `Cannot transfer more than the current balance (${formatMoney(fromAccount.balance, currency)})`
+                ? `More than the current balance (${formatMoney(fromAccount.balance, currency)})${bankCharges ? ' with charges' : ''}`
                 : ' ')
             }
             sx={{ alignSelf: 'flex-start', minWidth: 200 }}
           />
+          <MoneyField
+            label="Bank charges"
+            value={bankCharges}
+            onChange={setBankCharges}
+            error={Boolean(fieldErrors.bankCharges)}
+            helperText={fieldErrors.bankCharges ?? 'Taken from the From account only'}
+            sx={{ alignSelf: 'flex-start', minWidth: 200 }}
+          />
+          </Stack>
+          {amount > 0 && (
+            <Typography variant="caption" color="text.secondary">
+              From account −{formatMoney(leaves, currency)}
+              {bankCharges > 0 && ` (${formatMoney(amount, currency)} + ${formatMoney(bankCharges, currency)} charges)`}
+              {' · '}To account +{formatMoney(amount, currency)}
+            </Typography>
+          )}
 
           <TextField
             label="Notes"

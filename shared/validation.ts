@@ -17,6 +17,7 @@ import {
   SERIAL_STATUSES,
   BANK_ADVANCE_STATUSES,
   BANK_FEE_DIRECTIONS,
+  DATA_MODULES,
   BANK_TRANSACTION_TYPES,
 } from './domain';
 import { DATE_PRESETS, LOCAL_DATE_TIME_PATTERN } from './datetime';
@@ -134,6 +135,12 @@ export const zPaging = z.object({
   search: zShortText,
   page: z.number().int().min(0).max(100_000).default(0),
   pageSize: z.number().int().min(1).max(200).default(50),
+});
+
+/** Settings › Data Control. The typed word is checked here too, not just on screen. */
+export const zPurgeModule = z.object({
+  module: z.enum(DATA_MODULES),
+  confirm: z.literal('DELETE', { message: 'Type DELETE to confirm' }),
 });
 
 export const zCashHistoryQuery = z.object({
@@ -770,6 +777,8 @@ export const zCreateInternalTransfer = z.object({
   fromShopAccountId: zId,
   toShopAccountId: zId,
   amount: zMinor.refine((v) => v > 0, 'Amount must be more than zero'),
+  /** Taken from the FROM account only, on top of the amount. */
+  bankCharges: zMinor.optional(),
   transferAt: z
     .string()
     .trim()

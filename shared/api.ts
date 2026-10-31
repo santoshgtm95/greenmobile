@@ -13,6 +13,7 @@ import type {
   BankAdvanceStatus,
   BankFeeDirection,
   BankTransactionType,
+  DataModule,
   Permission,
   SerialStatus,
   ServiceItemType,
@@ -418,6 +419,8 @@ export interface InternalTransfer {
   toAccountNumber: string;
   toAccountName: string;
   amount: number;
+  /** Taken from the FROM account only, on top of the amount. */
+  bankCharges: number;
   notes: string | null;
   outTransactionId: string | null;
   inTransactionId: string | null;
@@ -1076,6 +1079,14 @@ export interface PosApi {
     importCommit(input: { importId: string }): Promise<ImportResult>;
     importCancel(input: { importId: string }): Promise<{ cancelled: true }>;
     importTemplate(): Promise<{ saved: boolean; path: string | null }>;
+    /**
+     * Settings › Data Control: permanently deletes one module's records, after
+     * taking a safety backup. Administrators only.
+     */
+    purgeModule(input: {
+      module: DataModule;
+      confirm: 'DELETE';
+    }): Promise<{ deleted: number; backupPath: string }>;
   };
   reports: {
     /** Everything the dashboard shows, for any date range (spec §72). */

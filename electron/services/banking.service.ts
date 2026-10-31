@@ -336,7 +336,7 @@ export function listShopBankAccounts(
                            AND t.fromAccountNumber = s.accountNumber AND t.isDeleted = 0), 0)
               + COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
                            WHERE i.toShopAccountId = s.id AND i.isDeleted = 0), 0)
-              - COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
+              - COALESCE((SELECT SUM(i.amount + i.bankCharges) FROM "InternalTransfer" i
                            WHERE i.fromShopAccountId = s.id AND i.isDeleted = 0), 0)
               + COALESCE((SELECT SUM(sas.actualAmount) FROM "ShopAdvanceSettlement" sas
                            WHERE sas.toShopAccountId = s.id AND sas.isDeleted = 0), 0)
@@ -376,7 +376,7 @@ export function getShopBankAccount(id: string, db: Db = getDatabase()): ShopBank
                            AND t.fromAccountNumber = s.accountNumber AND t.isDeleted = 0), 0)
               + COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
                            WHERE i.toShopAccountId = s.id AND i.isDeleted = 0), 0)
-              - COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
+              - COALESCE((SELECT SUM(i.amount + i.bankCharges) FROM "InternalTransfer" i
                            WHERE i.fromShopAccountId = s.id AND i.isDeleted = 0), 0)
               + COALESCE((SELECT SUM(sas.actualAmount) FROM "ShopAdvanceSettlement" sas
                            WHERE sas.toShopAccountId = s.id AND sas.isDeleted = 0), 0)
@@ -725,7 +725,7 @@ export function getShopBankAccountHistory(
               i.fromAccountId, i.toAccountId,
               i.fromAccountNumber, i.fromAccountName,
               i.toAccountNumber, i.toAccountName,
-              i.amount, i.notes,
+              i.amount, i.bankCharges, i.notes,
               fb.name AS fromBankName, fb.key AS fromBankKey,
               tb.name AS toBankName, tb.key AS toBankKey,
               u.fullName AS createdByName
@@ -749,6 +749,7 @@ export function getShopBankAccountHistory(
       toAccountNumber: string;
       toAccountName: string;
       amount: number;
+      bankCharges: number;
       notes: string | null;
       fromBankName: string | null;
       fromBankKey: string | null;
@@ -797,9 +798,9 @@ export function getShopBankAccountHistory(
         toAccount: i.toAccountNumber,
         amount: i.amount,
         inAmount: 0,
-        outAmount: i.amount,
-        feeAmount: 0,
-        netAmount: -i.amount,
+        outAmount: i.amount + i.bankCharges,
+        feeAmount: i.bankCharges,
+        netAmount: -(i.amount + i.bankCharges),
         runningBalance: 0,
         notes: i.notes || null,
         createdByName: i.createdByName || null,
@@ -2086,7 +2087,7 @@ export function bankingOverview(
                                AND t.isDeleted = 0), 0)
                 + COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
                              WHERE i.toAccountId = a.id AND i.isDeleted = 0), 0)
-                - COALESCE((SELECT SUM(i.amount) FROM "InternalTransfer" i
+                - COALESCE((SELECT SUM(i.amount + i.bankCharges) FROM "InternalTransfer" i
                              WHERE i.fromAccountId = a.id AND i.isDeleted = 0), 0)
                 + COALESCE((SELECT SUM(sas.actualAmount) FROM "ShopAdvanceSettlement" sas
                              JOIN "ShopBankAccount" s ON s.id = sas.toShopAccountId
@@ -2209,6 +2210,8 @@ export interface InternalTransferRow {
   toAccountNumber: string;
   toAccountName: string;
   amount: number;
+  /** Taken from the FROM account on top of the amount. */
+  bankCharges: number;
   notes: string | null;
   outTransactionId: string | null;
   inTransactionId: string | null;
@@ -2228,7 +2231,7 @@ const INTERNAL_TRANSFER_SELECT = `
          it.fromAccountNumber, it.fromAccountName,
          tb.name AS toBankName, tb.key AS toBankKey,
          it.toAccountNumber, it.toAccountName,
-         it.amount, it.notes,
+         it.amount, it.bankCharges, it.notes,
          it.outTransactionId, it.inTransactionId,
          it.isDeleted, it.deletedReason,
          it.createdBy, u.fullName AS createdByName,
@@ -2363,9 +2366,10 @@ export function createInternalTransfer(
       );
     }
 
-    if (input.amount > fromShopAccount.balance) {
+    const bankCharges = input.bankCharges ?? 0;
+    if (addMoney(input.amount, bankCharges) > fromShopAccount.balance) {
       throw errors.validation(
-        `Cannot transfer more than the current balance (${formatMoney(fromShopAccount.balance)}) of "${fromShopAccount.accountName}".`,
+        `Cannot transfer more than the current balance (${formatMoney(fromShopAccount.balance)}) of "${fromShopAccount.accountName}"${bankCharges ? ', including the bank charges' : ''}.`,
         {
           amount: `Exceeds current balance of ${formatMoney(fromShopAccount.balance)}`,
         },
@@ -2391,11 +2395,11 @@ export function createInternalTransfer(
          fromAccountId, toAccountId,
          fromAccountNumber, fromAccountName,
          toAccountNumber, toAccountName,
-         amount, notes,
+         amount, bankCharges, notes,
          outTransactionId, inTransactionId,
          isDeleted, deletedReason,
          createdBy, createdAt, updatedAt
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, NULL, ?, ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, NULL, ?, ?, ?)`,
     ).run(
       transferId,
       transferNumber,
@@ -2410,6 +2414,7 @@ export function createInternalTransfer(
       toShopAccount.accountNumber,
       toShopAccount.accountName,
       input.amount,
+      bankCharges,
       input.notes?.trim() || null,
       actor.id,
       now,

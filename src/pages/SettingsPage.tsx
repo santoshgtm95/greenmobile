@@ -8,6 +8,7 @@ import MoneyPanel from './settings/MoneyPanel';
 import DocumentsPanel from './settings/DocumentsPanel';
 import PrintingPanel from './settings/PrintingPanel';
 import StockPanel from './settings/StockPanel';
+import DataControlPanel from './settings/DataControlPanel';
 import type { Permission } from '@shared/domain';
 
 /**
@@ -30,6 +31,7 @@ const TABS = [
   { value: 'printing', label: 'Printing', permission: 'settings.manage' },
   { value: 'documents', label: 'Numbering', permission: 'settings.manage' },
   { value: 'backup', label: 'Backup & Restore', permission: 'backup.manage' },
+  { value: 'data', label: 'Data Control', permission: 'backup.manage' },
   { value: 'system', label: 'System', permission: 'settings.view' },
 ] as const satisfies ReadonlyArray<{ value: string; label: string; permission: Permission }>;
 
@@ -69,6 +71,7 @@ export default function SettingsPage() {
       {active === 'printing' && <PrintingPanel />}
       {active === 'documents' && <DocumentsPanel />}
       {active === 'backup' && <BackupPanel />}
+      {active === 'data' && <DataControlPanel />}
       {active === 'system' && <SystemInfoPage />}
     </Stack>
   );

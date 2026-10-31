@@ -268,6 +268,11 @@ export default function InternalTransfersPage() {
                     }}
                   >
                     {money(row.amount)}
+                    {row.bankCharges > 0 && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: "block", fontWeight: 400 }}>
+                        + {money(row.bankCharges)} charges
+                      </Typography>
+                    )}
                   </TableCell>
                   <TableCell sx={{ color: "text.secondary", maxWidth: 200 }}>
                     <Typography variant="body2" noWrap title={row.notes ?? ""}>

@@ -159,6 +159,7 @@ async function captureScreens(win: BrowserWindow, outDir: string): Promise<Check
     { name: 'settings-printing', hash: '#/settings/printing' },
     { name: 'settings-documents', hash: '#/settings/documents' },
     { name: 'settings-backup', hash: '#/settings/backup' },
+    { name: 'settings-data', hash: '#/settings/data' },
   ];
 
   for (const screen of screens) {

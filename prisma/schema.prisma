@@ -655,6 +655,8 @@ model InternalTransfer {
   toAccountNumber   String
   toAccountName     String
   amount            Int
+  /// Taken from the FROM account only, on top of the amount.
+  bankCharges       Int      @default(0)
   notes             String?
   outTransactionId  String?
   inTransactionId   String?

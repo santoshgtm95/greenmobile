@@ -124,6 +124,17 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
   ADMIN: PERMISSIONS,
 };
 
+/** The modules Settings › Data Control can wipe. */
+export const DATA_MODULES = ["BANKING", "PRODUCTS", "SERVICES", "SALES", "EXPENSES"] as const;
+export type DataModule = (typeof DATA_MODULES)[number];
+export const DATA_MODULE_LABELS: Record<DataModule, string> = {
+  BANKING: "Banking",
+  PRODUCTS: "Products",
+  SERVICES: "Services",
+  SALES: "Sales",
+  EXPENSES: "Expenses",
+};
+
 export function roleHasPermission(
   role: UserRole,
   permission: Permission,

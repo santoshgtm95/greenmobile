@@ -967,6 +967,39 @@ describe('registered account balances', () => {
     expect(bankingOverview(ALL_TIME, ctx.db).accounts.find((a) => a.accountId === kpay)!.balance).toBe(1_799_000);
   });
 
+  it('takes internal transfer bank charges from the FROM account only', () => {
+    const a = saveShopBankAccount(
+      { bankAccountId: kpay, accountNumber: '111', accountName: 'Shop A', balance: 1_000_000, isActive: true },
+      actor,
+      ctx.db,
+    );
+    const b = saveShopBankAccount(
+      { bankAccountId: aya, accountNumber: '222', accountName: 'Shop B', balance: 0, isActive: true },
+      actor,
+      ctx.db,
+    );
+    const transfer = createInternalTransfer(
+      { fromShopAccountId: a.id, toShopAccountId: b.id, amount: 300_000, bankCharges: 1_000, transferAt: at(), notes: undefined },
+      actor,
+      ctx.db,
+    );
+    expect(transfer.bankCharges).toBe(1_000);
+    expect(getShopBankAccount(a.id, ctx.db).balance).toBe(699_000);
+    expect(getShopBankAccount(b.id, ctx.db).balance).toBe(300_000);
+    // The provider totals agree.
+    const accounts = bankingOverview(ALL_TIME, ctx.db).accounts;
+    expect(accounts.find((x) => x.accountId === kpay)!.balance).toBe(699_000);
+
+    // The amount and the charges together must fit in the balance.
+    expect(() =>
+      createInternalTransfer(
+        { fromShopAccountId: a.id, toShopAccountId: b.id, amount: 699_000, bankCharges: 1, transferAt: at(), notes: undefined },
+        actor,
+        ctx.db,
+      ),
+    ).toThrow(/including the bank charges/);
+  });
+
   it('upgrading keeps every balance the screen showed before', () => {
     // Recreate what the old code left behind: openings written into the stored
     // balance, internal transfers added to it as well.
