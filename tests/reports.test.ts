@@ -29,6 +29,7 @@ import {
 import { setSettings } from '../electron/services/settings.service';
 import { businessDay, addDays } from '../shared/datetime';
 import type { FirstRunSetupInput } from '../shared/validation';
+import { saveCashCount } from '../electron/services/banking.service';
 
 let ctx: TestDatabase;
 let actor: SessionUser;
@@ -57,6 +58,8 @@ beforeEach(() => {
   setSessionUser(null);
   completeFirstRunSetup(SETUP, ctx.db);
   actor = getSessionUser()!;
+  // Money paid out (opening stock, refunds, expenses) needs cash in the till.
+  saveCashCount({ amount: 1_000_000_000, notes: 'Test float' }, actor, ctx.db);
 });
 
 afterEach(() => {

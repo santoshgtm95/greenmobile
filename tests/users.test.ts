@@ -29,6 +29,7 @@ import { createProduct } from '../electron/services/product.service';
 import { createSale } from '../electron/services/sale.service';
 import { AppError } from '../shared/errors';
 import type { CreateUserInput, FirstRunSetupInput } from '../shared/validation';
+import { saveCashCount } from '../electron/services/banking.service';
 
 let ctx: TestDatabase;
 let admin: SessionUser;
@@ -55,6 +56,8 @@ beforeEach(() => {
   setSessionUser(null);
   completeFirstRunSetup(SETUP, ctx.db);
   admin = getSessionUser()!;
+  // Money paid out (opening stock, refunds, expenses) needs cash in the till.
+  saveCashCount({ amount: 1_000_000_000, notes: 'Test float' }, admin, ctx.db);
 });
 
 afterEach(() => {

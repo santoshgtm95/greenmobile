@@ -22,6 +22,8 @@ import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import MoneyField from './MoneyField';
+import ShopAccountSelect from './ShopAccountSelect';
+import CashInHandBox from './CashInHandBox';
 import { useMoneyFormatter } from '../hooks/useSettings';
 import { PosApiError } from '@shared/errors';
 import { nowLocalDateTime } from '@shared/datetime';
@@ -172,6 +174,8 @@ export default function ShopAdvanceReceiveDialog({
             />
           </ToggleButtonGroup>
 
+          {isCash && <CashInHandBox />}
+
           {!isCash && (
             <Section title="Received in our account">
               {shopAccounts.length === 0 ? (
@@ -180,25 +184,14 @@ export default function ShopAdvanceReceiveDialog({
                   &quot;Register Accounts&quot; on the Banking screen first.
                 </Alert>
               ) : (
-                <TextField
-                  select
-                  required
-                  fullWidth
+                <ShopAccountSelect
                   label="Our account"
                   value={toShopAccountId}
-                  onChange={(e) => setToShopAccountId(e.target.value)}
+                  onChange={setToShopAccountId}
                   error={Boolean(fieldErrors.toShopAccountId)}
-                  helperText={
-                    fieldErrors.toShopAccountId ??
-                    (shopAccount ? `Balance ${money(shopAccount.balance)}` : ' ')
-                  }
-                >
-                  {shopAccounts.map((account) => (
-                    <MenuItem key={account.id} value={account.id}>
-                      {account.bankName} · {account.accountNumber} · {account.accountName}
-                    </MenuItem>
-                  ))}
-                </TextField>
+                  helperText={fieldErrors.toShopAccountId}
+                  sx={{ width: '100%' }}
+                />
               )}
             </Section>
           )}

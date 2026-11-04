@@ -10,7 +10,7 @@ import type { Database as Db } from 'better-sqlite3';
 import { newId } from '../utils/id';
 import { businessDay, nowInstant } from '../../shared/datetime';
 import { errors } from '../../shared/errors';
-import { adjustCashInHand, getShopBankAccount } from './banking.service';
+import { adjustCashInHand, ensureAvailable, getShopBankAccount } from './banking.service';
 import type { SessionUser } from '../session';
 
 export function moveMoney(
@@ -31,6 +31,8 @@ export function moveMoney(
   db: Db,
 ): void {
   if (move.amount === 0) return;
+  // Money going out cannot exceed what is there; undoing an old movement can.
+  if (move.amount < 0 && !move.reversal) ensureAvailable(move.shopAccountId, -move.amount, db);
 
   if (!move.shopAccountId) {
     adjustCashInHand(

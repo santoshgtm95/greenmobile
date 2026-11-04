@@ -1221,6 +1221,31 @@ export function adjustCashInHand(
   ).run(countId, newAmount, now, businessDay(), source, note, actorId, now);
 }
 
+/**
+ * Refuses to take more out of cash in hand (no account) or a shop account
+ * than it holds. Every outgoing movement goes through this.
+ */
+export function ensureAvailable(shopAccountId: string | null | undefined, need: number, db: Db): void {
+  if (need <= 0) return;
+  const account = shopAccountId ? getShopBankAccount(shopAccountId, db) : null;
+  const balance = account ? account.balance : cashInHand(db).amount;
+  if (need > balance) {
+    const place = account ? `${account.bankName} ${account.accountNumber}` : 'cash in hand';
+    throw errors.validation(`Not enough in ${place}: the balance is ${formatMoney(balance)}.`, {
+      amount: `More than the ${formatMoney(balance)} in ${place}`,
+    });
+  }
+}
+
+/** The registered shop account behind a bank + number, if there is one. */
+function shopAccountIdOf(bankAccountId: string | null | undefined, number: string | null | undefined, db: Db): string | null {
+  if (!bankAccountId || !number) return null;
+  const row = db
+    .prepare(`SELECT id FROM "ShopBankAccount" WHERE bankAccountId = ? AND accountNumber = ?`)
+    .get(bankAccountId, number) as { id: string } | undefined;
+  return row?.id ?? null;
+}
+
 export function createBankTransaction(
   input: CreateBankTransactionInput,
   actor: SessionUser,
@@ -1230,6 +1255,13 @@ export function createBankTransaction(
   // openBankAdvance and withdrawFromBankAdvance, which is why it is a parameter
   // of the internal writer and not a field the renderer could send.
   return transaction(() => {
+    // Cash In: the account sends the amount and the bank charges. Only a
+    // registered shop account has a balance to check.
+    const fromShopAccountId =
+      input.type === 'TRANSFER' ? shopAccountIdOf(input.fromAccountId, input.fromAccountNumber, db) : null;
+    if (fromShopAccountId) {
+      ensureAvailable(fromShopAccountId, addMoney(input.amount, input.otherFees ?? 0), db);
+    }
     // Cash In: the shop gives the fee. Cash Out: the shop keeps it. Fixed by the
     // type so the two can never be recorded the wrong way round.
     const row = insertMovement(
@@ -1242,6 +1274,7 @@ export function createBankTransaction(
     if (row.type === 'TRANSFER') {
       adjustCashInHand(actual, 'Cash In', `Account Transfer (Cash In) · ${row.transactionNumber}`, actor.id, db);
     } else if (row.type === 'RECEIVE') {
+      ensureAvailable(null, actual, db);
       adjustCashInHand(-actual, 'Cash Out', `Receive (Cash Out) · ${row.transactionNumber}`, actor.id, db);
     }
     return row;
@@ -1708,6 +1741,16 @@ export function withdrawFromBankAdvance(
       toName: movement.toName || (isCash ? 'Cash' : '-'),
       toAccountNumber: movement.toAccountNumber || '',
     };
+
+    // Cash: the drawer pays out the amount less our fee. Transfer: the account
+    // sends that plus the bank charges.
+    const paidOut = subtractMoney(movement.amount, bankFee(movement.amount, withdrawalInput.feeBasisPoints ?? 0));
+    if (isCash) {
+      ensureAvailable(null, paidOut, db);
+    } else {
+      const fromShopAccountId = shopAccountIdOf(withdrawalInput.fromAccountId, withdrawalInput.fromAccountNumber, db);
+      if (fromShopAccountId) ensureAvailable(fromShopAccountId, addMoney(paidOut, withdrawalInput.otherFees ?? 0), db);
+    }
 
     const row = insertMovement(
       withdrawalInput,

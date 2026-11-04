@@ -29,6 +29,7 @@ import { useMoneyFormatter } from '../hooks/useSettings';
 import { PosApiError } from '@shared/errors';
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABELS, type PaymentMethod } from '@shared/domain';
 import ShopAccountSelect from './ShopAccountSelect';
+import CashInHandBox from './CashInHandBox';
 import type { SaleDetail } from '@shared/api';
 
 interface RefundLine {
@@ -225,8 +226,10 @@ export default function RefundDialog({
                   ))}
                 </TextField>
               </Stack>
-              {refundMethod !== 'CASH' && (
-                <ShopAccountSelect label="Paid from account" value={shopAccountId} onChange={setShopAccountId} />
+              {refundMethod !== 'CASH' ? (
+                <ShopAccountSelect label="Paid from account" value={shopAccountId} onChange={setShopAccountId} spend={estimate} />
+              ) : (
+                <CashInHandBox spend={estimate} />
               )}
 
               <Box sx={{ p: 2, borderRadius: 1, bgcolor: 'background.default' }}>

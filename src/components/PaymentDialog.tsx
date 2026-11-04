@@ -24,6 +24,7 @@ import {
   type PaymentMethod,
 } from '@shared/domain';
 import ShopAccountSelect from './ShopAccountSelect';
+import CashInHandBox from './CashInHandBox';
 
 interface PaymentLine {
   amount: number;
@@ -173,12 +174,14 @@ export default function PaymentDialog({
                 </IconButton>
               )}
             </Stack>
-            {line.paymentMethod !== 'CASH' && (
+            {line.paymentMethod !== 'CASH' ? (
               <ShopAccountSelect
                 label="Received into"
                 value={line.shopAccountId}
                 onChange={(shopAccountId) => update(index, { shopAccountId })}
               />
+            ) : (
+              <CashInHandBox />
             )}
             </Stack>
           ))}

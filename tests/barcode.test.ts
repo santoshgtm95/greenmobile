@@ -9,6 +9,7 @@ import {
   isValidEan13,
 } from '../shared/barcode';
 import type { FirstRunSetupInput } from '../shared/validation';
+import { saveCashCount } from '../electron/services/banking.service';
 
 let ctx: TestDatabase;
 let actor: SessionUser;
@@ -35,6 +36,8 @@ beforeEach(() => {
   setSessionUser(null);
   completeFirstRunSetup(SETUP, ctx.db);
   actor = getSessionUser()!;
+  // Opening stock is paid for from the till.
+  saveCashCount({ amount: 1_000_000_000, notes: 'Test float' }, actor, ctx.db);
 });
 
 afterEach(() => {

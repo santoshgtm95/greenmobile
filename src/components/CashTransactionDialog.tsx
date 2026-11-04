@@ -22,6 +22,8 @@ import CallReceivedIcon from "@mui/icons-material/CallReceived";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import MoneyField from "./MoneyField";
+import ShopAccountSelect from "./ShopAccountSelect";
+import CashInHandBox from "./CashInHandBox";
 import { useMoneyFormatter } from "../hooks/useSettings";
 import { PosApiError } from "@shared/errors";
 import { addMoney, bankFee, formatRate, subtractMoney } from "@shared/money";
@@ -183,30 +185,22 @@ export default function CashTransactionDialog({
                 &quot;Register Accounts&quot; on the Banking screen first.
               </Alert>
             ) : (
-              <TextField
-                select
-                required
-                fullWidth
+              <ShopAccountSelect
                 label="Our account"
                 value={shopAccountId}
-                onChange={(e) => {
-                  setShopAccountId(e.target.value);
+                onChange={(id) => {
+                  setShopAccountId(id);
                   setFieldErrors({});
                 }}
                 error={Boolean(fieldErrors[`${own}AccountId`] ?? fieldErrors[`${own}AccountNumber`])}
-                helperText={
-                  fieldErrors[`${own}AccountId`] ??
-                  fieldErrors[`${own}AccountNumber`] ??
-                  (shopAccount ? `Balance ${money(shopAccount.balance)}` : " ")
-                }
-              >
-                {shopAccounts.map((account) => (
-                  <MenuItem key={account.id} value={account.id}>
-                    {account.bankName} · {account.accountNumber} · {account.accountName}
-                  </MenuItem>
-                ))}
-              </TextField>
+                helperText={fieldErrors[`${own}AccountId`] ?? fieldErrors[`${own}AccountNumber`]}
+                // Cash In sends the amount and the bank charges from this account.
+                spend={isCashIn ? addMoney(amount, charges) : undefined}
+                sx={{ width: "100%" }}
+              />
             )}
+            {/* Cash Out pays the customer from the drawer. */}
+            <CashInHandBox spend={isCashIn ? undefined : cash} />
           </Section>
 
           <Section title={isCashIn ? "Send to customer" : "Received from customer"}>

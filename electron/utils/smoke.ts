@@ -788,6 +788,9 @@ const SCRIPT = `
 
   // --- Catalogue and the till ------------------------------------------------
 
+  // Opening stock and expenses are paid from the till, which starts empty.
+  ok(await b.banking.saveCashCount({ amount: 100000000, notes: 'Smoke float' }));
+
   const categories = ok(await b.categories.list({ includeInactive: false }));
   add('default categories seeded', (categories?.length ?? 0) === 10, String(categories?.length));
 
@@ -1150,6 +1153,8 @@ const SCRIPT = `
   // The fee: the rate crosses the bridge, the money is worked out in the main
   // process. 1,000,000.00 at 0.5% is 5,000.00 — the figure the form shows while
   // the user types, proved here end to end against a real database.
+  // A Cash Out this size pays the customer from the till, so fill it first.
+  ok(await b.banking.saveCashCount({ amount: 200000000, notes: 'Smoke float' }));
   const withFee = ok(await b.banking.createTransaction({
     type: 'RECEIVE', transactionAt: bankAt, toAccountId: kbz.id,
     fromAccountNumber: '09-111-2222', fromName: 'A customer',

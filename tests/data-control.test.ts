@@ -8,7 +8,9 @@ import { completeFirstRunSetup } from '../electron/services/auth.service';
 import { getSessionUser, setSessionUser, type SessionUser } from '../electron/session';
 import {
   cashInHand,
+  createShopAdvance,
   getShopBankAccount,
+  receiveShopAdvance,
   saveBankAccount,
   saveCashCount,
   saveShopBankAccount,
@@ -142,8 +144,22 @@ describe('data control', () => {
   });
 
   it('banking: clears every movement and balance, keeps accounts, unlinks other modules', () => {
+    // A shop advance paid twice, with a repayment: the later payment points at the advance.
+    const adv = createShopAdvance(
+      { fromType: 'CASH', toType: 'CASH', recipientName: 'Ko Min', amount: 10_000, advanceAt: `${businessDay()}T09:00` },
+      actor,
+      ctx.db,
+    );
+    createShopAdvance(
+      { fromType: 'CASH', toType: 'CASH', recipientName: 'Ko Min', amount: 5_000, parentId: adv.id, advanceAt: `${businessDay()}T10:00` },
+      actor,
+      ctx.db,
+    );
+    receiveShopAdvance({ shopAdvanceId: adv.id, toType: 'CASH', amount: 3_000, receivedAt: `${businessDay()}T11:00` }, actor, ctx.db);
+
     purgeModule('BANKING', actor, ctx.db);
     expect([count('CashCount'), count('ShopAccountEntry'), count('BankTransaction')]).toEqual([0, 0, 0]);
+    expect([count('ShopAdvance'), count('ShopAdvanceSettlement')]).toEqual([0, 0]);
     expect(count('ShopBankAccount')).toBe(1);
     expect(getShopBankAccount(shopAccount, ctx.db).balance).toBe(0);
     expect(cashInHand(ctx.db).recorded).toBe(false);

@@ -57,7 +57,7 @@ beforeEach(() => {
   actor = getSessionUser()!;
   const kbz = saveBankAccount({ name: 'Kanbawza', key: 'Kpay', description: undefined, isActive: true }, actor, ctx.db);
   shopAccount = saveShopBankAccount(
-    { bankAccountId: kbz.id, accountNumber: '001-22-3333', accountName: 'Green Mobile', isActive: true },
+    { bankAccountId: kbz.id, accountNumber: '001-22-3333', accountName: 'Green Mobile', balance: OPENING, isActive: true },
     actor,
     ctx.db,
   ).id;
@@ -71,7 +71,9 @@ afterEach(() => {
 });
 
 const cash = () => cashInHand(ctx.db).amount;
-const bank = () => getShopBankAccount(shopAccount, ctx.db).balance;
+// The account starts with OPENING in it, so expenses can be paid from it; read as the change since.
+const OPENING = 1_000_000;
+const bank = () => getShopBankAccount(shopAccount, ctx.db).balance - OPENING;
 
 function product(stock: number, purchaseShopAccountId?: string) {
   return createProduct(
@@ -153,6 +155,21 @@ describe('expenses', () => {
     expect(
       zCreateExpense.safeParse({ categoryId: rent, expenseDay: businessDay(), description: 'x', amount: 1, paymentMethod: 'BANK_TRANSFER' }).success,
     ).toBe(false);
+  });
+
+  it('refuses to pay more than cash in hand or the account holds', () => {
+    const spend = (amount: number, shopAccountId?: string) => () =>
+      createExpense(
+        { categoryId: rent, expenseDay: businessDay(), description: 'Too much', amount, paymentMethod: shopAccountId ? 'BANK_TRANSFER' : 'CASH', shopAccountId, referenceNumber: shopAccountId && 'TX', notes: undefined },
+        actor,
+        ctx.db,
+      );
+    expect(spend(1_000_001)).toThrow(/Not enough in cash in hand/);
+    expect(spend(OPENING + 1, shopAccount)).toThrow(/Not enough in Kanbawza 001-22-3333/);
+    expect([cash(), bank()]).toEqual([1_000_000, 0]);
+    // Exactly what is there is fine.
+    spend(1_000_000)();
+    expect(cash()).toBe(0);
   });
 });
 

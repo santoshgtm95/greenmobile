@@ -20,6 +20,8 @@ import CallMadeIcon from "@mui/icons-material/CallMade";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import MoneyField from "./MoneyField";
+import ShopAccountSelect from "./ShopAccountSelect";
+import CashInHandBox from "./CashInHandBox";
 import { useMoneyFormatter } from "../hooks/useSettings";
 import { PosApiError } from "@shared/errors";
 import { addMoney, bankFee, formatRate, subtractMoney } from "@shared/money";
@@ -174,12 +176,15 @@ export default function AdvanceWithdrawDialog({
           </ToggleButtonGroup>
 
           {isCash ? (
-            <TextField
-              label="Customer name"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              fullWidth
-            />
+            <>
+              <TextField
+                label="Customer name"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                fullWidth
+              />
+              <CashInHandBox spend={paidOut} />
+            </>
           ) : (
             <>
               <Section title="Send from our account">
@@ -189,26 +194,15 @@ export default function AdvanceWithdrawDialog({
                     &quot;Register Accounts&quot; on the Banking screen first.
                   </Alert>
                 ) : (
-                  <TextField
-                    select
-                    required
-                    fullWidth
+                  <ShopAccountSelect
                     label="Our account"
                     value={shopAccount?.id ?? ""}
-                    onChange={(e) => setShopAccountId(e.target.value)}
+                    onChange={setShopAccountId}
                     error={Boolean(fieldErrors.fromAccountId ?? fieldErrors.fromAccountNumber)}
-                    helperText={
-                      fieldErrors.fromAccountId ??
-                      fieldErrors.fromAccountNumber ??
-                      (shopAccount ? `Balance ${money(shopAccount.balance)}` : " ")
-                    }
-                  >
-                    {shopAccounts.map((account) => (
-                      <MenuItem key={account.id} value={account.id}>
-                        {account.bankName} · {account.accountNumber} · {account.accountName}
-                      </MenuItem>
-                    ))}
-                  </TextField>
+                    helperText={fieldErrors.fromAccountId ?? fieldErrors.fromAccountNumber}
+                    spend={addMoney(paidOut, charges)}
+                    sx={{ width: "100%" }}
+                  />
                 )}
               </Section>
 

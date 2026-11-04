@@ -20,6 +20,8 @@ import type { SessionUser } from '../session';
 const PURGE: Record<DataModule, readonly string[]> = {
   BANKING: [
     `DELETE FROM "ShopAdvanceSettlement"`,
+    // Later payments point at their advance (RESTRICT is checked per row), so they go first.
+    `DELETE FROM "ShopAdvance" WHERE parentId IS NOT NULL`,
     `DELETE FROM "ShopAdvance"`,
     `DELETE FROM "InternalTransfer"`,
     `DELETE FROM "ShopAccountEntry"`,

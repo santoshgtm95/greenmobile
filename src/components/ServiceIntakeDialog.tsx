@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   Alert,
+  Box,
   Button,
   Dialog,
   DialogActions,
@@ -20,6 +21,7 @@ import CustomerPickerDialog, { type PickedCustomer } from './CustomerPickerDialo
 import { PosApiError } from '@shared/errors';
 import type { PaymentMethod } from '@shared/domain';
 import ShopAccountSelect from './ShopAccountSelect';
+import CashInHandBox from './CashInHandBox';
 
 /**
  * Taking a device in (spec §52 step 1).
@@ -260,14 +262,19 @@ export default function ServiceIntakeDialog({
                 <MenuItem value="BANK">Bank</MenuItem>
               </TextField>
             )}
-            {form.depositAmount > 0 && form.depositMethod !== 'CASH' && (
-              <ShopAccountSelect
-                label="Received into"
-                value={form.depositShopAccountId}
-                onChange={(id) => set('depositShopAccountId', id)}
-                sx={{ flex: 1 }}
-              />
-            )}
+            {form.depositAmount > 0 &&
+              (form.depositMethod !== 'CASH' ? (
+                <ShopAccountSelect
+                  label="Received into"
+                  value={form.depositShopAccountId}
+                  onChange={(id) => set('depositShopAccountId', id)}
+                  sx={{ flex: 1 }}
+                />
+              ) : (
+                <Box sx={{ flex: 1 }}>
+                  <CashInHandBox />
+                </Box>
+              ))}
           </Stack>
 
           <TextField

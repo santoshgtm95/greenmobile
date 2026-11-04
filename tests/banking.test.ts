@@ -87,6 +87,14 @@ beforeEach(() => {
   setSessionUser(null);
   completeFirstRunSetup(SETUP, ctx.db);
   actor = getSessionUser()!;
+  // Cash Out and cash withdrawals pay from the till. Written directly so it
+  // leaves no audit entry; the oldest count, so later ones build on it.
+  ctx.db
+    .prepare(
+      `INSERT INTO "CashCount" (id, amount, countedAt, countedDay, source, notes, createdBy, createdAt)
+       VALUES ('test-float', 1000000000, '2000-01-01T00:00:00.000Z', '2000-01-01', 'Cash count', 'Test float', ?, '2000-01-01T00:00:00.000Z')`,
+    )
+    .run(actor.id);
 
   kpay = saveBankAccount(
     { name: 'Kanbawza', key: 'Kpay', description: undefined, isActive: true },
@@ -104,6 +112,11 @@ afterEach(() => {
   setSessionUser(null);
   ctx.cleanup();
 });
+
+/** Removes the test float, for tests about the cash history itself. */
+function emptyTill(): void {
+  ctx.db.exec(`DELETE FROM "CashCount"`);
+}
 
 /** A day-and-time value the form would have produced, on the given business day. */
 function at(day: string = businessDay(), time = '10:30'): string {
@@ -1035,6 +1048,7 @@ describe('registered account balances', () => {
 
 describe('cash in hand history', () => {
   it('lists every change newest first, with its source, in/out and balance after', () => {
+    emptyTill();
     saveCashCount({ amount: 1_000_000, notes: 'Morning till' }, actor, ctx.db);
     const cashIn = transfer(300_000); // customer hands over 300,000
     receive(100_000, { feeBasisPoints: 100 }); // we give 99,000 cash
@@ -1054,6 +1068,7 @@ describe('cash in hand history', () => {
   });
 
   it('labels entries recorded before sources were kept', () => {
+    emptyTill();
     const insert = ctx.db.prepare(
       `INSERT INTO "CashCount" (id, amount, countedAt, countedDay, source, notes, createdBy, createdAt)
        VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
@@ -1073,6 +1088,7 @@ describe('cash in hand history', () => {
 
 describe('cash in hand', () => {
   it('distinguishes "never counted" from "counted zero"', () => {
+    emptyTill();
     const before = cashInHand(ctx.db);
     expect(before.recorded).toBe(false);
     expect(before.amount).toBe(0);
@@ -1095,6 +1111,7 @@ describe('cash in hand', () => {
   });
 
   it('keeps every count, so the figure has a history', () => {
+    emptyTill();
     saveCashCount({ amount: 100_000, notes: undefined }, actor, ctx.db);
     saveCashCount({ amount: 200_000, notes: undefined }, actor, ctx.db);
 
@@ -1103,6 +1120,7 @@ describe('cash in hand', () => {
   });
 
   it('records the count against the shop’s own business day', () => {
+    emptyTill();
     saveCashCount({ amount: 100_000, notes: undefined }, actor, ctx.db);
     const row = ctx.db.prepare(`SELECT countedDay FROM "CashCount"`).get() as { countedDay: string };
     // Not the UTC date: a count taken at 8pm belongs to that evening.

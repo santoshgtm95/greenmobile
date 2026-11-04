@@ -16,6 +16,7 @@ import MoneyField from './MoneyField';
 import { PosApiError } from '@shared/errors';
 import { requiresReference, type PaymentMethod } from '@shared/domain';
 import ShopAccountSelect from './ShopAccountSelect';
+import CashInHandBox from './CashInHandBox';
 import { businessDay } from '@shared/datetime';
 import type { Expense, ExpenseCategory } from '@shared/api';
 
@@ -79,6 +80,12 @@ export default function ExpenseDialog({
   const referenceRequired = requiresReference(form.paymentMethod);
   // Cash comes out of cash in hand; Bank out of the chosen shop account.
   const isBank = form.paymentMethod !== 'CASH';
+  // An edit paid from the same place has already taken the old amount out.
+  const samePlace =
+    expense !== null &&
+    (expense.paymentMethod !== 'CASH') === isBank &&
+    (!isBank || expense.shopAccountId === form.shopAccountId);
+  const spend = samePlace ? form.amount - expense.amount : form.amount;
 
   return (
     <Dialog open fullWidth maxWidth="sm" onClose={onClose}>
@@ -163,14 +170,17 @@ export default function ExpenseDialog({
             </TextField>
           </Stack>
 
-          {isBank && (
+          {isBank ? (
             <ShopAccountSelect
               label="Paid from account"
               value={form.shopAccountId}
               onChange={(id) => set('shopAccountId', id)}
               error={Boolean(fieldErrors.shopAccountId)}
               helperText={fieldErrors.shopAccountId}
+              spend={spend}
             />
+          ) : (
+            <CashInHandBox spend={spend} />
           )}
 
           {referenceRequired && (

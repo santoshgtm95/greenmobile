@@ -18,6 +18,7 @@ import MoneyField from './MoneyField';
 import { useMoneyFormatter } from '../hooks/useSettings';
 import { SummaryLine } from './MovementParts';
 import ShopAccountSelect from './ShopAccountSelect';
+import CashInHandBox from './CashInHandBox';
 import { PosApiError } from '@shared/errors';
 import type { PaymentMethod } from '@shared/domain';
 import type { ServiceOrderDetail } from '@shared/api';
@@ -117,6 +118,7 @@ export default function ServiceDeliverDialog({
               <MenuItem value="BANK">Bank</MenuItem>
             </TextField>
           )}
+          {remaining > 0 && paymentMethod === 'CASH' && <CashInHandBox />}
           {remaining > 0 && paymentMethod !== 'CASH' && (
             <>
               <ShopAccountSelect label="Received into" value={shopAccountId} onChange={setShopAccountId} />

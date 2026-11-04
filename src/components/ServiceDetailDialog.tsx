@@ -35,6 +35,7 @@ import MoneyField from './MoneyField';
 import ServicePartPicker from './ServicePartPicker';
 import ServiceDeliverDialog from './ServiceDeliverDialog';
 import ShopAccountSelect from './ShopAccountSelect';
+import CashInHandBox from './CashInHandBox';
 import { PosApiError } from '@shared/errors';
 import {
   SERVICE_STATUS_LABELS,
@@ -472,14 +473,19 @@ export default function ServiceDetailDialog({
                     </Button>
                   </Stack>
                 )}
-                {editable && manage && order.balance > 0 && payment.paymentMethod !== 'CASH' && (
-                  <ShopAccountSelect
-                    label="Received into"
-                    value={payment.shopAccountId}
-                    onChange={(shopAccountId) => setPayment((f) => ({ ...f, shopAccountId }))}
-                    sx={{ mt: 1.5 }}
-                  />
-                )}
+                {editable && manage && order.balance > 0 &&
+                  (payment.paymentMethod !== 'CASH' ? (
+                    <ShopAccountSelect
+                      label="Received into"
+                      value={payment.shopAccountId}
+                      onChange={(shopAccountId) => setPayment((f) => ({ ...f, shopAccountId }))}
+                      sx={{ mt: 1.5 }}
+                    />
+                  ) : (
+                    <Box sx={{ mt: 1.5 }}>
+                      <CashInHandBox />
+                    </Box>
+                  ))}
               </Box>
 
               <Box sx={{ flex: 1 }}>

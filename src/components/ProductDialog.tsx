@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   Alert,
+  Box,
   Button,
   Dialog,
   DialogActions,
@@ -24,6 +25,7 @@ import { PRODUCT_UNITS } from '@shared/domain';
 import { generateEan13Candidate } from '@shared/barcode';
 import type { Lookup, Product } from '@shared/api';
 import ShopAccountSelect from './ShopAccountSelect';
+import CashInHandBox from './CashInHandBox';
 import { useMoneyFormatter } from '../hooks/useSettings';
 import { multiplyMoney } from '@shared/money';
 
@@ -311,13 +313,18 @@ export default function ProductDialog({
                 <MenuItem value="CASH">Cash</MenuItem>
                 <MenuItem value="BANK">Bank</MenuItem>
               </TextField>
-              {form.paidBy === 'BANK' && (
+              {form.paidBy === 'BANK' ? (
                 <ShopAccountSelect
                   label="Paid from account"
                   value={form.purchaseShopAccountId}
                   onChange={(id) => set('purchaseShopAccountId', id)}
+                  spend={stockCost}
                   sx={{ flex: 1 }}
                 />
+              ) : (
+                <Box sx={{ flex: 1 }}>
+                  <CashInHandBox spend={stockCost} />
+                </Box>
               )}
             </Stack>
           )}
