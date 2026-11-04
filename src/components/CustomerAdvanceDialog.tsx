@@ -21,6 +21,7 @@ import LocalAtmIcon from "@mui/icons-material/LocalAtm";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import MoneyField from "./MoneyField";
+import AccountFields from "./AccountFields";
 import { useMoneyFormatter } from "../hooks/useSettings";
 import { PosApiError } from "@shared/errors";
 import { nowLocalDateTime } from "@shared/datetime";
@@ -42,8 +43,9 @@ export default function CustomerAdvanceDialog({
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [fromType, setFromType] = useState<"ACCOUNT" | "CASH">("ACCOUNT");
-  const [fromBankName, setFromBankName] = useState("");
+  const [fromBankId, setFromBankId] = useState("");
   const [fromAccountNumber, setFromAccountNumber] = useState("");
+  const [fromAccountName, setFromAccountName] = useState("");
 
   const [toType, setToType] = useState<"SHOP_ACCOUNT" | "CASH">("SHOP_ACCOUNT");
   const [toShopAccountId, setToShopAccountId] = useState(
@@ -65,11 +67,12 @@ export default function CustomerAdvanceDialog({
       const isCashDeposit = toType === "CASH";
       const isFromAccount = fromType === "ACCOUNT";
 
+      // The advance is listed by the name on the account; keep the customer's
+      // own name too when it is different.
+      const holder = isFromAccount ? fromAccountName.trim() : customerName.trim();
       const combinedNotes = [
+        holder !== customerName.trim() ? `Customer: ${customerName.trim()}` : "",
         customerPhone.trim() ? `Phone: ${customerPhone.trim()}` : "",
-        isFromAccount && fromBankName.trim()
-          ? `Customer Bank: ${fromBankName.trim()}`
-          : "",
         notes.trim(),
       ]
         .filter(Boolean)
@@ -77,11 +80,12 @@ export default function CustomerAdvanceDialog({
 
       return api.banking.openAdvance({
         transactionAt,
+        fromAccountId: isFromAccount ? fromBankId || undefined : undefined,
         fromAccountNumber:
           isFromAccount && fromAccountNumber.trim()
             ? fromAccountNumber.trim()
             : customerPhone.trim() || "-",
-        fromName: customerName.trim(),
+        fromName: holder,
         toAccountId: isCashDeposit
           ? undefined
           : (selectedShopAccount?.bankAccountId ?? undefined),
@@ -112,7 +116,8 @@ export default function CustomerAdvanceDialog({
     customerName.trim().length > 0 &&
     amount > 0 &&
     (toType !== "SHOP_ACCOUNT" || Boolean(toShopAccountId)) &&
-    (fromType !== "ACCOUNT" || Boolean(fromAccountNumber.trim())) &&
+    (fromType !== "ACCOUNT" ||
+      (Boolean(fromAccountNumber.trim()) && Boolean(fromAccountName.trim()))) &&
     transactionAt;
 
   return (
@@ -223,23 +228,16 @@ export default function CustomerAdvanceDialog({
             </ToggleButtonGroup>
 
             {fromType === "ACCOUNT" ? (
-              <Stack spacing={1.5}>
-                <TextField
-                  label="Customer Bank / Wallet Provider"
-                  fullWidth
-                  value={fromBankName}
-                  onChange={(e) => setFromBankName(e.target.value)}
-                  placeholder="e.g. KBZ Bank, Kpay, AYA, CB"
-                />
-                <TextField
-                  label="Customer Account / Wallet Number"
-                  required
-                  fullWidth
-                  value={fromAccountNumber}
-                  onChange={(e) => setFromAccountNumber(e.target.value)}
-                  placeholder="e.g. 09123456789"
-                />
-              </Stack>
+              <AccountFields
+                bankId={fromBankId}
+                onBankChange={(id) => setFromBankId(id)}
+                number={fromAccountNumber}
+                onNumberChange={setFromAccountNumber}
+                name={fromAccountName}
+                onNameChange={setFromAccountName}
+                numberError={fieldErrors.fromAccountNumber}
+                nameError={fieldErrors.fromName}
+              />
             ) : (
               <Box
                 sx={{

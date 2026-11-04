@@ -701,6 +701,8 @@ model ShopAdvance {
   toAccountName     String?
   amount            Int
   notes             String?
+  /// Set on a later payment made on an existing advance.
+  parentId          String?
   isDeleted         Boolean  @default(false)
   deletedReason     String?
   createdBy         String
@@ -709,9 +711,12 @@ model ShopAdvance {
 
   fromShopAccount   ShopBankAccount? @relation("ShopAdvanceSource", fields: [fromShopAccountId], references: [id], onDelete: Restrict)
   creator           User             @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  parent            ShopAdvance?     @relation("ShopAdvancePayments", fields: [parentId], references: [id], onDelete: Restrict)
+  payments          ShopAdvance[]    @relation("ShopAdvancePayments")
   settlements       ShopAdvanceSettlement[]
 
   @@index([advanceDay])
+  @@index([parentId])
   @@index([fromShopAccountId])
   @@index([isDeleted])
   @@index([recipientName])

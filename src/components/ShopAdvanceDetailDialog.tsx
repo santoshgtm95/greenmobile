@@ -23,6 +23,7 @@ import {
 } from '@mui/material';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import CallReceivedIcon from '@mui/icons-material/CallReceived';
+import AddIcon from '@mui/icons-material/Add';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import LocalAtmIcon from '@mui/icons-material/LocalAtm';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -32,17 +33,19 @@ import { useMoneyFormatter } from '../hooks/useSettings';
 import DeleteReasonDialog from './DeleteReasonDialog';
 import { PosApiError } from '@shared/errors';
 import { formatInstant } from '@shared/datetime';
-import type { ShopAdvance, ShopAdvanceSettlement } from '@shared/api';
+import type { ShopAdvance, ShopAdvancePayment, ShopAdvanceSettlement } from '@shared/api';
 
 export default function ShopAdvanceDetailDialog({
   advanceId,
   onClose,
   onReceive,
+  onPayMore,
   onDeleted,
 }: {
   advanceId: string;
   onClose: () => void;
   onReceive: (advance: ShopAdvance) => void;
+  onPayMore: (advance: ShopAdvance) => void;
   onDeleted: () => void;
 }) {
   const { can } = useAuth();
@@ -51,6 +54,7 @@ export default function ShopAdvanceDetailDialog({
 
   const [deletingAdvance, setDeletingAdvance] = useState(false);
   const [deletingSettlement, setDeletingSettlement] = useState<ShopAdvanceSettlement | null>(null);
+  const [deletingPayment, setDeletingPayment] = useState<ShopAdvancePayment | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const detail = useQuery({
@@ -59,6 +63,7 @@ export default function ShopAdvanceDetailDialog({
   });
 
   const advance = detail.data?.advance;
+  const payments = detail.data?.payments ?? [];
   const settlements = detail.data?.settlements ?? [];
 
   const canManage = can('banking.manage');
@@ -110,7 +115,7 @@ export default function ShopAdvanceDetailDialog({
                   >
                     <Box sx={{ textAlign: 'center' }}>
                       <Typography variant="caption" color="text.secondary">
-                        Advanced Amount
+                        Total Given
                       </Typography>
                       <Typography variant="h6" sx={{ fontWeight: 700 }}>
                         {money(advance.amount)}
@@ -212,6 +217,70 @@ export default function ShopAdvanceDetailDialog({
                     </Box>
                   </Paper>
                 </Stack>
+
+                {/* Payments Given */}
+                <Box>
+                  <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                      Payments Given ({payments.length})
+                    </Typography>
+                    {canManage && !advance.isDeleted && (
+                      <Button
+                        size="small"
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={() => onPayMore(advance)}
+                      >
+                        Pay More
+                      </Button>
+                    )}
+                  </Stack>
+
+                  <TableContainer component={Paper} variant="outlined">
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Payment #</TableCell>
+                          <TableCell>Date & Time</TableCell>
+                          <TableCell>From</TableCell>
+                          <TableCell>To</TableCell>
+                          <TableCell align="right">Amount</TableCell>
+                          <TableCell>Notes</TableCell>
+                          {canDelete && <TableCell align="right">Actions</TableCell>}
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {payments.map((p) => (
+                          <TableRow key={p.id}>
+                            <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>{p.advanceNumber}</TableCell>
+                            <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatInstant(p.advanceDate)}</TableCell>
+                            <TableCell>
+                              {p.fromType === 'CASH' ? 'Cash in Hand' : `${p.fromBankName} (${p.fromAccountNumber})`}
+                            </TableCell>
+                            <TableCell>
+                              {p.toType === 'CASH'
+                                ? 'Cash'
+                                : `${p.toBankName ? `${p.toBankName} · ` : ''}${p.toAccountNumber}`}
+                            </TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 700 }}>{money(p.amount)}</TableCell>
+                            <TableCell>{p.notes || '—'}</TableCell>
+                            {canDelete && (
+                              <TableCell align="right">
+                                {p.parentId && (
+                                  <Tooltip title="Delete payment">
+                                    <IconButton size="small" color="error" onClick={() => setDeletingPayment(p)}>
+                                      <DeleteOutlinedIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                )}
+                              </TableCell>
+                            )}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Box>
 
                 {/* Repayments History */}
                 <Box>
@@ -318,7 +387,7 @@ export default function ShopAdvanceDetailDialog({
 
         <DialogActions sx={{ justifyContent: 'space-between', px: 3, pb: 2 }}>
           <Box>
-            {canDelete && advance && settlements.length === 0 && (
+            {canDelete && advance && settlements.length === 0 && payments.length <= 1 && (
               <Button
                 color="error"
                 startIcon={<DeleteOutlinedIcon />}
@@ -345,6 +414,26 @@ export default function ShopAdvanceDetailDialog({
               onClose();
             } catch (err) {
               setError(err instanceof PosApiError ? err.message : 'Unable to delete advance.');
+            }
+          }}
+        />
+      )}
+
+      {/* Delete Payment Dialog */}
+      {deletingPayment && (
+        <DeleteReasonDialog
+          title="Delete Payment"
+          message={`Are you sure you want to delete payment ${deletingPayment.advanceNumber} of ${money(deletingPayment.amount)}? The source balance will be restored.`}
+          onClose={() => setDeletingPayment(null)}
+          onConfirm={async (reason) => {
+            try {
+              await api.banking.deleteShopAdvance({ id: deletingPayment.id, reason });
+              void queryClient.invalidateQueries({ queryKey: ['shopAdvance', advanceId] });
+              void queryClient.invalidateQueries({ queryKey: ['shopAdvances'] });
+              void queryClient.invalidateQueries({ queryKey: ['shopBankAccounts'] });
+              void queryClient.invalidateQueries({ queryKey: ['bankingOverview'] });
+            } catch (err) {
+              setError(err instanceof PosApiError ? err.message : 'Unable to delete payment.');
             }
           }}
         />

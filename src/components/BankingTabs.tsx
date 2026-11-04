@@ -5,8 +5,8 @@ export type BankingTab = 'transactions' | 'advances' | 'shop-advances' | 'intern
 
 const TABS: Array<{ value: BankingTab; label: string; path: string }> = [
   { value: 'transactions', label: 'Transactions', path: '/banking' },
-  { value: 'advances', label: 'Advances', path: '/banking/advances' },
-  { value: 'shop-advances', label: 'Advances Shop', path: '/banking/shop-advances' },
+  { value: 'advances', label: 'Advances Received from Customer', path: '/banking/advances' },
+  { value: 'shop-advances', label: 'Advances Pay from Shop', path: '/banking/shop-advances' },
   { value: 'internal-transfers', label: 'Internal Account Transfer', path: '/banking/internal-transfers' },
 ];
 
@@ -27,6 +27,9 @@ export default function BankingTabs({ active }: { active: BankingTab }) {
           const target = TABS.find((tab) => tab.value === next);
           if (target) navigate(target.path);
         }}
+        // The tab names are long; scroll rather than squash on a narrow window.
+        variant="scrollable"
+        scrollButtons="auto"
       >
         {TABS.map((tab) => (
           <Tab key={tab.value} value={tab.value} label={tab.label} />

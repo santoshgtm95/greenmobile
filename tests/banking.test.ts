@@ -1691,6 +1691,45 @@ describe('customer advances', () => {
     expect(after.advance.remaining).toBe(2 * MILLION);
   });
 
+  it('counts advance and shop advance fees in the fee totals', () => {
+    // Customer advance: 0.5% on the 3,000,000 deposit, 1% kept on a 1,000,000 withdrawal.
+    const opened = openAdvance(3 * MILLION, { feeBasisPoints: 50, feeDirection: 'RECEIVE' });
+    withdraw(opened.id, MILLION, { feeBasisPoints: 100 });
+
+    // Shop advance: repaid in cash (we pay 1%) and by transfer (we receive 2%).
+    saveCashCount({ amount: 500_000, notes: undefined }, actor, ctx.db);
+    const shop = saveShopBankAccount(
+      { bankAccountId: kpay, accountNumber: '777', accountName: 'Shop', isActive: true },
+      actor,
+      ctx.db,
+    );
+    const adv = createShopAdvance(
+      { fromType: 'CASH', toType: 'CASH', recipientName: 'Ko Tun', amount: 200_000, advanceAt: at() },
+      actor,
+      ctx.db,
+    );
+    receiveShopAdvance(
+      { shopAdvanceId: adv.id, toType: 'CASH', amount: 100_000, feeBasisPoints: 100, receivedAt: at() },
+      actor,
+      ctx.db,
+    );
+    receiveShopAdvance(
+      {
+        shopAdvanceId: adv.id, toType: 'SHOP_ACCOUNT', toShopAccountId: shop.id, fromAccountNumber: '09',
+        fromAccountName: 'Ko Tun', amount: 100_000, feeBasisPoints: 200, receivedAt: at(),
+      },
+      actor,
+      ctx.db,
+    );
+
+    const { totals } = bankingOverview(ALL_TIME, ctx.db);
+    expect(totals.feeReceived).toBe(1_500_000 + 1_000_000 + 2_000);
+    expect(totals.feePaid).toBe(1_000);
+    // Still none of the advance money itself in the Transactions figures.
+    expect(totals.received).toBe(0);
+    expect(totals.count).toBe(0);
+  });
+
   it('counts in the balances like any other movement, because the money really moved', () => {
     const opened = openAdvance(3 * MILLION);
     withdraw(opened.id, MILLION);
@@ -2518,6 +2557,65 @@ describe('audit trail', () => {
       expect(part2.advance.remaining).toBe(0);
       expect(part2.advance.status).toBe('SETTLED');
       expect(cashInHand(ctx.db).amount).toBe(1_000_000);
+    });
+
+    it('pays more on an existing advance and collects it all in one repayment', () => {
+      saveCashCount({ amount: 1_000_000, notes: 'Initial' }, actor, ctx.db);
+      const shopAcct = saveShopBankAccount(
+        { bankAccountId: kpay, accountNumber: '09 222 333 444', accountName: 'Shop Kpay 3', balance: 500_000, isActive: true },
+        actor,
+        ctx.db,
+      );
+      const adv = createShopAdvance(
+        { fromType: 'CASH', toType: 'CASH', recipientName: 'Ko Min', amount: 100_000, advanceAt: at() },
+        actor,
+        ctx.db,
+      );
+      const more = createShopAdvance(
+        {
+          fromType: 'SHOP_ACCOUNT',
+          fromShopAccountId: shopAcct.id,
+          toType: 'CASH',
+          recipientName: 'ignored',
+          amount: 150_000,
+          parentId: adv.id,
+          advanceAt: at(),
+        },
+        actor,
+        ctx.db,
+      );
+      // Returns the advance itself, now carrying both payments.
+      expect(more.id).toBe(adv.id);
+      expect(more.amount).toBe(250_000);
+      expect(more.remaining).toBe(250_000);
+      expect(cashInHand(ctx.db).amount).toBe(900_000);
+      expect(getShopBankAccount(shopAcct.id, ctx.db).balance).toBe(350_000);
+
+      const detail = getShopAdvance(adv.id, ctx.db);
+      expect(detail.payments.map((p) => p.amount)).toEqual([100_000, 150_000]);
+      const later = detail.payments[1]!;
+
+      // The list shows one advance, not the later payment.
+      const list = listShopAdvances({ status: 'ALL' }, ctx.db);
+      expect(list.rows.map((r) => r.id)).toEqual([adv.id]);
+      expect(list.totalAdvanced).toBe(250_000);
+
+      // Repayments go on the advance itself.
+      expect(captureError(() =>
+        receiveShopAdvance({ shopAdvanceId: later.id, toType: 'CASH', amount: 1, receivedAt: at() }, actor, ctx.db),
+      ).code).toBe('INVALID_STATE');
+
+      const { advance } = receiveShopAdvance(
+        { shopAdvanceId: adv.id, toType: 'CASH', amount: 200_000, receivedAt: at() },
+        actor,
+        ctx.db,
+      );
+      expect(advance.remaining).toBe(50_000);
+
+      // Removing the later payment would leave more repaid than given.
+      expect(captureError(() => deleteShopAdvance(later.id, 'mistake', actor, ctx.db)).code).toBe('INVALID_STATE');
+      // The advance itself cannot go while later payments hang off it.
+      expect(captureError(() => deleteShopAdvance(adv.id, 'mistake', actor, ctx.db)).code).toBe('INVALID_STATE');
     });
 
     it('receives repayment by shop account, updating shop account balance', () => {

@@ -810,6 +810,8 @@ export const zCreateShopAdvance = z
     toAccountNumber: zOptionalText,
     toAccountName: zOptionalText,
     amount: zMinor.refine((v) => v > 0, 'Amount must be more than zero'),
+    /** Pay more on this existing advance; the recipient comes from it. */
+    parentId: zId.optional(),
     advanceAt: z
       .string()
       .trim()

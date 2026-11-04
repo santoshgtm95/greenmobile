@@ -57,6 +57,7 @@ export default function ShopAdvancesPage() {
 
   const [opening, setOpening] = useState(false);
   const [receiving, setReceiving] = useState<ShopAdvance | null>(null);
+  const [payingMore, setPayingMore] = useState<ShopAdvance | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -377,6 +378,22 @@ export default function ShopAdvancesPage() {
         />
       )}
 
+      {/* Pay More Dialog */}
+      {payingMore && (
+        <ShopAdvanceDialog
+          parent={payingMore}
+          shopAccounts={shopAccounts.data ?? []}
+          cashInHandAmount={cashInHandAmount}
+          onClose={() => setPayingMore(null)}
+          onSaved={() => {
+            setViewingId(payingMore.id);
+            setPayingMore(null);
+            setToast('Payment added to the advance.');
+            refresh();
+          }}
+        />
+      )}
+
       {/* Receive Dialog */}
       {receiving && (
         <ShopAdvanceReceiveDialog
@@ -399,6 +416,10 @@ export default function ShopAdvancesPage() {
           onReceive={(advance) => {
             setViewingId(null);
             setReceiving(advance);
+          }}
+          onPayMore={(advance) => {
+            setViewingId(null);
+            setPayingMore(advance);
           }}
           onDeleted={() => {
             setViewingId(null);

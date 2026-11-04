@@ -2138,25 +2138,31 @@ export function bankingOverview(
    */
   const totals = db
     .prepare(
-      `SELECT COUNT(*) AS count,
-              COALESCE(SUM(CASE WHEN type = 'RECEIVE' THEN amount ELSE 0 END), 0) AS received,
-              COALESCE(SUM(CASE WHEN type = 'TRANSFER' THEN amount ELSE 0 END), 0) AS transferred,
+      `SELECT COALESCE(SUM(CASE WHEN advanceRole IS NULL THEN 1 ELSE 0 END), 0) AS count,
+              -- Advances are left out of these, matching the Transactions list.
+              -- They still count in the account balances above: that money is there.
+              COALESCE(SUM(CASE WHEN advanceRole IS NULL AND type = 'RECEIVE' THEN amount ELSE 0 END), 0) AS received,
+              COALESCE(SUM(CASE WHEN advanceRole IS NULL AND type = 'TRANSFER' THEN amount ELSE 0 END), 0) AS transferred,
               -- Fees split by the DIRECTION OF THE FEE, not by the type of the
               -- movement carrying it. A commission the shop earned is money in
               -- whether it came with a receipt or a transfer, and a charge the
-              -- wallet took is money out on the same footing. Splitting these by
-              -- the row's type instead would put a fee the shop was charged on a
-              -- receipt into the "earned" column.
+              -- wallet took is money out on the same footing. Fees on customer
+              -- advances and on shop advance repayments are the shop's too, so
+              -- they count here even though those movements are listed elsewhere.
               COALESCE(SUM(CASE WHEN feeDirection = 'RECEIVE' THEN feeAmount ELSE 0 END), 0)
+                + COALESCE((SELECT SUM(feeAmount) FROM "ShopAdvanceSettlement"
+                             WHERE isDeleted = 0 AND feeDirection = 'RECEIVE'
+                               AND settlementDay BETWEEN ? AND ?), 0)
                 AS feeReceived,
               COALESCE(SUM(CASE WHEN feeDirection = 'PAY' THEN feeAmount ELSE 0 END), 0)
+                + COALESCE((SELECT SUM(feeAmount) FROM "ShopAdvanceSettlement"
+                             WHERE isDeleted = 0 AND feeDirection = 'PAY'
+                               AND settlementDay BETWEEN ? AND ?), 0)
                 AS feePaid
          FROM "BankTransaction"
-        -- Advances are left out, matching the Transactions list. They still
-        -- count in the account balances above: that money really is there.
-        WHERE isDeleted = 0 AND advanceRole IS NULL AND transactionDay BETWEEN ? AND ?`,
+        WHERE isDeleted = 0 AND transactionDay BETWEEN ? AND ?`,
     )
-    .get(range.from, range.to) as {
+    .get(range.from, range.to, range.from, range.to, range.from, range.to) as {
     count: number;
     received: number;
     transferred: number;
@@ -2498,6 +2504,7 @@ export interface ShopAdvanceRow {
   advanceDate: string;
   advanceDay: string;
   notes: string | null;
+  parentId: string | null;
   received: number;
   remaining: number;
   settlementCount: number;
@@ -2547,7 +2554,9 @@ const SHOP_ADVANCE_BASE_SELECT = `
          sa.fromBankName, sa.fromBankKey, sa.fromAccountNumber, sa.fromAccountName,
          sa.toType, sa.recipientName, sa.recipientPhone,
          sa.toBankName, sa.toAccountNumber, sa.toAccountName,
-         sa.amount, sa.notes,
+         sa.amount + COALESCE((SELECT SUM(p.amount) FROM "ShopAdvance" p
+                                WHERE p.parentId = sa.id AND p.isDeleted = 0), 0) AS amount,
+         sa.notes, sa.parentId,
          sa.isDeleted, sa.deletedReason,
          sa.createdBy, u.fullName AS createdByName,
          sa.createdAt, sa.updatedAt
@@ -2585,14 +2594,32 @@ const SHOP_ADVANCE_SETTLEMENT_SELECT = `
     LEFT JOIN "User" u ON u.id = sas.createdBy
 `;
 
+export type ShopAdvancePaymentRow = Pick<
+  ShopAdvanceRow,
+  | 'id' | 'advanceNumber' | 'advanceDate' | 'fromType' | 'fromBankName' | 'fromAccountNumber'
+  | 'fromAccountName' | 'toType' | 'toBankName' | 'toAccountNumber' | 'toAccountName'
+  | 'amount' | 'notes' | 'parentId'
+>;
+
 export function getShopAdvance(
   id: string,
   db: Db = getDatabase(),
-): { advance: ShopAdvanceRow; settlements: ShopAdvanceSettlementRow[] } {
+): { advance: ShopAdvanceRow; payments: ShopAdvancePaymentRow[]; settlements: ShopAdvanceSettlementRow[] } {
   const advance = db
     .prepare(`SELECT * FROM (${SHOP_ADVANCE_SELECT}) a WHERE a.id = ?`)
     .get(id) as ShopAdvanceRow | undefined;
   if (!advance) throw errors.notFound('shop advance');
+
+  const payments = db
+    .prepare(
+      `SELECT id, advanceNumber, advanceDate, fromType, fromBankName, fromAccountNumber,
+              fromAccountName, toType, toBankName, toAccountNumber, toAccountName,
+              amount, notes, parentId
+         FROM "ShopAdvance"
+        WHERE id = ? OR (parentId = ? AND isDeleted = 0)
+        ORDER BY advanceDate ASC, createdAt ASC`,
+    )
+    .all(id, id) as ShopAdvancePaymentRow[];
 
   const settlements = db
     .prepare(
@@ -2602,7 +2629,7 @@ export function getShopAdvance(
     )
     .all(id) as ShopAdvanceSettlementRow[];
 
-  return { advance, settlements };
+  return { advance, payments, settlements };
 }
 
 export function listShopAdvances(
@@ -2616,7 +2643,7 @@ export function listShopAdvances(
   totalReceived: number;
   outstandingTotal: number;
 } {
-  const where: string[] = [];
+  const where: string[] = ['a.parentId IS NULL'];
   const params: unknown[] = [];
 
   if (!query.includeDeleted) where.push('a.isDeleted = 0');
@@ -2660,7 +2687,7 @@ export function listShopAdvances(
               COALESCE(SUM(received), 0) AS totalReceived,
               COALESCE(SUM(CASE WHEN remaining > 0 THEN remaining ELSE 0 END), 0) AS outstandingTotal
          FROM (${SHOP_ADVANCE_SELECT}) a
-        WHERE a.isDeleted = 0`,
+        WHERE a.isDeleted = 0 AND a.parentId IS NULL`,
     )
     .get() as {
       openCount: number;
@@ -2698,6 +2725,17 @@ export function createShopAdvance(
       throw errors.validation('Amount must be more than zero.', {
         amount: 'Required',
       });
+    }
+
+    let recipientName = input.recipientName.trim();
+    let recipientPhone = input.recipientPhone?.trim() || null;
+    if (input.parentId) {
+      const { advance: parent } = getShopAdvance(input.parentId, db);
+      if (parent.isDeleted || parent.parentId) {
+        throw errors.invalidState('Pay more on an advance that is still recorded.');
+      }
+      recipientName = parent.recipientName;
+      recipientPhone = parent.recipientPhone;
     }
 
     let fromBankName: string | null = null;
@@ -2767,10 +2805,10 @@ export function createShopAdvance(
          fromBankName, fromBankKey, fromAccountNumber, fromAccountName,
          toType, recipientName, recipientPhone,
          toBankName, toAccountNumber, toAccountName,
-         amount, notes,
+         amount, notes, parentId,
          isDeleted, deletedReason,
          createdBy, createdAt, updatedAt
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
     ).run(
       id,
       advanceNumber,
@@ -2783,13 +2821,14 @@ export function createShopAdvance(
       fromAccountNumber,
       fromAccountName,
       input.toType,
-      input.recipientName.trim(),
-      input.recipientPhone?.trim() || null,
+      recipientName,
+      recipientPhone,
       toBankName,
       toAccountNumber,
       toAccountName,
       input.amount,
       input.notes?.trim() || null,
+      input.parentId ?? null,
       actor.id,
       now,
       now,
@@ -2798,7 +2837,7 @@ export function createShopAdvance(
     if (input.fromType === 'CASH') {
       adjustCashInHand(
         -input.amount,
-        'Shop advance', `Shop Advance · ${advanceNumber} (${input.recipientName.trim()})`,
+        'Shop advance', `Shop Advance · ${advanceNumber} (${recipientName})`,
         actor.id,
         db,
       );
@@ -2810,13 +2849,13 @@ export function createShopAdvance(
         action: 'CREATE',
         entityName: 'ShopAdvance',
         entityId: id,
-        summary: `Created shop advance ${advanceNumber} of ${formatMoney(input.amount)} to ${input.recipientName.trim()}`,
+        summary: `Created shop advance ${advanceNumber} of ${formatMoney(input.amount)} to ${recipientName}`,
         newValues: input,
       },
       db,
     );
 
-    return getShopAdvance(id, db).advance;
+    return getShopAdvance(input.parentId ?? id, db).advance;
   }, db);
 }
 
@@ -2829,6 +2868,9 @@ export function receiveShopAdvance(
     const { advance } = getShopAdvance(input.shopAdvanceId, db);
     if (advance.isDeleted) {
       throw errors.invalidState('This advance has been deleted.');
+    }
+    if (advance.parentId) {
+      throw errors.invalidState('Receive repayments on the advance itself.');
     }
     if (advance.status === 'SETTLED' || advance.remaining <= 0) {
       throw errors.invalidState('This advance has already been fully settled.');
@@ -3017,7 +3059,7 @@ export function deleteShopAdvance(
   db: Db = getDatabase(),
 ): { deleted: true } {
   return transaction(() => {
-    const { advance, settlements } = getShopAdvance(id, db);
+    const { advance, payments, settlements } = getShopAdvance(id, db);
     if (advance.isDeleted) {
       throw errors.invalidState('This advance has already been deleted.');
     }
@@ -3025,6 +3067,17 @@ export function deleteShopAdvance(
       throw errors.invalidState(
         'Cannot delete a shop advance that has repayments recorded. Delete the repayments first.',
       );
+    }
+    if (payments.length > 1) {
+      throw errors.invalidState('Delete the later payments on this advance first.');
+    }
+    if (advance.parentId) {
+      const { advance: parent } = getShopAdvance(advance.parentId, db);
+      if (parent.received > subtractMoney(parent.amount, advance.amount)) {
+        throw errors.invalidState(
+          'More has been repaid than would be left without this payment. Delete repayments first.',
+        );
+      }
     }
 
     const now = nowInstant();

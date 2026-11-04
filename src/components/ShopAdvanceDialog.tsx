@@ -21,20 +21,24 @@ import LocalAtmIcon from '@mui/icons-material/LocalAtm';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import MoneyField from './MoneyField';
+import AccountFields from './AccountFields';
 import { useMoneyFormatter } from '../hooks/useSettings';
 import { PosApiError } from '@shared/errors';
 import { nowLocalDateTime } from '@shared/datetime';
-import type { ShopBankAccount } from '@shared/api';
+import type { ShopAdvance, ShopBankAccount } from '@shared/api';
 import type { ShopAdvanceSourceType, ShopAdvanceDestinationType } from '@shared/domain';
 
 export default function ShopAdvanceDialog({
   shopAccounts,
   cashInHandAmount,
+  parent,
   onClose,
   onSaved,
 }: {
   shopAccounts: ShopBankAccount[];
   cashInHandAmount: number;
+  /** Pay more on this advance instead of starting a new one. */
+  parent?: ShopAdvance;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -43,12 +47,13 @@ export default function ShopAdvanceDialog({
   const [fromType, setFromType] = useState<ShopAdvanceSourceType>('SHOP_ACCOUNT');
   const [fromShopAccountId, setFromShopAccountId] = useState(shopAccounts[0]?.id ?? '');
 
-  const [toType, setToType] = useState<ShopAdvanceDestinationType>('ACCOUNT');
-  const [recipientName, setRecipientName] = useState('');
-  const [recipientPhone, setRecipientPhone] = useState('');
+  const [toType, setToType] = useState<ShopAdvanceDestinationType>(parent?.toType ?? 'ACCOUNT');
+  const [recipientName, setRecipientName] = useState(parent?.recipientName ?? '');
+  const [recipientPhone, setRecipientPhone] = useState(parent?.recipientPhone ?? '');
+  const [toBankId, setToBankId] = useState('');
   const [toBankName, setToBankName] = useState('');
-  const [toAccountNumber, setToAccountNumber] = useState('');
-  const [toAccountName, setToAccountName] = useState('');
+  const [toAccountNumber, setToAccountNumber] = useState(parent?.toAccountNumber ?? '');
+  const [toAccountName, setToAccountName] = useState(parent?.toAccountName ?? '');
 
   const [amount, setAmount] = useState(0);
   const [advanceAt, setAdvanceAt] = useState(nowLocalDateTime());
@@ -76,6 +81,7 @@ export default function ShopAdvanceDialog({
         toAccountNumber: toType === 'ACCOUNT' ? toAccountNumber.trim() : undefined,
         toAccountName: toType === 'ACCOUNT' ? toAccountName.trim() || undefined : undefined,
         amount,
+        parentId: parent?.id,
         advanceAt,
         notes: notes.trim() || undefined,
       }),
@@ -96,7 +102,7 @@ export default function ShopAdvanceDialog({
     !exceedsBalance &&
     !isSourceEmpty &&
     (fromType !== 'SHOP_ACCOUNT' || Boolean(fromShopAccountId)) &&
-    (toType !== 'ACCOUNT' || Boolean(toAccountNumber.trim())) &&
+    (toType !== 'ACCOUNT' || (Boolean(toAccountNumber.trim()) && Boolean(toAccountName.trim()))) &&
     advanceAt;
 
   return (
@@ -104,7 +110,7 @@ export default function ShopAdvanceDialog({
       <DialogTitle>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
           <PaymentsOutlinedIcon color="primary" />
-          <span>New Shop Advance</span>
+          <span>{parent ? `Pay More · ${parent.advanceNumber}` : 'New Shop Advance'}</span>
         </Stack>
       </DialogTitle>
 
@@ -125,6 +131,13 @@ export default function ShopAdvanceDialog({
           />
 
           {/* Recipient Details */}
+          {parent ? (
+            <Alert severity="info">
+              Paying more to <strong>{parent.recipientName}</strong>. Already given {money(parent.amount)},
+              still owed {money(parent.remaining)}.
+            </Alert>
+          ) : (
+          <>
           <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'text.secondary', mb: -1 }}>
             Recipient Details
           </Typography>
@@ -148,6 +161,8 @@ export default function ShopAdvanceDialog({
               placeholder="e.g. 09123456789"
             />
           </Stack>
+          </>
+          )}
 
           {/* FROM Source Selection */}
           <Box>
@@ -271,32 +286,20 @@ export default function ShopAdvanceDialog({
             </ToggleButtonGroup>
 
             {toType === 'ACCOUNT' ? (
-              <Stack spacing={1.5}>
-                <TextField
-                  label="Provider / Bank Name"
-                  fullWidth
-                  value={toBankName}
-                  onChange={(e) => setToBankName(e.target.value)}
-                  placeholder="e.g. KBZ Bank, Kpay, CB, AYA"
-                />
-                <TextField
-                  label="Recipient Account / Wallet Number"
-                  required
-                  fullWidth
-                  value={toAccountNumber}
-                  onChange={(e) => setToAccountNumber(e.target.value)}
-                  error={Boolean(fieldErrors.toAccountNumber)}
-                  helperText={fieldErrors.toAccountNumber}
-                  placeholder="e.g. 09123456789 or account number"
-                />
-                <TextField
-                  label="Recipient Account Name"
-                  fullWidth
-                  value={toAccountName}
-                  onChange={(e) => setToAccountName(e.target.value)}
-                  placeholder="e.g. U Thura"
-                />
-              </Stack>
+              <AccountFields
+                bankId={toBankId}
+                // The advance stores the bank by name, as it always has.
+                onBankChange={(id, bank) => {
+                  setToBankId(id);
+                  setToBankName(bank?.name ?? '');
+                }}
+                number={toAccountNumber}
+                onNumberChange={setToAccountNumber}
+                name={toAccountName}
+                onNameChange={setToAccountName}
+                numberError={fieldErrors.toAccountNumber}
+                nameError={fieldErrors.toAccountName}
+              />
             ) : (
               <Box
                 sx={{

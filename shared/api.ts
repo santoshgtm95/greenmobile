@@ -447,10 +447,13 @@ export interface ShopAdvance {
   toBankName: string | null;
   toAccountNumber: string | null;
   toAccountName: string | null;
+  /** Every payment given on this advance, added up. */
   amount: number;
   advanceDate: string;
   advanceDay: string;
   notes: string | null;
+  /** Set on a later payment; the list only shows the advances themselves. */
+  parentId: string | null;
   received: number;
   remaining: number;
   settlementCount: number;
@@ -503,8 +506,17 @@ export interface ShopAdvanceListResult {
   outstandingTotal: number;
 }
 
+/** One payment given on an advance: the first one, then any paid later. */
+export type ShopAdvancePayment = Pick<
+  ShopAdvance,
+  | 'id' | 'advanceNumber' | 'advanceDate' | 'fromType' | 'fromBankName' | 'fromAccountNumber'
+  | 'fromAccountName' | 'toType' | 'toBankName' | 'toAccountNumber' | 'toAccountName'
+  | 'amount' | 'notes' | 'parentId'
+>;
+
 export interface ShopAdvanceDetailResult {
   advance: ShopAdvance;
+  payments: ShopAdvancePayment[];
   settlements: ShopAdvanceSettlement[];
 }
 
