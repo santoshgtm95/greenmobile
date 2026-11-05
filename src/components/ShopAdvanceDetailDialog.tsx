@@ -176,7 +176,11 @@ export default function ShopAdvanceDetailDialog({
                       <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                         From Shop
                       </Typography>
-                      {advance.fromType === 'CASH' ? (
+                      {advance.fromType === 'OLD' ? (
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          Old record
+                        </Typography>
+                      ) : advance.fromType === 'CASH' ? (
                         <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
                           <LocalAtmIcon fontSize="small" color="action" />
                           <Typography variant="body2" sx={{ fontWeight: 600 }}>
@@ -197,7 +201,11 @@ export default function ShopAdvanceDetailDialog({
                       <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                         To Recipient
                       </Typography>
-                      {advance.toType === 'CASH' ? (
+                      {advance.fromType === 'OLD' ? (
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          —
+                        </Typography>
+                      ) : advance.toType === 'CASH' ? (
                         <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
                           <LocalAtmIcon fontSize="small" color="action" />
                           <Typography variant="body2" sx={{ fontWeight: 600 }}>
@@ -255,10 +263,12 @@ export default function ShopAdvanceDetailDialog({
                             <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>{p.advanceNumber}</TableCell>
                             <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatInstant(p.advanceDate)}</TableCell>
                             <TableCell>
-                              {p.fromType === 'CASH' ? 'Cash in Hand' : `${p.fromBankName} (${p.fromAccountNumber})`}
+                              {p.fromType === 'OLD' ? 'Old record' : p.fromType === 'CASH' ? 'Cash in Hand' : `${p.fromBankName} (${p.fromAccountNumber})`}
                             </TableCell>
                             <TableCell>
-                              {p.toType === 'CASH'
+                              {p.fromType === 'OLD'
+                                ? '—'
+                                : p.toType === 'CASH'
                                 ? 'Cash'
                                 : `${p.toBankName ? `${p.toBankName} · ` : ''}${p.toAccountNumber}`}
                             </TableCell>

@@ -1540,6 +1540,29 @@ describe('customer advances', () => {
     expect(cashInHand(ctx.db).amount).toBe(MILLION);
   });
 
+  it('enters old advances (customer and shop) without moving any money, also when deleted', () => {
+    const cash = cashInHand(ctx.db).amount;
+    const bank = bankingOverview(ALL_TIME, ctx.db).bankBalance;
+
+    const customer = openBankAdvance(
+      { transactionAt: at('2026-01-01', '09:00'), fromName: 'Sunil', amount: 138_320_000, toName: 'Old record', depositMethod: 'old' },
+      actor,
+      ctx.db,
+    );
+    // More than the till holds: an old record takes nothing from it.
+    const shop = createShopAdvance(
+      { fromType: 'OLD', toType: 'CASH', recipientName: 'Narray', amount: cash + 36_872_500, advanceAt: at('2026-01-01', '09:00') },
+      actor,
+      ctx.db,
+    );
+    expect([customer.remaining, customer.toName, shop.fromType, shop.remaining]).toEqual([138_320_000, 'Old record', 'OLD', cash + 36_872_500]);
+    expect([cashInHand(ctx.db).amount, bankingOverview(ALL_TIME, ctx.db).bankBalance]).toEqual([cash, bank]);
+
+    deleteBankTransaction(customer.id, 'Typo', actor, ctx.db);
+    deleteShopAdvance(shop.id, 'Typo', actor, ctx.db);
+    expect([cashInHand(ctx.db).amount, bankingOverview(ALL_TIME, ctx.db).bankBalance]).toEqual([cash, bank]);
+  });
+
   it('opens a customer advance in cash, adding to cash in hand and leaving bank balance untouched', () => {
     saveCashCount({ amount: 500_000, notes: 'Morning drawer' }, actor, ctx.db);
     expect(cashInHand(ctx.db).amount).toBe(500_000);

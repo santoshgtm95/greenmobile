@@ -262,7 +262,9 @@ export default function ShopAdvancesPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {row.fromType === 'CASH' ? (
+                    {row.fromType === 'OLD' ? (
+                      <span>Old record</span>
+                    ) : row.fromType === 'CASH' ? (
                       <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
                         <LocalAtmIcon fontSize="small" color="action" />
                         <span>Cash</span>
@@ -277,7 +279,9 @@ export default function ShopAdvancesPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {row.toType === 'CASH' ? (
+                    {row.fromType === 'OLD' ? (
+                      <span>—</span>
+                    ) : row.toType === 'CASH' ? (
                       <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
                         <LocalAtmIcon fontSize="small" color="action" />
                         <span>Cash</span>

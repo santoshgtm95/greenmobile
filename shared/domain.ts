@@ -246,6 +246,11 @@ export const BANK_ADVANCE_STATUS_LABELS: Record<BankAdvanceStatus, string> = {
 
 export const SHOP_ADVANCE_SOURCE_TYPES = ["CASH", "SHOP_ACCOUNT"] as const;
 export type ShopAdvanceSourceType = (typeof SHOP_ADVANCE_SOURCE_TYPES)[number];
+/** An advance given out before the system: OLD moves no cash or account money. */
+export type ShopAdvanceFromType = ShopAdvanceSourceType | "OLD";
+
+/** Name on an advance entered from old paper records; no money moved when it was entered. */
+export const OLD_RECORD = "Old record";
 
 export const SHOP_ADVANCE_DESTINATION_TYPES = ["CASH", "ACCOUNT"] as const;
 export type ShopAdvanceDestinationType = (typeof SHOP_ADVANCE_DESTINATION_TYPES)[number];

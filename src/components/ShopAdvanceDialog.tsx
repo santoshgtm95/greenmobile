@@ -26,7 +26,8 @@ import { useMoneyFormatter } from '../hooks/useSettings';
 import { PosApiError } from '@shared/errors';
 import { nowLocalDateTime } from '@shared/datetime';
 import type { ShopAdvance, ShopBankAccount } from '@shared/api';
-import type { ShopAdvanceSourceType, ShopAdvanceDestinationType } from '@shared/domain';
+import type { ShopAdvanceFromType, ShopAdvanceDestinationType } from '@shared/domain';
+import HistoryIcon from '@mui/icons-material/History';
 
 export default function ShopAdvanceDialog({
   shopAccounts,
@@ -44,7 +45,7 @@ export default function ShopAdvanceDialog({
 }) {
   const money = useMoneyFormatter();
 
-  const [fromType, setFromType] = useState<ShopAdvanceSourceType>('SHOP_ACCOUNT');
+  const [fromType, setFromType] = useState<ShopAdvanceFromType>('SHOP_ACCOUNT');
   const [fromShopAccountId, setFromShopAccountId] = useState(shopAccounts[0]?.id ?? '');
 
   const [toType, setToType] = useState<ShopAdvanceDestinationType>(parent?.toType ?? 'ACCOUNT');
@@ -65,7 +66,9 @@ export default function ShopAdvanceDialog({
   const fromAccount = shopAccounts.find((a) => a.id === fromShopAccountId) ?? null;
 
   // Validation checks for FROM balance
-  const sourceBalance = fromType === 'CASH' ? cashInHandAmount : (fromAccount?.balance ?? 0);
+  // An old record takes nothing from the shop, so there is no balance to check.
+  const sourceBalance =
+    fromType === 'OLD' ? Infinity : fromType === 'CASH' ? cashInHandAmount : (fromAccount?.balance ?? 0);
   const exceedsBalance = amount > sourceBalance;
   const isSourceEmpty = sourceBalance <= 0;
 
@@ -173,10 +176,10 @@ export default function ShopAdvanceDialog({
               exclusive
               fullWidth
               value={fromType}
-              onChange={(_e, next: ShopAdvanceSourceType | null) => {
+              onChange={(_e, next: ShopAdvanceFromType | null) => {
                 if (next) {
                   setFromType(next);
-                  if (next === 'CASH') {
+                  if (next === 'CASH' || next === 'OLD') {
                     setToType('CASH');
                   } else if (next === 'SHOP_ACCOUNT') {
                     setToType('ACCOUNT');
@@ -197,9 +200,20 @@ export default function ShopAdvanceDialog({
                   <span>Cash in Hand</span>
                 </Stack>
               </ToggleButton>
+              <ToggleButton value="OLD">
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                  <HistoryIcon fontSize="small" />
+                  <span>Old record</span>
+                </Stack>
+              </ToggleButton>
             </ToggleButtonGroup>
 
-            {fromType === 'CASH' ? (
+            {fromType === 'OLD' ? (
+              <Alert severity="info">
+                An advance given before this system. Nothing is taken from cash in hand or any account;
+                receiving it back later works as usual.
+              </Alert>
+            ) : fromType === 'CASH' ? (
               <Stack
                 direction="row"
                 spacing={1}
@@ -257,7 +271,8 @@ export default function ShopAdvanceDialog({
             )}
           </Box>
 
-          {/* TO Destination Selection */}
+          {/* TO Destination Selection (unknown for old records) */}
+          {fromType !== 'OLD' && (
           <Box>
             <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'text.secondary', mb: 1 }}>
               To (Recipient Receives Via)
@@ -316,6 +331,7 @@ export default function ShopAdvanceDialog({
               </Box>
             )}
           </Box>
+          )}
 
           {/* Amount Field */}
           <Box>
@@ -334,7 +350,7 @@ export default function ShopAdvanceDialog({
                     : fieldErrors.amount
               }
             />
-            {sourceBalance > 0 && (
+            {fromType !== 'OLD' && sourceBalance > 0 && (
               <Stack direction="row" sx={{ justifyContent: 'flex-end', mt: 0.5 }}>
                 <Button size="small" onClick={() => setAmount(sourceBalance)}>
                   Max ({money(sourceBalance)})

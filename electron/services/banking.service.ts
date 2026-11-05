@@ -54,8 +54,10 @@ import {
   type BankFeeDirection,
   type BankTransactionType,
   type ShopAdvanceSourceType,
+  type ShopAdvanceFromType,
   type ShopAdvanceDestinationType,
   type ShopAdvanceStatus,
+  OLD_RECORD,
 } from '../../shared/domain';
 import {
   addMoney,
@@ -1460,7 +1462,7 @@ export function deleteBankTransaction(
         actor.id,
         db,
       );
-    } else if (before.advanceRole === 'DEPOSIT' && (!before.toAccountId || before.toName?.toLowerCase() === 'cash' || before.toName?.toLowerCase() === 'cash in hand')) {
+    } else if (before.advanceRole === 'DEPOSIT' && before.toName !== OLD_RECORD && (!before.toAccountId || before.toName?.toLowerCase() === 'cash' || before.toName?.toLowerCase() === 'cash in hand')) {
       const actual = amountAfterFee(before.amount, before.feeAmount, before.feeDirection, before.type);
       adjustCashInHand(-actual, 'Reversal', `Deleted advance deposit ${before.transactionNumber} (${reason})`, actor.id, db);
     }
@@ -1639,21 +1641,24 @@ export function openBankAdvance(
   db: Db = getDatabase(),
 ): BankAdvanceRow {
   return transaction(() => {
+    // Entered from old records: the money is already wherever it went, so nothing moves now.
+    const isOld = input.depositMethod === 'old';
     const isCash =
-      input.depositMethod === 'cash' ||
-      input.toName?.trim().toLowerCase() === 'cash' ||
-      input.toName?.trim().toLowerCase() === 'cash in hand' ||
-      (!input.toAccountId &&
-        (!input.toAccountNumber ||
-          input.toAccountNumber.trim() === '' ||
-          input.toAccountNumber.trim() === '-'));
+      !isOld &&
+      (input.depositMethod === 'cash' ||
+        input.toName?.trim().toLowerCase() === 'cash' ||
+        input.toName?.trim().toLowerCase() === 'cash in hand' ||
+        (!input.toAccountId &&
+          (!input.toAccountNumber ||
+            input.toAccountNumber.trim() === '' ||
+            input.toAccountNumber.trim() === '-')));
 
     const depositInput: CreateBankTransactionInput = {
       ...input,
       type: 'RECEIVE',
-      toAccountId: isCash ? undefined : input.toAccountId,
-      toAccountNumber: isCash ? '-' : (input.toAccountNumber?.trim() || '-'),
-      toName: isCash ? 'Cash in hand' : (input.toName?.trim() || 'Shop Account'),
+      toAccountId: isCash || isOld ? undefined : input.toAccountId,
+      toAccountNumber: isCash || isOld ? '-' : (input.toAccountNumber?.trim() || '-'),
+      toName: isOld ? OLD_RECORD : isCash ? 'Cash in hand' : (input.toName?.trim() || 'Shop Account'),
       fromAccountNumber: input.fromAccountNumber?.trim() || '-',
       feeBasisPoints: input.feeBasisPoints ?? 0,
       feeDirection: input.feeDirection ?? 'RECEIVE',
@@ -2531,7 +2536,7 @@ export function deleteInternalTransfer(
 export interface ShopAdvanceRow {
   id: string;
   advanceNumber: string;
-  fromType: ShopAdvanceSourceType;
+  fromType: ShopAdvanceFromType;
   fromShopAccountId: string | null;
   fromBankName: string | null;
   fromBankKey: string | null;
@@ -2795,7 +2800,7 @@ export function createShopAdvance(
           { amount: `Exceeds cash in hand balance of ${formatMoney(cash.amount)}` },
         );
       }
-    } else {
+    } else if (input.fromType === 'SHOP_ACCOUNT') {
       if (!input.fromShopAccountId) {
         throw errors.validation('Choose a shop account to transfer from.', {
           fromShopAccountId: 'Required',

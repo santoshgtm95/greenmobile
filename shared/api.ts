@@ -18,7 +18,7 @@ import type {
   SerialStatus,
   ServiceItemType,
   ServiceStatus,
-  UserRole, ShopAdvanceSourceType, ShopAdvanceDestinationType, ShopAdvanceStatus,
+  UserRole, ShopAdvanceSourceType, ShopAdvanceFromType, ShopAdvanceDestinationType, ShopAdvanceStatus,
 } from './domain';
 import type { SettingKey, ShopSettings } from './settings';
 import type { ExportFormat, Report, ReportKind } from './report';
@@ -435,7 +435,7 @@ export interface InternalTransfer {
 export interface ShopAdvance {
   id: string;
   advanceNumber: string;
-  fromType: ShopAdvanceSourceType;
+  fromType: ShopAdvanceFromType;
   fromShopAccountId: string | null;
   fromBankName: string | null;
   fromBankKey: string | null;

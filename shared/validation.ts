@@ -680,11 +680,12 @@ export const zOpenBankAdvance = z
     toAccountNumber: z.string().trim().max(40).default('-'),
     toName: z.string().trim().min(1, 'Enter the account name or Cash in hand').max(200).default('Cash in hand'),
     customerPhone: zOptionalText,
-    depositMethod: z.enum(['cash', 'account']).optional(),
+    /** old: entered from old records, no money moves. */
+    depositMethod: z.enum(['cash', 'account', 'old']).optional(),
   })
   .refine(
     (v) =>
-      (v.depositMethod ?? (v.toName.trim().toLowerCase() === 'cash' || v.toName.trim().toLowerCase() === 'cash in hand' ? 'cash' : 'account')) === 'cash' ||
+      (v.depositMethod ?? (v.toName.trim().toLowerCase() === 'cash' || v.toName.trim().toLowerCase() === 'cash in hand' ? 'cash' : 'account')) !== 'account' ||
       Boolean(v.toAccountId),
     OWN_ACCOUNT_ARRIVED,
   );
@@ -801,7 +802,7 @@ export const zInternalTransferListQuery = zPaging.extend({
 
 export const zCreateShopAdvance = z
   .object({
-    fromType: z.enum(['CASH', 'SHOP_ACCOUNT']),
+    fromType: z.enum(['CASH', 'SHOP_ACCOUNT', 'OLD']),
     fromShopAccountId: zId.optional(),
     toType: z.enum(['CASH', 'ACCOUNT']),
     recipientName: z.string().trim().min(1, 'Enter the recipient name').max(120),

@@ -26,6 +26,8 @@ import { useMoneyFormatter } from "../hooks/useSettings";
 import { PosApiError } from "@shared/errors";
 import { nowLocalDateTime } from "@shared/datetime";
 import type { ShopBankAccount } from "@shared/api";
+import { OLD_RECORD } from "@shared/domain";
+import HistoryIcon from "@mui/icons-material/History";
 
 export default function CustomerAdvanceDialog({
   shopAccounts,
@@ -47,7 +49,7 @@ export default function CustomerAdvanceDialog({
   const [fromAccountNumber, setFromAccountNumber] = useState("");
   const [fromAccountName, setFromAccountName] = useState("");
 
-  const [toType, setToType] = useState<"SHOP_ACCOUNT" | "CASH">("SHOP_ACCOUNT");
+  const [toType, setToType] = useState<"SHOP_ACCOUNT" | "CASH" | "OLD">("SHOP_ACCOUNT");
   const [toShopAccountId, setToShopAccountId] = useState(
     shopAccounts[0]?.id ?? "",
   );
@@ -64,8 +66,10 @@ export default function CustomerAdvanceDialog({
 
   const save = useMutation({
     mutationFn: () => {
-      const isCashDeposit = toType === "CASH";
-      const isFromAccount = fromType === "ACCOUNT";
+      const isOld = toType === "OLD";
+      const isCashDeposit = toType === "CASH" || isOld;
+      // Old records only know the customer's name.
+      const isFromAccount = fromType === "ACCOUNT" && !isOld;
 
       // The advance is listed by the name on the account; keep the customer's
       // own name too when it is different.
@@ -92,11 +96,13 @@ export default function CustomerAdvanceDialog({
         toAccountNumber: isCashDeposit
           ? "-"
           : (selectedShopAccount?.accountNumber ?? "-"),
-        toName: isCashDeposit
-          ? "Cash in hand"
-          : (selectedShopAccount?.accountName ?? "Shop Account"),
+        toName: isOld
+          ? OLD_RECORD
+          : isCashDeposit
+            ? "Cash in hand"
+            : (selectedShopAccount?.accountName ?? "Shop Account"),
         amount,
-        depositMethod: isCashDeposit ? "cash" : "account",
+        depositMethod: isOld ? "old" : isCashDeposit ? "cash" : "account",
         customerPhone: customerPhone.trim() || undefined,
         notes: combinedNotes || undefined,
       });
@@ -116,7 +122,7 @@ export default function CustomerAdvanceDialog({
     customerName.trim().length > 0 &&
     amount > 0 &&
     (toType !== "SHOP_ACCOUNT" || Boolean(toShopAccountId)) &&
-    (fromType !== "ACCOUNT" ||
+    (fromType !== "ACCOUNT" || toType === "OLD" ||
       (Boolean(fromAccountNumber.trim()) && Boolean(fromAccountName.trim()))) &&
     transactionAt;
 
@@ -178,7 +184,8 @@ export default function CustomerAdvanceDialog({
             />
           </Stack>
 
-          {/* Customer payment source (FROM) */}
+          {/* Customer payment source (FROM), unknown for old records */}
+          {toType !== "OLD" && (
           <Box>
             <Typography
               variant="subtitle2"
@@ -254,6 +261,7 @@ export default function CustomerAdvanceDialog({
               </Box>
             )}
           </Box>
+          )}
 
           {/* Shop Destination (TO - Receive Into) */}
           <Box>
@@ -292,9 +300,24 @@ export default function CustomerAdvanceDialog({
                   <span>Cash in Hand</span>
                 </Stack>
               </ToggleButton>
+              <ToggleButton value="OLD">
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  sx={{ alignItems: "center" }}
+                >
+                  <HistoryIcon fontSize="small" />
+                  <span>Old record</span>
+                </Stack>
+              </ToggleButton>
             </ToggleButtonGroup>
 
-            {toType === "CASH" ? (
+            {toType === "OLD" ? (
+              <Alert severity="info">
+                An advance from before this system. Nothing is added to cash in
+                hand or any account; paying it back later works as usual.
+              </Alert>
+            ) : toType === "CASH" ? (
               <Stack
                 direction="row"
                 spacing={1}
