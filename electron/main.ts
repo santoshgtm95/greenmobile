@@ -23,6 +23,8 @@ import { registerReportsIpc } from "./ipc/reports.ipc";
 import { registerBackupIpc } from "./ipc/backup.ipc";
 import { registerDataIpc } from "./ipc/data.ipc";
 import { registerUsersIpc } from "./ipc/users.ipc";
+import { applyNetworkAccess } from "./network";
+import { getRaw } from "./services/settings.service";
 
 // Must be set before anything reads app.getPath('userData').
 app.setName("MobileShopPOS");
@@ -115,6 +117,7 @@ async function bootstrap(): Promise<void> {
   registerUsersIpc();
 
   mainWindow = createMainWindow();
+  if (getRaw("networkAccess") === "true") void applyNetworkAccess(true);
 
   if (process.env.POS_SMOKE === "1") {
     const { runSmokeTest } = await import("./utils/smoke");

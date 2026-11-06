@@ -6,6 +6,7 @@ import { zNoPayload, zUpdateSettings } from '../../shared/validation';
 import { getAllRaw, getShopSettings, setSettings } from '../services/settings.service';
 import { recordAudit } from '../services/audit.service';
 import { requireUser } from '../session';
+import { applyNetworkAccess, networkStatus } from '../network';
 import { errors } from '../../shared/errors';
 import { logger } from '../utils/logger';
 import {
@@ -44,7 +45,11 @@ export function registerSettingsIpc(): void {
     return limited;
   });
 
-  handle(CHANNELS.settings.update, { access: 'permission', permission: 'settings.manage' }, zUpdateSettings, (input) => {
+  handle(CHANNELS.settings.networkStatus, { access: 'permission', permission: 'settings.manage' }, zNoPayload, () =>
+    networkStatus(),
+  );
+
+  handle(CHANNELS.settings.update, { access: 'permission', permission: 'settings.manage' }, zUpdateSettings, async (input) => {
     const actor = requireUser();
     const before = getAllRaw();
 
@@ -65,6 +70,7 @@ export function registerSettingsIpc(): void {
       newValues: Object.fromEntries(Object.entries(changed).map(([k, v]) => [k, v.to])),
     });
 
+    if (changed.networkAccess) await applyNetworkAccess(input.values.networkAccess === 'true');
     return getShopSettings();
   });
 

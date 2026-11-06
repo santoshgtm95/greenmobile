@@ -225,10 +225,21 @@ describe('Electron security', () => {
      * quietly grow into a hole.
      */
     const OFFLINE_PROOF = path.join('electron', 'utils', 'smoke.ts');
+    /**
+     * Network access (Settings › Other Devices): this computer serves the shop's
+     * own Wi-Fi, and a browser there calls back to the page's own origin. Neither
+     * talks to the internet; the checks below hold them to that.
+     */
+    const LAN_SERVER = path.join('electron', 'network.ts');
+    const LAN_CLIENT = path.join('src', 'lib', 'api.ts');
     const exempted: string[] = [];
 
     for (const file of sourceFiles('electron', 'src', 'shared')) {
       const relative = path.relative(REPO_ROOT, file);
+      if (relative === LAN_SERVER || relative === LAN_CLIENT) {
+        exempted.push(relative);
+        continue;
+      }
       if (relative === OFFLINE_PROOF) {
         exempted.push(relative);
         continue;
@@ -240,7 +251,14 @@ describe('Electron security', () => {
     }
 
     // The exception applies to exactly one file, and that file still exists.
-    expect(exempted).toEqual([OFFLINE_PROOF]);
+    expect(exempted.sort()).toEqual([LAN_SERVER, OFFLINE_PROOF, LAN_CLIENT].sort());
+    // The server only listens; it never makes a request of its own.
+    const server = stripComments(source(LAN_SERVER));
+    expect(server).not.toMatch(/\bfetch\s*\(|http\.(request|get)\b|['"]node:https['"]/);
+    // The browser only calls the page's own origin, never a typed-in host.
+    const client = stripComments(source(LAN_CLIENT));
+    expect(client.match(/\bfetch\s*\(/g)).toHaveLength(1);
+    expect(client).toContain('fetch(`./api/');
     // ...and what it contains really is the deliberate proof, not a stray call.
     const harness = source(OFFLINE_PROOF);
     expect(harness).toContain('renderer cannot reach a public host');

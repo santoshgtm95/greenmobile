@@ -100,17 +100,8 @@ export function handle<TSchema extends z.ZodTypeAny, TResult>(
   }
   registered.set(channel, access);
 
-  ipcMain.handle(channel, async (event, rawPayload: unknown): Promise<IpcResult<TResult>> => {
+  const run = async (rawPayload: unknown): Promise<IpcResult<TResult>> => {
     try {
-      if (!isTrustedSender(event)) {
-        logger.warn('IPC call from an untrusted sender rejected', {
-          channel,
-          senderId: event.sender.id,
-          url: event.senderFrame?.url,
-        });
-        throw errors.notAuthorized('use this application');
-      }
-
       const user = authorize(access);
 
       const parsed = schema.safeParse(rawPayload);
@@ -127,7 +118,27 @@ export function handle<TSchema extends z.ZodTypeAny, TResult>(
     } catch (err) {
       return { ok: false, error: toSerializedError(channel, err) };
     }
+  };
+  invokers.set(channel, run);
+
+  ipcMain.handle(channel, async (event, rawPayload: unknown): Promise<IpcResult<TResult>> => {
+    if (!isTrustedSender(event)) {
+      logger.warn('IPC call from an untrusted sender rejected', {
+        channel,
+        senderId: event.sender.id,
+        url: event.senderFrame?.url,
+      });
+      return { ok: false, error: toSerializedError(channel, errors.notAuthorized('use this application')) };
+    }
+    return run(rawPayload);
   });
+}
+
+/** The same checked path for the network server (electron/network.ts); undefined for an unknown channel. */
+const invokers = new Map<string, (rawPayload: unknown) => Promise<IpcResult<unknown>>>();
+
+export function invokeChannel(channel: string, rawPayload: unknown): Promise<IpcResult<unknown>> | undefined {
+  return invokers.get(channel)?.(rawPayload);
 }
 
 function authorize(access: AccessOptions): SessionUser | null {

@@ -55,6 +55,9 @@ export const SETTING_KEYS = [
 
   // First-run state (spec §88)
   'setupCompleted',
+
+  // Other laptops and tablets on the shop network (electron/network.ts)
+  'networkAccess',
 ] as const;
 
 export type SettingKey = (typeof SETTING_KEYS)[number];
@@ -100,6 +103,8 @@ export const DEFAULT_SETTINGS: Record<SettingKey, string> = {
   lastAutoBackupDay: '',
 
   setupCompleted: 'false',
+
+  networkAccess: 'false',
 };
 
 /**

@@ -5,6 +5,7 @@
  * value, and every permission check reads it from here. That means a
  * compromised or buggy renderer cannot escalate its own privileges.
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Permission, UserRole } from '../shared/domain';
 import { roleHasPermission } from '../shared/domain';
 import { errors } from '../shared/errors';
@@ -16,20 +17,33 @@ export interface SessionUser {
   role: UserRole;
 }
 
-let currentUser: SessionUser | null = null;
+/** One signed-in seat: the desktop window, or one browser on the network. */
+export interface Session {
+  user: SessionUser | null;
+}
+
+const desktop: Session = { user: null };
+// A network request runs inside its device's session; everything else uses the desktop's.
+const scope = new AsyncLocalStorage<Session>();
+const current = (): Session => scope.getStore() ?? desktop;
+
+export function runInSession<T>(session: Session, fn: () => T): T {
+  return scope.run(session, fn);
+}
 
 export function setSessionUser(user: SessionUser | null): void {
-  currentUser = user;
+  current().user = user;
 }
 
 export function getSessionUser(): SessionUser | null {
-  return currentUser;
+  return current().user;
 }
 
 /** Returns the signed-in user or throws the friendly "please sign in" error. */
 export function requireUser(): SessionUser {
-  if (!currentUser) throw errors.notAuthenticated();
-  return currentUser;
+  const user = getSessionUser();
+  if (!user) throw errors.notAuthenticated();
+  return user;
 }
 
 /** Returns the signed-in user, or throws if they lack the permission. */
@@ -42,7 +56,8 @@ export function requirePermission(permission: Permission): SessionUser {
 }
 
 export function sessionHasPermission(permission: Permission): boolean {
-  return currentUser ? roleHasPermission(currentUser.role, permission) : false;
+  const user = getSessionUser();
+  return user ? roleHasPermission(user.role, permission) : false;
 }
 
 /** Wording used in the "you do not have permission to …" message. */

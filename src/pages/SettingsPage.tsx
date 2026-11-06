@@ -9,6 +9,7 @@ import DocumentsPanel from './settings/DocumentsPanel';
 import PrintingPanel from './settings/PrintingPanel';
 import StockPanel from './settings/StockPanel';
 import DataControlPanel from './settings/DataControlPanel';
+import NetworkPanel from './settings/NetworkPanel';
 import type { Permission } from '@shared/domain';
 
 /**
@@ -30,6 +31,7 @@ const TABS = [
   { value: 'stock', label: 'Stock', permission: 'settings.view' },
   { value: 'printing', label: 'Printing', permission: 'settings.manage' },
   { value: 'documents', label: 'Numbering', permission: 'settings.manage' },
+  { value: 'network', label: 'Other Devices', permission: 'settings.manage' },
   { value: 'backup', label: 'Backup & Restore', permission: 'backup.manage' },
   { value: 'data', label: 'Data Control', permission: 'backup.manage' },
   { value: 'system', label: 'System', permission: 'settings.view' },
@@ -70,6 +72,7 @@ export default function SettingsPage() {
       {active === 'stock' && <StockPanel />}
       {active === 'printing' && <PrintingPanel />}
       {active === 'documents' && <DocumentsPanel />}
+      {active === 'network' && <NetworkPanel />}
       {active === 'backup' && <BackupPanel />}
       {active === 'data' && <DataControlPanel />}
       {active === 'system' && <SystemInfoPage />}

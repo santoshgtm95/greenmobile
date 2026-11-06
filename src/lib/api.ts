@@ -17,15 +17,57 @@ import type { PosApi } from '@shared/api';
 type BridgeFn = (payload?: unknown) => Promise<IpcResult<unknown>>;
 type Bridge = Record<string, Record<string, BridgeFn>>;
 
+/**
+ * This browser's session on the main computer (network access, electron/network.ts).
+ * Kept for the tab only, so closing it is like signing out.
+ * getRandomValues, not randomUUID: the latter is missing on plain-http pages.
+ */
+function sessionToken(): string {
+  const make = () =>
+    Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+  try {
+    const saved = sessionStorage.getItem('posSession');
+    if (saved) return saved;
+    const token = make();
+    sessionStorage.setItem('posSession', token);
+    return token;
+  } catch {
+    return (memoryToken ??= make());
+  }
+}
+let memoryToken: string | undefined;
+
+/** Outside Electron the same calls go over the shop network to the main computer. */
+function overNetwork(channel: string): BridgeFn {
+  return async (payload) => {
+    let response: Response;
+    try {
+      response = await fetch(`./api/${encodeURIComponent(channel)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Pos-Session': sessionToken() },
+        body: payload === undefined ? '' : JSON.stringify(payload),
+      });
+    } catch {
+      throw new PosApiError('UNKNOWN', 'Cannot reach the main computer. Check it is on and on the same Wi-Fi.');
+    }
+    if (!response.ok) throw new PosApiError('UNKNOWN', 'The main computer refused this request.');
+    return (await response.json()) as IpcResult<unknown>;
+  };
+}
+
 function bridge(): Bridge {
   const value = (window as unknown as { posBridge?: Bridge }).posBridge;
-  if (!value) {
-    throw new Error(
-      'The application bridge is missing. This build of the renderer must run inside Electron.',
-    );
+  if (value) return value;
+  if (!networkBridge) {
+    networkBridge = {};
+    for (const [namespace, methods] of Object.entries(CHANNELS)) {
+      networkBridge[namespace] = {};
+      for (const [method, channel] of Object.entries(methods)) networkBridge[namespace][method] = overNetwork(channel);
+    }
   }
-  return value;
+  return networkBridge;
 }
+let networkBridge: Bridge | undefined;
 
 function unwrap<T>(result: IpcResult<T>): T {
   if (result?.ok) return result.data;

@@ -922,6 +922,8 @@ export interface PosApi {
      * other setting. Null means the user cancelled.
      */
     chooseLogo(): Promise<ChosenLogo | null>;
+    /** Whether other devices can reach the POS, and the addresses to type into their browser. */
+    networkStatus(): Promise<{ running: boolean; urls: string[] }>;
   };
   products: {
     list(query: ProductListQuery): Promise<Page<Product>>;

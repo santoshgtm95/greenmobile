@@ -26,6 +26,7 @@ import {
 import { getRaw, getShopSettings, setSetting } from '../services/settings.service';
 import { recordAudit } from '../services/audit.service';
 import { setSessionUser } from '../session';
+import { endNetworkSessions } from '../network';
 import { requireUser } from '../session';
 import { backupsDir, databaseFile, migrationsDir } from '../utils/paths';
 import { logger } from '../utils/logger';
@@ -148,6 +149,7 @@ export function registerBackupIpc(): void {
       });
 
       setSessionUser(null);
+      endNetworkSessions(); // their users may not exist in the restored data
       logger.info('Session cleared after restore');
       return result;
     },

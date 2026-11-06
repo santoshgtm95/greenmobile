@@ -1,0 +1,10 @@
+{
+  "name": "Green Mobile POS",
+  "short_name": "Green Mobile",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f6f8",
+  "theme_color": "#1565c0",
+  "icons": [{ "src": "icon.png", "sizes": "256x256", "type": "image/png", "purpose": "any" }]
+}

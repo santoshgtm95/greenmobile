@@ -28,6 +28,7 @@ export const CHANNELS = {
     getShop: 'settings:getShop',
     update: 'settings:update',
     chooseLogo: 'settings:chooseLogo',
+    networkStatus: 'settings:networkStatus',
   },
   products: {
     list: 'products:list',
