@@ -62,11 +62,9 @@ import {
 import {
   addMoney,
   amountAfterFee,
-  bankFee,
   formatMoney,
-  rateOf,
+  resolveFee,
   subtractMoney,
-  taxFromInclusive,
 } from '../../shared/money';
 import type {
   ShopBankAccountHistoryResult,
@@ -1137,6 +1135,15 @@ export function listBankTransactions(
     where.push('(t.fromAccountId = ? OR t.toAccountId = ?)');
     params.push(query.accountId, query.accountId);
   }
+  if (query.shopAccountId) {
+    // Same matching rule as the shop account's own balance and history.
+    where.push(
+      `EXISTS (SELECT 1 FROM "ShopBankAccount" s WHERE s.id = ?
+        AND ((t.toAccountId = s.bankAccountId AND t.toAccountNumber = s.accountNumber)
+          OR (t.fromAccountId = s.bankAccountId AND t.fromAccountNumber = s.accountNumber)))`,
+    );
+    params.push(query.shopAccountId);
+  }
   if (query.search) {
     where.push(
       `(t.transactionNumber LIKE ? COLLATE NOCASE OR t.fromName LIKE ? COLLATE NOCASE
@@ -1341,7 +1348,12 @@ function insertMovement(
     // from the renderer — the same rule the cart follows for prices (§68). The
     // form shows a running figure with this exact function, so what the user saw
     // and what is stored cannot drift apart.
-    const feeAmount = bankFee(input.amount, input.feeBasisPoints, input.feeIncluded);
+    const { feeAmount, feeBasisPoints } = resolveFee(
+      input.amount,
+      input.feeBasisPoints,
+      input.feeAmount,
+      input.feeIncluded,
+    );
 
     db.prepare(
       `INSERT INTO "BankTransaction" (id, transactionNumber, type, transactionDate, transactionDay,
@@ -1362,7 +1374,7 @@ function insertMovement(
       input.toAccountNumber ? input.toAccountNumber.trim() : null,
       input.toName ? input.toName.trim() : null,
       input.amount,
-      input.feeBasisPoints,
+      feeBasisPoints,
       feeAmount,
       input.feeDirection,
       input.otherFees ?? 0,
@@ -1401,7 +1413,7 @@ function insertMovement(
           (input.feeIncluded ? ' (fee included in the amount)' : '') +
           (input.otherFees ? ` (other fees ${input.otherFees})` : ''),
         // The calculated fee too, not just the rate that was sent in.
-        newValues: { ...input, feeAmount, advanceRole: advance?.role ?? null },
+        newValues: { ...input, feeBasisPoints, feeAmount, advanceRole: advance?.role ?? null },
       },
       db,
     );
@@ -1750,7 +1762,10 @@ export function withdrawFromBankAdvance(
 
     // Cash: the drawer pays out the amount less our fee. Transfer: the account
     // sends that plus the bank charges.
-    const paidOut = subtractMoney(movement.amount, bankFee(movement.amount, withdrawalInput.feeBasisPoints ?? 0));
+    const paidOut = subtractMoney(
+      movement.amount,
+      resolveFee(movement.amount, withdrawalInput.feeBasisPoints ?? 0, movement.feeAmount).feeAmount,
+    );
     if (isCash) {
       ensureAvailable(null, paidOut, db);
     } else {
@@ -2072,6 +2087,8 @@ export interface BankingOverviewResult {
     /** Fees the shop earned, and fees it was charged, over the period. */
     feeReceived: number;
     feePaid: number;
+    /** Flat bank charges paid: transactions, customer advances, shop advances, internal transfers. */
+    bankCharges: number;
     /** net + feeReceived - feePaid. */
     netAfterFees: number;
     count: number;
@@ -2207,16 +2224,29 @@ export function bankingOverview(
                 + COALESCE((SELECT SUM(feeAmount) FROM "ShopAdvanceSettlement"
                              WHERE isDeleted = 0 AND feeDirection = 'PAY'
                                AND settlementDay BETWEEN ? AND ?), 0)
-                AS feePaid
+                AS feePaid,
+              -- Flat bank charges the shop paid, wherever they were recorded:
+              -- transactions and customer advances, shop advances, internal transfers.
+              COALESCE(SUM(otherFees), 0)
+                + COALESCE((SELECT SUM(bankCharges) FROM "ShopAdvance"
+                             WHERE isDeleted = 0 AND advanceDay BETWEEN ? AND ?), 0)
+                + COALESCE((SELECT SUM(bankCharges) FROM "InternalTransfer"
+                             WHERE isDeleted = 0 AND transferDay BETWEEN ? AND ?), 0)
+                AS bankCharges
          FROM "BankTransaction"
         WHERE isDeleted = 0 AND transactionDay BETWEEN ? AND ?`,
     )
-    .get(range.from, range.to, range.from, range.to, range.from, range.to) as {
+    .get(
+      range.from, range.to, range.from, range.to,
+      range.from, range.to, range.from, range.to,
+      range.from, range.to,
+    ) as {
     count: number;
     received: number;
     transferred: number;
     feeReceived: number;
     feePaid: number;
+    bankCharges: number;
   };
 
   const net = totals.received - totals.transferred;
@@ -2938,13 +2968,14 @@ export function receiveShopAdvance(
     // when the payer already included it, the part of what arrived above it.
     const isCash = input.toType === 'CASH';
     const feeDirection: BankFeeDirection = isCash ? 'PAY' : 'RECEIVE';
-    const feeBasisPoints = input.feeBasisPoints ?? 0;
     const included = !isCash && Boolean(input.feeIncluded);
-    const split = included
-      ? taxFromInclusive(input.amount, feeBasisPoints)
-      : { net: input.amount, tax: rateOf(input.amount, feeBasisPoints) };
-    const principal = split.net;
-    const feeAmount = split.tax;
+    const { feeAmount, feeBasisPoints } = resolveFee(
+      input.amount,
+      input.feeBasisPoints ?? 0,
+      input.feeAmount,
+      included,
+    );
+    const principal = included ? subtractMoney(input.amount, feeAmount) : input.amount;
     const actualAmount = isCash ? subtractMoney(principal, feeAmount) : addMoney(principal, feeAmount);
 
     if (principal <= 0) {

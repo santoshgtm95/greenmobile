@@ -187,12 +187,6 @@ export default function AdvanceDetailDialog({
                 Nothing has been withdrawn yet.
               </Typography>
             )}
-
-            {advance.notes && (
-              <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-line' }}>
-                {advance.notes}
-              </Typography>
-            )}
           </Stack>
         )}
       </DialogContent>
@@ -255,6 +249,15 @@ function StepRow({
         <Typography variant="caption" color="text.secondary">
           {[movement.toName ?? '—', movement.toAccountNumber].filter(Boolean).join(' · ')}
         </Typography>
+        {movement.notes && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'block', whiteSpace: 'pre-line', fontStyle: 'italic' }}
+          >
+            {movement.notes}
+          </Typography>
+        )}
       </TableCell>
       <TableCell
         align="right"

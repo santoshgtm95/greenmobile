@@ -97,6 +97,7 @@ export default function BankingPage() {
   const [customTo, setCustomTo] = useState("");
   const [type, setType] = useState("");
   const [accountId, setAccountId] = useState("");
+  const [shopAccountId, setShopAccountId] = useState("");
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);
 
@@ -127,11 +128,12 @@ export default function BankingPage() {
       to: range.to,
       type: (type || undefined) as BankTransactionType | undefined,
       accountId: accountId || undefined,
+      shopAccountId: shopAccountId || undefined,
       includeDeleted: false,
       page,
       pageSize,
     }),
-    [debouncedSearch, range, type, accountId, page, pageSize],
+    [debouncedSearch, range, type, accountId, shopAccountId, page, pageSize],
   );
 
   const transactions = useQuery({
@@ -147,6 +149,11 @@ export default function BankingPage() {
   const accounts = useQuery({
     queryKey: ["bankAccounts", "active"],
     queryFn: () => api.banking.listAccounts({ includeInactive: false }),
+  });
+
+  const shopAccounts = useQuery({
+    queryKey: ["shopBankAccounts", "active"],
+    queryFn: () => api.banking.listShopAccounts({ includeInactive: false }),
   });
 
   const refresh = () => {
@@ -292,6 +299,13 @@ export default function BankingPage() {
           value={signed(overview.data?.totals.feePaid ?? 0)}
           caption="Charges taken by the banks and wallets"
           icon={<PercentIcon fontSize="small" />}
+          tone="error"
+        />
+        <SummaryCard
+          label="Bank charges"
+          value={signed(overview.data?.totals.bankCharges ?? 0)}
+          caption="Transactions, advances and internal transfers"
+          icon={<AccountBalanceIcon fontSize="small" />}
           tone="error"
         />
 
@@ -497,6 +511,25 @@ export default function BankingPage() {
             {positions.map((account) => (
               <MenuItem key={account.accountId} value={account.accountId}>
                 {account.name} ({account.key})
+              </MenuItem>
+            ))}
+          </TextField>
+
+          <TextField
+            select
+            label="Shop account"
+            value={shopAccountId}
+            onChange={(e) => {
+              setShopAccountId(e.target.value);
+              setPage(0);
+            }}
+            sx={{ width: 240 }}
+          >
+            <MenuItem value="">All shop accounts</MenuItem>
+            {(shopAccounts.data ?? []).map((account) => (
+              <MenuItem key={account.id} value={account.id}>
+                {account.bankName} · {account.accountNumber}
+                {account.accountName ? ` (${account.accountName})` : ""}
               </MenuItem>
             ))}
           </TextField>

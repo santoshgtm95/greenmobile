@@ -53,7 +53,7 @@ import {
 import { AppError } from '../shared/errors';
 import { businessDay, addDays, nowLocalDateTime, localDateTimeToInstant } from '../shared/datetime';
 import { roleHasPermission, type BankFeeDirection } from '../shared/domain';
-import { formatMoney } from '../shared/money';
+import { formatMoney, resolveFee } from '../shared/money';
 import {
   zCreateBankTransaction,
   zWithdrawBankAdvance,
@@ -548,13 +548,15 @@ describe('the fee on a movement', () => {
     expect(row.feeAmount).toBe(0);
   });
 
-  it('calculates the fee itself rather than trusting what it is sent', () => {
-    // The channel payload carries the RATE, never the money — the same rule the
-    // cart follows for prices (§68). If feeAmount were ever accepted from the
-    // renderer, this object would set it and the stored row would disagree with
-    // the arithmetic.
-    const sent = { feeAmount: 999_999_999 } as Record<string, unknown>;
-    expect(Object.keys(zCreateBankTransaction.shape)).not.toContain('feeAmount');
+  it('accepts a typed fee only up to the amount, and works it out from the rate otherwise', () => {
+    // A fee typed in money is the user's own figure, like the amount; it still
+    // cannot be more than the amount.
+    const base = {
+      type: 'RECEIVE', transactionAt: at(), fromAccountNumber: '09', fromName: 'Ma Hla',
+      toAccountId: kpay, toAccountNumber: '001', toName: 'Green Mobile', amount: 1_000,
+    };
+    expect(zCreateBankTransaction.safeParse({ ...base, feeAmount: 1_001 }).success).toBe(false);
+    expect(zCreateBankTransaction.safeParse({ ...base, feeAmount: 1_000 }).success).toBe(true);
 
     const row = createBankTransaction(
       {
@@ -571,7 +573,6 @@ describe('the fee on a movement', () => {
         otherFees: 0,
         feeDirection: 'RECEIVE',
         notes: undefined,
-        ...sent,
       },
       actor,
       ctx.db,
@@ -955,6 +956,7 @@ describe('balances', () => {
       net: 0,
       feeReceived: 0,
       feePaid: 0,
+      bankCharges: 0,
       netAfterFees: 0,
       count: 0,
     });
@@ -979,6 +981,25 @@ describe('registered account balances', () => {
     expect(getShopBankAccount(shop.id, ctx.db).balance).toBe(2_000_000 - 301_000 + 100_000);
     // The provider shows the same money.
     expect(bankingOverview(ALL_TIME, ctx.db).accounts.find((a) => a.accountId === kpay)!.balance).toBe(1_799_000);
+  });
+
+  it('filters the history by a shop account, matching provider and number on either side', () => {
+    const mine = saveShopBankAccount(
+      { bankAccountId: kpay, accountNumber: '001-22-3333', accountName: 'Green Mobile', balance: 1_000_000, isActive: true },
+      actor,
+      ctx.db,
+    );
+    const other = saveShopBankAccount(
+      { bankAccountId: kpay, accountNumber: '999', accountName: 'Other number', balance: 0, isActive: true },
+      actor,
+      ctx.db,
+    );
+    transfer(300_000);
+    receive(100_000);
+    const list = (shopAccountId: string) =>
+      listBankTransactions({ ...ALL_TIME, shopAccountId, includeDeleted: false, page: 0, pageSize: 50 }, ctx.db);
+    expect(list(mine.id).total).toBe(2);
+    expect(list(other.id).total).toBe(0);
   });
 
   it('takes internal transfer bank charges from the FROM account only', () => {
@@ -2545,6 +2566,80 @@ describe('audit trail', () => {
 
       deleteShopAdvance(adv.id, 'Typo', actor, ctx.db);
       expect(getShopBankAccount(shopAcct.id, ctx.db).balance).toBe(1_000_000);
+    });
+
+    it('adds up every bank charge on the overview: transactions, shop advances, internal transfers', () => {
+      const a = saveShopBankAccount(
+        { bankAccountId: kpay, accountNumber: '111', accountName: 'Shop A', balance: 1_000_000, isActive: true },
+        actor,
+        ctx.db,
+      );
+      const b = saveShopBankAccount(
+        { bankAccountId: aya, accountNumber: '222', accountName: 'Shop B', balance: 0, isActive: true },
+        actor,
+        ctx.db,
+      );
+      transfer(100_000, { otherFees: 1_000 });
+      createInternalTransfer(
+        { fromShopAccountId: a.id, toShopAccountId: b.id, amount: 100_000, bankCharges: 2_000, transferAt: at(), notes: undefined },
+        actor,
+        ctx.db,
+      );
+      createShopAdvance(
+        { fromType: 'SHOP_ACCOUNT', fromShopAccountId: a.id, toType: 'ACCOUNT', recipientName: 'U Mya', toAccountNumber: '9', amount: 100_000, bankCharges: 3_000, advanceAt: at() },
+        actor,
+        ctx.db,
+      );
+      expect(bankingOverview(ALL_TIME, ctx.db).totals.bankCharges).toBe(6_000);
+    });
+
+    it('stores a fee typed in money as it is, with the rate worked out from it', () => {
+      saveCashCount({ amount: 1_000_000, notes: undefined }, actor, ctx.db);
+      // Transactions: a Cash Out with a typed fee.
+      const tx = createBankTransaction(
+        {
+          type: 'RECEIVE', transactionAt: at(), fromAccountNumber: '09', fromName: 'A customer',
+          toAccountId: kpay, toAccountNumber: '001', toName: 'Green Mobile', amount: 100_000,
+          feeBasisPoints: 0, feeAmount: 1_234, feeDirection: 'RECEIVE', otherFees: 0, notes: undefined,
+        },
+        actor,
+        ctx.db,
+      );
+      expect([tx.feeAmount, tx.feeBasisPoints]).toEqual([1_234, 123]);
+      expect(cashInHand(ctx.db).amount).toBe(1_000_000 - 98_766);
+
+      // Customer advance withdrawal: the customer gets the amount less the typed fee.
+      const opened = openBankAdvance(
+        { transactionAt: at(), fromName: 'Ko Hla', fromAccountNumber: '-', amount: 300_000, toName: 'Cash in hand', toAccountNumber: '-', depositMethod: 'cash' },
+        actor,
+        ctx.db,
+      );
+      const { withdrawals } = withdrawFromBankAdvance(
+        { advanceId: opened.id, transactionAt: at(), amount: 100_000, feeAmount: 500, withdrawalMethod: 'cash', toName: 'Cash' },
+        actor,
+        ctx.db,
+      );
+      expect([withdrawals[0]!.feeAmount, withdrawals[0]!.feeBasisPoints]).toEqual([500, 50]);
+      expect(cashInHand(ctx.db).amount).toBe(1_000_000 - 98_766 + 300_000 - 99_500);
+
+      // Shop advance repayment.
+      const adv = createShopAdvance(
+        { fromType: 'OLD', toType: 'CASH', recipientName: 'Ko Tun', amount: 200_000, advanceAt: at() },
+        actor,
+        ctx.db,
+      );
+      receiveShopAdvance(
+        { shopAdvanceId: adv.id, toType: 'CASH', amount: 100_000, feeAmount: 777, receivedAt: at() },
+        actor,
+        ctx.db,
+      );
+      expect(ctx.db.prepare(`SELECT feeAmount, feeBasisPoints FROM "ShopAdvanceSettlement"`).get()).toEqual({
+        feeAmount: 777,
+        feeBasisPoints: 78,
+      });
+
+      expect(resolveFee(100_000, 0, 1_000, true)).toEqual({ feeAmount: 1_000, feeBasisPoints: 101 });
+      expect(() => resolveFee(100, 0, 101)).toThrow();
     });
 
     it('refuses shop advance from shop account when amount exceeds balance', () => {

@@ -7,7 +7,6 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
-  InputAdornment,
   MenuItem,
   Paper,
   Stack,
@@ -24,10 +23,10 @@ import ShopAccountSelect from "./ShopAccountSelect";
 import CashInHandBox from "./CashInHandBox";
 import { useMoneyFormatter } from "../hooks/useSettings";
 import { PosApiError } from "@shared/errors";
-import { addMoney, bankFee, formatRate, subtractMoney } from "@shared/money";
+import { addMoney, formatRate, subtractMoney } from "@shared/money";
 import { formatInstant, nowLocalDateTime } from "@shared/datetime";
 import type { BankAccount, BankAdvance } from "@shared/api";
-import { percentToBasisPoints, Section, SummaryLine, TypeButton } from "./MovementParts";
+import { FeeFields, Section, SummaryLine, TypeButton, useFeeInput } from "./MovementParts";
 
 type Method = "cash" | "account";
 
@@ -65,7 +64,6 @@ export default function AdvanceWithdrawDialog({
   );
   const [customerName, setCustomerName] = useState(advance.fromName ?? "");
   const [amount, setAmount] = useState(0);
-  const [percentText, setPercentText] = useState("0");
   const [otherFees, setOtherFees] = useState(0);
   const [transactionAt, setTransactionAt] = useState(nowLocalDateTime());
   const [notes, setNotes] = useState("");
@@ -85,8 +83,8 @@ export default function AdvanceWithdrawDialog({
     shopAccounts.find((a) => a.id === (shopAccountId || defaultShopAccount?.id)) ?? null;
 
   const isCash = method === "cash";
-  const feeBasisPoints = percentToBasisPoints(percentText);
-  const fee = feeBasisPoints === null ? 0 : bankFee(amount, feeBasisPoints);
+  const feeInput = useFeeInput(amount);
+  const { fee, basisPoints: feeBasisPoints } = feeInput;
   const paidOut = subtractMoney(amount, fee);
   const charges = isCash ? 0 : otherFees;
   const overRemaining = amount > advance.remaining;
@@ -105,8 +103,8 @@ export default function AdvanceWithdrawDialog({
         toAccountNumber: isCash ? "" : customerNumber.trim(),
         toName: customerName.trim() || "Cash",
         amount,
-        // The rate, not the money: the main process works the fee out itself.
-        feeBasisPoints: feeBasisPoints ?? 0,
+        // The rate, plus the money when it was typed; the main process decides.
+        ...feeInput.payload,
         feeDirection: "RECEIVE",
         otherFees: charges,
         notes: notes.trim() || undefined,
@@ -126,7 +124,7 @@ export default function AdvanceWithdrawDialog({
     !save.isPending &&
     amount > 0 &&
     !overRemaining &&
-    feeBasisPoints !== null &&
+    feeInput.valid &&
     Boolean(transactionAt) &&
     (isCash || (shopAccount !== null && customerNumber.trim() !== "" && customerName.trim() !== ""));
 
@@ -260,21 +258,6 @@ export default function AdvanceWithdrawDialog({
                 }
                 sx={{ flex: 1.4 }}
               />
-              <TextField
-                label="Fee"
-                value={percentText}
-                onChange={(e) => setPercentText(e.target.value)}
-                onBlur={() => {
-                  if (feeBasisPoints !== null) setPercentText(formatRate(feeBasisPoints).replace("%", ""));
-                }}
-                inputMode="decimal"
-                error={feeBasisPoints === null || Boolean(fieldErrors.feeBasisPoints)}
-                helperText={feeBasisPoints === null ? "0 to 100" : fieldErrors.feeBasisPoints}
-                slotProps={{
-                  input: { endAdornment: <InputAdornment position="end">%</InputAdornment> },
-                }}
-                sx={{ flex: 0.8 }}
-              />
               {!isCash && (
                 <MoneyField
                   label="Bank charges"
@@ -285,6 +268,9 @@ export default function AdvanceWithdrawDialog({
                   sx={{ flex: 1.2 }}
                 />
               )}
+            </Stack>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <FeeFields input={feeInput} errors={fieldErrors} />
             </Stack>
             <Typography variant="caption" color="text.secondary">
               {isCash

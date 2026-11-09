@@ -1166,16 +1166,25 @@ const SCRIPT = `
       'fee ' + withFee?.feeAmount + ' at ' + withFee?.feeBasisPoints + 'bp');
   add('the fee direction is kept', withFee?.feeDirection === 'RECEIVE', withFee?.feeDirection);
 
-  // Sent a fee in money rather than a rate: it must be ignored, not stored.
+  // A fee typed in money is stored as typed, and the rate is worked out from it.
   const feeNotTrusted = ok(await b.banking.createTransaction({
     type: 'RECEIVE', transactionAt: bankAt, toAccountId: kbz.id,
     fromAccountNumber: '09-111-2222', fromName: 'A customer',
     toAccountNumber: '001-22-3333', toName: 'Green Mobile',
-    amount: 100000, feeBasisPoints: 100, feeDirection: 'PAY',
-    feeAmount: 99999999,
+    amount: 100000, feeBasisPoints: 0, feeDirection: 'PAY',
+    feeAmount: 1000,
   }));
-  add('a fee sent as money is ignored and recalculated',
-      feeNotTrusted?.feeAmount === 1000, String(feeNotTrusted?.feeAmount));
+  add('a fee typed in money is stored with its rate',
+      feeNotTrusted?.feeAmount === 1000 && feeNotTrusted?.feeBasisPoints === 100,
+      feeNotTrusted?.feeAmount + ' at ' + feeNotTrusted?.feeBasisPoints + 'bp');
+
+  const feeOverAmount = err(await b.banking.createTransaction({
+    type: 'RECEIVE', transactionAt: bankAt, toAccountId: kbz.id,
+    fromAccountNumber: '09-111-2222', fromName: 'A customer',
+    toAccountNumber: '001-22-3333', toName: 'Green Mobile',
+    amount: 100000, feeBasisPoints: 0, feeDirection: 'RECEIVE', feeAmount: 100001,
+  }));
+  add('a typed fee above the amount is refused', feeOverAmount?.code === 'VALIDATION', feeOverAmount?.code);
 
   const feeTooHigh = err(await b.banking.createTransaction({
     type: 'RECEIVE', transactionAt: bankAt, toAccountId: kbz.id,

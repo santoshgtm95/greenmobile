@@ -626,17 +626,22 @@ const bankMovementFields = {
    * The fee on this movement as basis points of the amount: 50 == 0.5%.
    *
    * zBasisPoints is already capped at 10,000, which is 100% — the ceiling the
-   * form offers. Note what is NOT here: the fee in money. The renderer shows a
-   * running figure while the user types, but the stored one is worked out in
-   * the main process from the amount and this rate, for the same reason a
-   * cart never sends a price (§68).
+   * form offers. The fee in money is worked out in the main process from the
+   * amount and this rate, unless the user typed the fee itself (feeAmount):
+   * then that figure is stored and the rate is derived from it.
    */
   feeBasisPoints: zBasisPoints.default(0),
+  /** A fee the user typed in money. When present it wins over the rate. */
+  feeAmount: zMinor.optional(),
   feeDirection: z.enum(BANK_FEE_DIRECTIONS).default('RECEIVE'),
   /** A flat charge in minor units, added to the actual amount. */
   otherFees: zMinor.default(0),
   notes: zOptionalText,
 };
+
+const feeWithinAmount = (v: { amount: number; feeAmount?: number }) =>
+  v.feeAmount === undefined || v.feeAmount <= v.amount;
+const FEE_WITHIN_AMOUNT = { message: 'The fee cannot be more than the amount', path: ['feeAmount'] };
 
 const OWN_ACCOUNT_LEFT = {
   message: 'Choose which of your accounts the money left',
@@ -658,6 +663,7 @@ export const zCreateBankTransaction = z
     message: 'Only a Cash Out can include the fee in the amount',
     path: ['feeIncluded'],
   })
+  .refine(feeWithinAmount, FEE_WITHIN_AMOUNT)
   // The shop's own account is on the side the money moved, so that per-account
   // balances and the headline totals can never tell different stories. The main
   // process checks this too; here it puts the message on the right field.
@@ -713,11 +719,13 @@ export const zWithdrawBankAdvance = z
     toName: z.string().trim().min(1, 'Enter the name on the account or Cash').max(200).default('Cash'),
     amount: zMinor.refine((v) => v > 0, 'Amount must be more than zero'),
     feeBasisPoints: zBasisPoints.default(0),
+    feeAmount: zMinor.optional(),
     feeDirection: z.enum(BANK_FEE_DIRECTIONS).default('RECEIVE'),
     otherFees: zMinor.default(0),
     notes: zOptionalText,
     withdrawalMethod: z.enum(['cash', 'account']).optional(),
   })
+  .refine(feeWithinAmount, FEE_WITHIN_AMOUNT)
   .refine(
     (v) =>
       (v.withdrawalMethod ?? (v.toName.trim().toLowerCase() === 'cash' ? 'cash' : 'account')) === 'cash' ||
@@ -745,6 +753,8 @@ export const zBankTransactionListQuery = z.object({
   type: zBankTransactionType.optional(),
   /** Matches either side of the movement. */
   accountId: zId.optional(),
+  /** One of the shop's own accounts (provider + account number), either side. */
+  shopAccountId: zId.optional(),
   includeDeleted: z.boolean().default(false),
   page: z.number().int().min(0).max(100_000).default(0),
   pageSize: z.number().int().min(1).max(200).default(50),
@@ -839,6 +849,8 @@ export const zReceiveShopAdvance = z
     // Cash: the shop pays the fee. Transfer: the shop receives it, on top of
     // the repayment unless the payer already included it.
     feeBasisPoints: zBasisPoints.default(0),
+    /** A fee the user typed in money. When present it wins over the rate. */
+    feeAmount: zMinor.optional(),
     feeIncluded: z.boolean().optional(),
     // Transfer only: the account the money came from.
     fromAccountId: zId.optional(),
@@ -850,6 +862,7 @@ export const zReceiveShopAdvance = z
       .regex(LOCAL_DATE_TIME_PATTERN, 'Use the date and time picker'),
     notes: zOptionalText,
   })
+  .refine(feeWithinAmount, FEE_WITHIN_AMOUNT)
   .refine(
     (d) => d.toType !== 'SHOP_ACCOUNT' || Boolean(d.fromAccountNumber),
     { message: 'Enter the account number it came from', path: ['fromAccountNumber'] },

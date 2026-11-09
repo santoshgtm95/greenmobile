@@ -9,7 +9,6 @@ import {
   DialogTitle,
   Divider,
   FormControlLabel,
-  InputAdornment,
   MenuItem,
   Paper,
   Stack,
@@ -30,7 +29,7 @@ import { nowLocalDateTime } from '@shared/datetime';
 import { addMoney, bankFee, formatRate, subtractMoney } from '@shared/money';
 import type { ShopAdvance, ShopBankAccount } from '@shared/api';
 import type { ShopAdvanceSourceType } from '@shared/domain';
-import { percentToBasisPoints, Section, SummaryLine, TypeButton } from './MovementParts';
+import { FeeFields, Section, SummaryLine, TypeButton, useFeeInput } from './MovementParts';
 
 /**
  * Money lent out by the shop coming back.
@@ -57,7 +56,6 @@ export default function ShopAdvanceReceiveDialog({
   const [toType, setToType] = useState<ShopAdvanceSourceType>('SHOP_ACCOUNT');
   const [toShopAccountId, setToShopAccountId] = useState(shopAccounts[0]?.id ?? '');
   const [amount, setAmount] = useState(advance.remaining);
-  const [percentText, setPercentText] = useState('0');
   const [feeIncluded, setFeeIncluded] = useState(false);
   const [fromBankId, setFromBankId] = useState('');
   const [fromNumber, setFromNumber] = useState('');
@@ -75,9 +73,9 @@ export default function ShopAdvanceReceiveDialog({
   const isCash = toType === 'CASH';
   const included = !isCash && feeIncluded;
   const shopAccount = shopAccounts.find((a) => a.id === toShopAccountId) ?? null;
-  const feeBasisPoints = percentToBasisPoints(percentText);
   // Worked out with the same function the main process uses.
-  const fee = feeBasisPoints === null ? 0 : bankFee(amount, feeBasisPoints, included);
+  const feeInput = useFeeInput(amount, included);
+  const { fee, basisPoints: feeBasisPoints } = feeInput;
   const principal = included ? subtractMoney(amount, fee) : amount;
   const total = isCash ? subtractMoney(amount, fee) : included ? amount : addMoney(amount, fee);
   const overRemaining = principal > advance.remaining;
@@ -90,7 +88,7 @@ export default function ShopAdvanceReceiveDialog({
         toType,
         toShopAccountId: isCash ? undefined : toShopAccountId,
         amount,
-        feeBasisPoints: feeBasisPoints ?? 0,
+        ...feeInput.payload,
         feeIncluded: included,
         fromAccountId: isCash ? undefined : fromBankId || undefined,
         fromAccountNumber: isCash ? undefined : fromNumber.trim(),
@@ -113,7 +111,7 @@ export default function ShopAdvanceReceiveDialog({
     !save.isPending &&
     principal > 0 &&
     !overRemaining &&
-    feeBasisPoints !== null &&
+    feeInput.valid &&
     (isCash || (shopAccount !== null && fromNumber.trim() !== '' && fromName.trim() !== '')) &&
     Boolean(receivedAt);
 
@@ -134,7 +132,10 @@ export default function ShopAdvanceReceiveDialog({
                 onClick={() =>
                   setAmount(
                     included
-                      ? addMoney(advance.remaining, bankFee(advance.remaining, feeBasisPoints ?? 0))
+                      ? addMoney(
+                          advance.remaining,
+                          feeInput.typed ? fee : bankFee(advance.remaining, feeBasisPoints ?? 0),
+                        )
                       : advance.remaining,
                   )
                 }
@@ -252,21 +253,7 @@ export default function ShopAdvanceReceiveDialog({
                 }
                 sx={{ flex: 1.4 }}
               />
-              <TextField
-                label="Fee"
-                value={percentText}
-                onChange={(e) => setPercentText(e.target.value)}
-                onBlur={() => {
-                  if (feeBasisPoints !== null) setPercentText(formatRate(feeBasisPoints).replace('%', ''));
-                }}
-                inputMode="decimal"
-                error={feeBasisPoints === null || Boolean(fieldErrors.feeBasisPoints)}
-                helperText={feeBasisPoints === null ? '0 to 100' : fieldErrors.feeBasisPoints}
-                slotProps={{
-                  input: { endAdornment: <InputAdornment position="end">%</InputAdornment> },
-                }}
-                sx={{ flex: 0.8 }}
-              />
+              <FeeFields input={feeInput} errors={fieldErrors} />
             </Stack>
             {isCash ? (
               <Typography variant="caption" color="text.secondary">

@@ -685,6 +685,8 @@ export interface BankingOverview {
     /** Fees the shop earned over the period, and fees it was charged. */
     feeReceived: number;
     feePaid: number;
+    /** Flat bank charges paid: transactions, customer advances, shop advances, internal transfers. */
+    bankCharges: number;
     /**
      * net + feeReceived - feePaid: what the shop is up once fees are counted.
      * Not the sum of the list's Actual column, which adds money in to money out.

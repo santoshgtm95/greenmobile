@@ -201,6 +201,33 @@ export function bankFee(amount: number, basisPoints: number, included = false): 
   return included ? taxFromInclusive(amount, basisPoints).tax : rateOf(amount, basisPoints);
 }
 
+/** The rate a typed fee works out to, to the nearest basis point (kept for display). */
+export function feeRateOf(amount: number, fee: number, included = false): number {
+  const base = included ? amount - fee : amount;
+  return base > 0 ? Math.min(10_000, roundHalfUp((fee * 10_000) / base)) : 0;
+}
+
+/**
+ * The fee to store and the rate shown beside it. A fee the user typed is taken
+ * as it is (the rate is then only a rounded description of it); otherwise the
+ * fee is worked out from the rate.
+ */
+export function resolveFee(
+  amount: number,
+  basisPoints: number,
+  typedFee?: number,
+  included = false,
+): { feeAmount: number; feeBasisPoints: number } {
+  if (typedFee === undefined) {
+    return { feeAmount: bankFee(amount, basisPoints, included), feeBasisPoints: basisPoints };
+  }
+  assertSafeMinor(typedFee, "fee");
+  if (typedFee < 0 || typedFee > amount) {
+    throw new MoneyError(`fee must be between 0 and the amount, got ${typedFee}`);
+  }
+  return { feeAmount: typedFee, feeBasisPoints: feeRateOf(amount, typedFee, included) };
+}
+
 /**
  * Distributes a sale-level amount (a whole-basket discount) across lines in
  * proportion to their value, giving any rounding remainder to the largest

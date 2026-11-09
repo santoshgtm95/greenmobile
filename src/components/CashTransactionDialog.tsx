@@ -9,7 +9,6 @@ import {
   DialogTitle,
   Divider,
   FormControlLabel,
-  InputAdornment,
   MenuItem,
   Paper,
   Stack,
@@ -26,8 +25,8 @@ import ShopAccountSelect from "./ShopAccountSelect";
 import CashInHandBox from "./CashInHandBox";
 import { useMoneyFormatter } from "../hooks/useSettings";
 import { PosApiError } from "@shared/errors";
-import { addMoney, bankFee, formatRate, subtractMoney } from "@shared/money";
-import { percentToBasisPoints, Section, SummaryLine, TypeButton } from "./MovementParts";
+import { addMoney, formatRate, subtractMoney } from "@shared/money";
+import { FeeFields, Section, SummaryLine, TypeButton, useFeeInput } from "./MovementParts";
 import { nowLocalDateTime } from "@shared/datetime";
 import type { BankTransactionType } from "@shared/domain";
 import type { BankAccount } from "@shared/api";
@@ -63,8 +62,6 @@ export default function CashTransactionDialog({
   const [customerNumber, setCustomerNumber] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [amount, setAmount] = useState(0);
-  // Held as typed text so "0." on the way to "0.5" is not snapped back.
-  const [percentText, setPercentText] = useState("0");
   const [feeIncluded, setFeeIncluded] = useState(false);
   const [otherFees, setOtherFees] = useState(0);
   const [transactionAt, setTransactionAt] = useState(nowLocalDateTime());
@@ -84,9 +81,9 @@ export default function CashTransactionDialog({
   const own = isCashIn ? "from" : "to";
   const customer = isCashIn ? "to" : "from";
 
-  const feeBasisPoints = percentToBasisPoints(percentText);
   const included = !isCashIn && feeIncluded;
-  const fee = feeBasisPoints === null ? 0 : bankFee(amount, feeBasisPoints, included);
+  const feeInput = useFeeInput(amount, included);
+  const { fee, basisPoints: feeBasisPoints } = feeInput;
   // Both ways, the cash that changes hands is the amount less the fee.
   const cash = subtractMoney(amount, fee);
   const charges = isCashIn ? otherFees : 0;
@@ -114,8 +111,8 @@ export default function CashTransactionDialog({
         toAccountNumber: to.number,
         toName: to.name,
         amount,
-        // The rate, not the money: the main process works the fee out itself.
-        feeBasisPoints: feeBasisPoints ?? 0,
+        // The rate, plus the money when it was typed; the main process decides.
+        ...feeInput.payload,
         feeDirection: isCashIn ? "PAY" : "RECEIVE",
         feeIncluded: included,
         otherFees: charges,
@@ -137,7 +134,7 @@ export default function CashTransactionDialog({
     !save.isPending &&
     shopAccount !== null &&
     amount > 0 &&
-    feeBasisPoints !== null &&
+    feeInput.valid &&
     customerNumber.trim() !== "" &&
     customerName.trim() !== "" &&
     Boolean(transactionAt);
@@ -253,21 +250,6 @@ export default function CashTransactionDialog({
                 helperText={fieldErrors.amount}
                 sx={{ flex: 1.4 }}
               />
-              <TextField
-                label="Fee"
-                value={percentText}
-                onChange={(e) => setPercentText(e.target.value)}
-                onBlur={() => {
-                  if (feeBasisPoints !== null) setPercentText(formatRate(feeBasisPoints).replace("%", ""));
-                }}
-                inputMode="decimal"
-                error={feeBasisPoints === null || Boolean(fieldErrors.feeBasisPoints)}
-                helperText={feeBasisPoints === null ? "0 to 100" : fieldErrors.feeBasisPoints}
-                slotProps={{
-                  input: { endAdornment: <InputAdornment position="end">%</InputAdornment> },
-                }}
-                sx={{ flex: 0.8 }}
-              />
               {isCashIn && (
                 <MoneyField
                   label="Bank charges"
@@ -278,6 +260,9 @@ export default function CashTransactionDialog({
                   sx={{ flex: 1.2 }}
                 />
               )}
+            </Stack>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <FeeFields input={feeInput} errors={fieldErrors} />
             </Stack>
             {isCashIn ? (
               <Typography variant="caption" color="text.secondary">
