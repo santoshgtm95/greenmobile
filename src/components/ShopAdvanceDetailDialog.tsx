@@ -120,6 +120,11 @@ export default function ShopAdvanceDetailDialog({
                       <Typography variant="h6" sx={{ fontWeight: 700 }}>
                         {money(advance.amount)}
                       </Typography>
+                      {advance.bankCharges > 0 && (
+                        <Typography variant="caption" color="text.secondary">
+                          + {money(advance.bankCharges)} bank charges paid by the shop
+                        </Typography>
+                      )}
                     </Box>
                     <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' } }} />
                     <Box sx={{ textAlign: 'center' }}>
@@ -272,7 +277,14 @@ export default function ShopAdvanceDetailDialog({
                                 ? 'Cash'
                                 : `${p.toBankName ? `${p.toBankName} · ` : ''}${p.toAccountNumber}`}
                             </TableCell>
-                            <TableCell align="right" sx={{ fontWeight: 700 }}>{money(p.amount)}</TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 700 }}>
+                              {money(p.amount)}
+                              {p.bankCharges > 0 && (
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                  + {money(p.bankCharges)} bank charges
+                                </Typography>
+                              )}
+                            </TableCell>
                             <TableCell>{p.notes || '—'}</TableCell>
                             {canDelete && (
                               <TableCell align="right">

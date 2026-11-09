@@ -52,6 +52,7 @@ export const SETTING_KEYS = [
   'autoBackupFrequency',
   'autoBackupKeep',
   'lastAutoBackupDay',
+  'lastAutoBackupAt',
 
   // First-run state (spec §88)
   'setupCompleted',
@@ -101,6 +102,8 @@ export const DEFAULT_SETTINGS: Record<SettingKey, string> = {
   autoBackupFrequency: 'DAILY',
   autoBackupKeep: '10',
   lastAutoBackupDay: '',
+  /** ISO instant of the last automatic backup; the hourly schedule needs more than a day. */
+  lastAutoBackupAt: '',
 
   setupCompleted: 'false',
 
@@ -182,7 +185,7 @@ export interface ShopSettings {
   lowStockThreshold: number;
   allowNegativeStock: boolean;
   backupLocation: string;
-  autoBackupFrequency: 'DISABLED' | 'DAILY' | 'WEEKLY';
+  autoBackupFrequency: 'DISABLED' | 'HOURLY' | 'DAILY' | 'WEEKLY';
   autoBackupKeep: number;
   setupCompleted: boolean;
 }

@@ -700,6 +700,7 @@ model ShopAdvance {
   toAccountNumber   String?
   toAccountName     String?
   amount            Int
+  bankCharges       Int      @default(0)
   notes             String?
   /// Set on a later payment made on an existing advance.
   parentId          String?

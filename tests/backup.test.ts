@@ -358,6 +358,17 @@ describe("the automatic schedule", () => {
     expect(automaticBackupDue("WEEKLY", addDays(TODAY, -7), TODAY)).toBe(true);
   });
 
+  it("runs an hourly backup once the hour has passed", () => {
+    const now = Date.parse("2026-11-06T10:00:00Z");
+    expect(automaticBackupDue("HOURLY", TODAY, TODAY, "", now)).toBe(true);
+    expect(
+      automaticBackupDue("HOURLY", TODAY, TODAY, "2026-11-06T09:30:00Z", now),
+    ).toBe(false);
+    expect(
+      automaticBackupDue("HOURLY", TODAY, TODAY, "2026-11-06T09:00:00Z", now),
+    ).toBe(true);
+  });
+
   it("takes the backup, prunes, and stamps the day", () => {
     seedProduct();
     setSettings(

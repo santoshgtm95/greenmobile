@@ -458,5 +458,5 @@ export type ReceiptWidth = (typeof RECEIPT_WIDTHS)[number];
 export const TAX_MODES = ["EXCLUSIVE", "INCLUSIVE"] as const;
 export type TaxMode = (typeof TAX_MODES)[number];
 
-export const AUTO_BACKUP_FREQUENCIES = ["DISABLED", "DAILY", "WEEKLY"] as const;
+export const AUTO_BACKUP_FREQUENCIES = ["DISABLED", "HOURLY", "DAILY", "WEEKLY"] as const;
 export type AutoBackupFrequency = (typeof AUTO_BACKUP_FREQUENCIES)[number];

@@ -48,6 +48,7 @@ import {
   listShopAdvances,
   deleteShopAdvance,
   deleteShopAdvanceSettlement,
+  getShopBankAccountHistory,
 } from '../electron/services/banking.service';
 import { AppError } from '../shared/errors';
 import { businessDay, addDays, nowLocalDateTime, localDateTimeToInstant } from '../shared/datetime';
@@ -2518,6 +2519,32 @@ describe('audit trail', () => {
 
       const updatedAcct = getShopBankAccount(shopAcct.id, ctx.db);
       expect(updatedAcct.balance).toBe(600_000);
+    });
+
+    it('takes bank charges from the shop account on top of the amount, not from the recipient', () => {
+      const shopAcct = saveShopBankAccount(
+        { bankAccountId: kpay, accountNumber: '09 222 333 444', accountName: 'Shop Kpay 3', balance: 1_000_000, isActive: true },
+        actor,
+        ctx.db,
+      );
+      const send = (amount: number, bankCharges: number) =>
+        createShopAdvance(
+          { fromType: 'SHOP_ACCOUNT', fromShopAccountId: shopAcct.id, toType: 'ACCOUNT', recipientName: 'U Mya', toAccountNumber: '987654', amount, bankCharges, advanceAt: at() },
+          actor,
+          ctx.db,
+        );
+
+      // 900,000 fits the balance, but not with 200,000 of charges on top.
+      expect(captureError(() => send(900_000, 200_000)).message).toContain('including the bank charges');
+
+      const adv = send(400_000, 2_000);
+      expect([adv.amount, adv.bankCharges, adv.remaining]).toEqual([400_000, 2_000, 400_000]);
+      expect(getShopBankAccount(shopAcct.id, ctx.db).balance).toBe(598_000);
+      const history = getShopBankAccountHistory({ id: shopAcct.id }, ctx.db).transactions;
+      expect(history.find((t) => t.reference === adv.advanceNumber)?.outAmount).toBe(402_000);
+
+      deleteShopAdvance(adv.id, 'Typo', actor, ctx.db);
+      expect(getShopBankAccount(shopAcct.id, ctx.db).balance).toBe(1_000_000);
     });
 
     it('refuses shop advance from shop account when amount exceeds balance', () => {

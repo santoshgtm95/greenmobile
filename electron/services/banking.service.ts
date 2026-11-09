@@ -342,7 +342,7 @@ export function listShopBankAccounts(
                            WHERE i.fromShopAccountId = s.id AND i.isDeleted = 0), 0)
               + COALESCE((SELECT SUM(sas.actualAmount) FROM "ShopAdvanceSettlement" sas
                            WHERE sas.toShopAccountId = s.id AND sas.isDeleted = 0), 0)
-              - COALESCE((SELECT SUM(sa.amount) FROM "ShopAdvance" sa
+              - COALESCE((SELECT SUM(sa.amount + sa.bankCharges) FROM "ShopAdvance" sa
                            WHERE sa.fromShopAccountId = s.id AND sa.isDeleted = 0), 0)
               + COALESCE((SELECT SUM(e.amount) FROM "ShopAccountEntry" e
                            WHERE e.shopAccountId = s.id), 0) AS calculatedBalance,
@@ -382,7 +382,7 @@ export function getShopBankAccount(id: string, db: Db = getDatabase()): ShopBank
                            WHERE i.fromShopAccountId = s.id AND i.isDeleted = 0), 0)
               + COALESCE((SELECT SUM(sas.actualAmount) FROM "ShopAdvanceSettlement" sas
                            WHERE sas.toShopAccountId = s.id AND sas.isDeleted = 0), 0)
-              - COALESCE((SELECT SUM(sa.amount) FROM "ShopAdvance" sa
+              - COALESCE((SELECT SUM(sa.amount + sa.bankCharges) FROM "ShopAdvance" sa
                            WHERE sa.fromShopAccountId = s.id AND sa.isDeleted = 0), 0)
               + COALESCE((SELECT SUM(e.amount) FROM "ShopAccountEntry" e
                            WHERE e.shopAccountId = s.id), 0) AS calculatedBalance,
@@ -817,7 +817,7 @@ export function getShopBankAccountHistory(
               sa.recipientName, sa.recipientPhone,
               sa.toBankName, sa.toAccountNumber, sa.toAccountName,
               sa.toType,
-              sa.amount, sa.notes,
+              sa.amount, sa.bankCharges, sa.notes,
               u.fullName AS createdByName
          FROM "ShopAdvance" sa
          LEFT JOIN "User" u ON u.id = sa.createdBy
@@ -837,6 +837,7 @@ export function getShopBankAccountHistory(
       toAccountName: string | null;
       toType: string;
       amount: number;
+      bankCharges: number;
       notes: string | null;
       createdByName: string | null;
     }>;
@@ -865,9 +866,9 @@ export function getShopBankAccountHistory(
       toAccount: sa.toAccountNumber || undefined,
       amount: sa.amount,
       inAmount: 0,
-      outAmount: sa.amount,
-      feeAmount: 0,
-      netAmount: -sa.amount,
+      outAmount: sa.amount + sa.bankCharges,
+      feeAmount: sa.bankCharges,
+      netAmount: -(sa.amount + sa.bankCharges),
       runningBalance: 0,
       notes: sa.notes || null,
       createdByName: sa.createdByName || null,
@@ -2140,7 +2141,7 @@ export function bankingOverview(
                 + COALESCE((SELECT SUM(sas.actualAmount) FROM "ShopAdvanceSettlement" sas
                              JOIN "ShopBankAccount" s ON s.id = sas.toShopAccountId
                             WHERE s.bankAccountId = a.id AND sas.isDeleted = 0), 0)
-                - COALESCE((SELECT SUM(sa.amount) FROM "ShopAdvance" sa
+                - COALESCE((SELECT SUM(sa.amount + sa.bankCharges) FROM "ShopAdvance" sa
                              JOIN "ShopBankAccount" s ON s.id = sa.fromShopAccountId
                             WHERE s.bankAccountId = a.id AND sa.isDeleted = 0), 0)
                 + COALESCE((SELECT SUM(e.amount) FROM "ShopAccountEntry" e
@@ -2549,6 +2550,8 @@ export interface ShopAdvanceRow {
   toAccountNumber: string | null;
   toAccountName: string | null;
   amount: number;
+  /** Charged to the shop's account on top of the amount; the recipient does not owe it. */
+  bankCharges: number;
   advanceDate: string;
   advanceDay: string;
   notes: string | null;
@@ -2604,6 +2607,8 @@ const SHOP_ADVANCE_BASE_SELECT = `
          sa.toBankName, sa.toAccountNumber, sa.toAccountName,
          sa.amount + COALESCE((SELECT SUM(p.amount) FROM "ShopAdvance" p
                                 WHERE p.parentId = sa.id AND p.isDeleted = 0), 0) AS amount,
+         sa.bankCharges + COALESCE((SELECT SUM(p.bankCharges) FROM "ShopAdvance" p
+                                     WHERE p.parentId = sa.id AND p.isDeleted = 0), 0) AS bankCharges,
          sa.notes, sa.parentId,
          sa.isDeleted, sa.deletedReason,
          sa.createdBy, u.fullName AS createdByName,
@@ -2646,7 +2651,7 @@ export type ShopAdvancePaymentRow = Pick<
   ShopAdvanceRow,
   | 'id' | 'advanceNumber' | 'advanceDate' | 'fromType' | 'fromBankName' | 'fromAccountNumber'
   | 'fromAccountName' | 'toType' | 'toBankName' | 'toAccountNumber' | 'toAccountName'
-  | 'amount' | 'notes' | 'parentId'
+  | 'amount' | 'bankCharges' | 'notes' | 'parentId'
 >;
 
 export function getShopAdvance(
@@ -2662,7 +2667,7 @@ export function getShopAdvance(
     .prepare(
       `SELECT id, advanceNumber, advanceDate, fromType, fromBankName, fromAccountNumber,
               fromAccountName, toType, toBankName, toAccountNumber, toAccountName,
-              amount, notes, parentId
+              amount, bankCharges, notes, parentId
          FROM "ShopAdvance"
         WHERE id = ? OR (parentId = ? AND isDeleted = 0)
         ORDER BY advanceDate ASC, createdAt ASC`,
@@ -2786,6 +2791,10 @@ export function createShopAdvance(
       recipientPhone = parent.recipientPhone;
     }
 
+    // Only a transfer from a shop account to a bank or wallet carries bank charges.
+    const bankCharges =
+      input.fromType === 'SHOP_ACCOUNT' && input.toType === 'ACCOUNT' ? (input.bankCharges ?? 0) : 0;
+
     let fromBankName: string | null = null;
     let fromBankKey: string | null = null;
     let fromAccountNumber: string | null = null;
@@ -2812,9 +2821,9 @@ export function createShopAdvance(
           fromShopAccountId: 'Account is inactive',
         });
       }
-      if (input.amount > fromShopAccount.balance) {
+      if (addMoney(input.amount, bankCharges) > fromShopAccount.balance) {
         throw errors.validation(
-          `Cannot advance more than current balance (${formatMoney(fromShopAccount.balance)}) of "${fromShopAccount.accountName}".`,
+          `Cannot advance more than current balance (${formatMoney(fromShopAccount.balance)}) of "${fromShopAccount.accountName}"${bankCharges ? ', including the bank charges' : ''}.`,
           { amount: `Exceeds current balance of ${formatMoney(fromShopAccount.balance)}` },
         );
       }
@@ -2853,10 +2862,10 @@ export function createShopAdvance(
          fromBankName, fromBankKey, fromAccountNumber, fromAccountName,
          toType, recipientName, recipientPhone,
          toBankName, toAccountNumber, toAccountName,
-         amount, notes, parentId,
+         amount, bankCharges, notes, parentId,
          isDeleted, deletedReason,
          createdBy, createdAt, updatedAt
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
     ).run(
       id,
       advanceNumber,
@@ -2875,6 +2884,7 @@ export function createShopAdvance(
       toAccountNumber,
       toAccountName,
       input.amount,
+      bankCharges,
       input.notes?.trim() || null,
       input.parentId ?? null,
       actor.id,

@@ -57,6 +57,7 @@ export default function ShopAdvanceDialog({
   const [toAccountName, setToAccountName] = useState(parent?.toAccountName ?? '');
 
   const [amount, setAmount] = useState(0);
+  const [bankCharges, setBankCharges] = useState(0);
   const [advanceAt, setAdvanceAt] = useState(nowLocalDateTime());
   const [notes, setNotes] = useState('');
 
@@ -69,7 +70,10 @@ export default function ShopAdvanceDialog({
   // An old record takes nothing from the shop, so there is no balance to check.
   const sourceBalance =
     fromType === 'OLD' ? Infinity : fromType === 'CASH' ? cashInHandAmount : (fromAccount?.balance ?? 0);
-  const exceedsBalance = amount > sourceBalance;
+  // Only a shop account → bank/wallet transfer carries bank charges, paid on top of the amount.
+  const hasCharges = fromType === 'SHOP_ACCOUNT' && toType === 'ACCOUNT';
+  const charges = hasCharges ? bankCharges : 0;
+  const exceedsBalance = amount + charges > sourceBalance;
   const isSourceEmpty = sourceBalance <= 0;
 
   const save = useMutation({
@@ -84,6 +88,7 @@ export default function ShopAdvanceDialog({
         toAccountNumber: toType === 'ACCOUNT' ? toAccountNumber.trim() : undefined,
         toAccountName: toType === 'ACCOUNT' ? toAccountName.trim() || undefined : undefined,
         amount,
+        bankCharges: charges || undefined,
         parentId: parent?.id,
         advanceAt,
         notes: notes.trim() || undefined,
@@ -335,25 +340,37 @@ export default function ShopAdvanceDialog({
 
           {/* Amount Field */}
           <Box>
-            <MoneyField
-              label="Advance Amount"
-              required
-              fullWidth
-              value={amount}
-              onChange={setAmount}
-              error={Boolean(fieldErrors.amount) || exceedsBalance}
-              helperText={
-                exceedsBalance
-                  ? `Cannot advance more than available balance (${money(sourceBalance)})`
-                  : isSourceEmpty
-                    ? 'Source has zero or negative balance'
-                    : fieldErrors.amount
-              }
-            />
-            {fromType !== 'OLD' && sourceBalance > 0 && (
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <MoneyField
+                label="Advance Amount"
+                required
+                fullWidth
+                value={amount}
+                onChange={setAmount}
+                error={Boolean(fieldErrors.amount) || exceedsBalance}
+                helperText={
+                  exceedsBalance
+                    ? `Cannot advance more than available balance (${money(sourceBalance)})${charges ? ' including bank charges' : ''}`
+                    : isSourceEmpty
+                      ? 'Source has zero or negative balance'
+                      : fieldErrors.amount
+                }
+              />
+              {hasCharges && (
+                <MoneyField
+                  label="Bank Charges"
+                  fullWidth
+                  value={bankCharges}
+                  onChange={setBankCharges}
+                  error={Boolean(fieldErrors.bankCharges)}
+                  helperText={fieldErrors.bankCharges ?? 'Paid by the shop, not owed by the recipient'}
+                />
+              )}
+            </Stack>
+            {fromType !== 'OLD' && sourceBalance > charges && (
               <Stack direction="row" sx={{ justifyContent: 'flex-end', mt: 0.5 }}>
-                <Button size="small" onClick={() => setAmount(sourceBalance)}>
-                  Max ({money(sourceBalance)})
+                <Button size="small" onClick={() => setAmount(sourceBalance - charges)}>
+                  Max ({money(sourceBalance - charges)})
                 </Button>
               </Stack>
             )}

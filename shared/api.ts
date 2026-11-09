@@ -449,6 +449,8 @@ export interface ShopAdvance {
   toAccountName: string | null;
   /** Every payment given on this advance, added up. */
   amount: number;
+  /** Bank charges the shop paid on those payments; not owed by the recipient. */
+  bankCharges: number;
   advanceDate: string;
   advanceDay: string;
   notes: string | null;
@@ -511,7 +513,7 @@ export type ShopAdvancePayment = Pick<
   ShopAdvance,
   | 'id' | 'advanceNumber' | 'advanceDate' | 'fromType' | 'fromBankName' | 'fromAccountNumber'
   | 'fromAccountName' | 'toType' | 'toBankName' | 'toAccountNumber' | 'toAccountName'
-  | 'amount' | 'notes' | 'parentId'
+  | 'amount' | 'bankCharges' | 'notes' | 'parentId'
 >;
 
 export interface ShopAdvanceDetailResult {

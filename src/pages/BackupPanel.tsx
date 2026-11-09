@@ -243,7 +243,14 @@ export default function BackupPanel() {
           >
             {AUTO_BACKUP_FREQUENCIES.map((option) => (
               <MenuItem key={option} value={option}>
-                {option === 'DISABLED' ? 'Never' : option === 'DAILY' ? 'Every day' : 'Every week'}
+                {
+                  {
+                    DISABLED: 'Never',
+                    HOURLY: 'Every hour',
+                    DAILY: 'Every day',
+                    WEEKLY: 'Every week',
+                  }[option]
+                }
               </MenuItem>
             ))}
           </TextField>
@@ -255,7 +262,8 @@ export default function BackupPanel() {
             sx={{ width: 180 }}
             value={data?.autoBackupKeep ?? 10}
             disabled={!data || updateSchedule.isPending}
-            onChange={(e) => updateSchedule.mutate({ autoBackupKeep: e.target.value })}
+            // The menu values are numbers; settings are stored as text.
+            onChange={(e) => updateSchedule.mutate({ autoBackupKeep: String(e.target.value) })}
           >
             {BACKUP_KEEP_OPTIONS.map((option) => (
               <MenuItem key={option} value={option}>
@@ -271,7 +279,7 @@ export default function BackupPanel() {
           </Typography>
         </Stack>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-          Runs when the application starts. Only automatic backups are ever removed — backups you
+          Runs when the application starts and while it is open. Only automatic backups are ever removed — backups you
           made yourself, and the ones taken before an update or a restore, are kept until you delete
           them.
         </Typography>

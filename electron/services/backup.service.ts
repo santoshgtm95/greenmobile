@@ -257,8 +257,12 @@ export function automaticBackupDue(
   frequency: ShopSettings["autoBackupFrequency"],
   lastDay: string,
   today: string = businessDay(),
+  lastAt = "",
+  now: number = Date.now(),
 ): boolean {
   if (frequency === "DISABLED") return false;
+  if (frequency === "HOURLY")
+    return !lastAt || now - Date.parse(lastAt) >= 60 * 60 * 1000;
   if (!lastDay) return true;
   if (frequency === "DAILY") return today > lastDay;
   return today >= addDays(lastDay, 7);
@@ -282,6 +286,8 @@ export function runAutomaticBackupIfDue(
     !automaticBackupDue(
       settings.autoBackupFrequency,
       getRaw("lastAutoBackupDay", db),
+      businessDay(),
+      getRaw("lastAutoBackupAt", db),
     )
   ) {
     return null;
@@ -293,6 +299,7 @@ export function runAutomaticBackupIfDue(
     pruneAutomaticBackups(dir, settings.autoBackupKeep);
     // Stamped after the file exists, so a failure retries on the next start.
     setSetting("lastAutoBackupDay", businessDay(), null, db);
+    setSetting("lastAutoBackupAt", new Date().toISOString(), null, db);
     recordAudit(
       {
         userId: null,

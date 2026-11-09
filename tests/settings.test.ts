@@ -207,7 +207,7 @@ describe('reading settings as typed values', () => {
         taxMode: 'SIDEWAYS',
         receiptWidth: '32mm',
         lowStockThreshold: '-5',
-        autoBackupFrequency: 'HOURLY',
+        autoBackupFrequency: 'MINUTELY',
       },
       actorId,
       ctx.db,

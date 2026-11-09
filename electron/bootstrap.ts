@@ -77,6 +77,18 @@ export function startup(): StartupContext | null {
     // Scheduled backup (spec §54). Never allowed to stop the shop opening, so
     // the service logs and swallows its own failures.
     runAutomaticBackupIfDue(backupsDir(), database.db);
+    // The shop stays open all day, so the hourly (and overnight daily) schedule
+    // is also checked while running. getDatabase() is read each time: a restore
+    // swaps the connection.
+    setInterval(() => {
+      try {
+        runAutomaticBackupIfDue(backupsDir());
+      } catch (err) {
+        logger.warn("Scheduled backup check failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }, 5 * 60 * 1000).unref();
 
     return { database };
   } catch (err) {

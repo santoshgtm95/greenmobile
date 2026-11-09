@@ -60,7 +60,7 @@ export interface BackupOverview {
   backups: BackupFile[];
   /** Size of the live database, so the user can judge free space. */
   databaseSizeBytes: number;
-  autoBackupFrequency: 'DISABLED' | 'DAILY' | 'WEEKLY';
+  autoBackupFrequency: 'DISABLED' | 'HOURLY' | 'DAILY' | 'WEEKLY';
   autoBackupKeep: number;
   /** Business day the last automatic backup ran, or '' if never. */
   lastAutoBackupDay: string;
