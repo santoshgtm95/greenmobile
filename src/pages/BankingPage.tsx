@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react";
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   Box,
   Button,
@@ -33,6 +36,7 @@ import PercentIcon from "@mui/icons-material/Percent";
 import CalculateOutlinedIcon from "@mui/icons-material/CalculateOutlined";
 import EditIcon from "@mui/icons-material/Edit";
 import HistoryIcon from "@mui/icons-material/History";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuth } from "../hooks/useAuth";
@@ -44,8 +48,10 @@ import RegisterShopAccountsDialog from "../components/RegisterShopAccountsDialog
 import CashTransactionDialog from "../components/CashTransactionDialog";
 import CashCountDialog from "../components/CashCountDialog";
 import CashHistoryDialog from "../components/CashHistoryDialog";
+import FeeHistoryDialog from "../components/FeeHistoryDialog";
 import BankBalanceDialog from "../components/BankBalanceDialog";
 import SummaryCard from "../components/SummaryCard";
+import { historyTableSx } from "../components/historyTableSx";
 import DeleteReasonDialog from "../components/DeleteReasonDialog";
 import BankingTabs from "../components/BankingTabs";
 import AccountSide from "../components/AccountSide";
@@ -106,6 +112,7 @@ export default function BankingPage() {
   const [newTransactionOpen, setNewTransactionOpen] = useState(false);
   const [cashOpen, setCashOpen] = useState(false);
   const [cashHistoryOpen, setCashHistoryOpen] = useState(false);
+  const [feeHistory, setFeeHistory] = useState<"RECEIVE" | "PAY" | null>(null);
   const [bankBalanceOpen, setBankBalanceOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -293,6 +300,13 @@ export default function BankingPage() {
           caption="Commission the shop earned this period"
           icon={<PercentIcon fontSize="small" />}
           tone="success"
+          action={
+            <Tooltip title="Fees received history">
+              <IconButton size="small" aria-label="Fees received history" onClick={() => setFeeHistory("RECEIVE")}>
+                <HistoryIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          }
         />
         <SummaryCard
           label="Fees paid"
@@ -300,6 +314,13 @@ export default function BankingPage() {
           caption="Charges taken by the banks and wallets"
           icon={<PercentIcon fontSize="small" />}
           tone="error"
+          action={
+            <Tooltip title="Fees paid history">
+              <IconButton size="small" aria-label="Fees paid history" onClick={() => setFeeHistory("PAY")}>
+                <HistoryIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          }
         />
         <SummaryCard
           label="Bank charges"
@@ -350,7 +371,9 @@ export default function BankingPage() {
               {can("banking.manage") && cash && (
                 <Tooltip
                   title={
-                    cash.recorded ? "Update the counted figure" : "Record a count"
+                    cash.recorded
+                      ? "Update the counted figure"
+                      : "Record a count"
                   }
                 >
                   <IconButton size="small" onClick={() => setCashOpen(true)}>
@@ -365,53 +388,77 @@ export default function BankingPage() {
 
       {/* Per-account position. */}
       {positions.length > 0 && (
-        <Paper sx={{ border: "1px solid", borderColor: "divider" }}>
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Bank / mobile payment</TableCell>
-                  <TableCell>Key</TableCell>
-                  <TableCell align="right">Received in</TableCell>
-                  <TableCell align="right">Transferred out</TableCell>
-                  <TableCell align="right">Net this period</TableCell>
-                  <TableCell align="right">Remaining (all time)</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {positions.map((account) => (
-                  <AccountRow
-                    key={account.accountId}
-                    account={account}
-                    format={signed}
-                    selected={accountId === account.accountId}
-                    onSelect={() => {
-                      setAccountId(
-                        accountId === account.accountId
-                          ? ""
-                          : account.accountId,
-                      );
-                      setPage(0);
-                    }}
-                  />
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ display: "block", px: 2, py: 1 }}
-          >
-            Click a row to filter the history below by that account. A{" "}
-            <strong>Transfer</strong>
-            counts against the account the money left and a{" "}
-            <strong>Receive</strong> against the account it arrived in, so each
-            transaction is counted once. “Remaining” ignores the date filter on
-            purpose — it is what is left in the account, not what moved this
-            period.
-          </Typography>
-        </Paper>
+        <Accordion
+          disableGutters
+          slotProps={{ transition: { unmountOnExit: true } }}
+          sx={{
+            border: "1px solid",
+            borderColor: "divider",
+            "&::before": { display: "none" },
+          }}
+        >
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+              <AccountBalanceIcon fontSize="small" color="action" />
+              <Typography variant="subtitle2">Per-account position</Typography>
+              <Chip size="small" label={`${positions.length} account(s)`} />
+              {accountId && (
+                <Chip
+                  size="small"
+                  color="primary"
+                  label={`Filtering: ${positions.find((a) => a.accountId === accountId)?.name ?? "account"}`}
+                />
+              )}
+            </Stack>
+          </AccordionSummary>
+          <AccordionDetails sx={{ p: 0 }}>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Bank / mobile payment</TableCell>
+                    <TableCell>Key</TableCell>
+                    <TableCell align="right">Received in</TableCell>
+                    <TableCell align="right">Transferred out</TableCell>
+                    <TableCell align="right">Net this period</TableCell>
+                    <TableCell align="right">Remaining (all time)</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {positions.map((account) => (
+                    <AccountRow
+                      key={account.accountId}
+                      account={account}
+                      format={signed}
+                      selected={accountId === account.accountId}
+                      onSelect={() => {
+                        setAccountId(
+                          accountId === account.accountId
+                            ? ""
+                            : account.accountId,
+                        );
+                        setPage(0);
+                      }}
+                    />
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: "block", px: 2, py: 1 }}
+            >
+              Click a row to filter the history below by that account. A{" "}
+              <strong>Transfer</strong>
+              counts against the account the money left and a{" "}
+              <strong>Receive</strong> against the account it arrived in, so
+              each transaction is counted once. “Remaining” ignores the date
+              filter on purpose — it is what is left in the account, not what
+              moved this period.
+            </Typography>
+          </AccordionDetails>
+        </Accordion>
       )}
 
       {/* Filters. */}
@@ -537,7 +584,7 @@ export default function BankingPage() {
       </Paper>
 
       {/* History. */}
-      <Paper sx={{ border: "1px solid", borderColor: "divider" }}>
+      <Paper sx={historyTableSx}>
         <TableContainer>
           {/*
             Twelve columns, so the padding is tightened rather than a column
@@ -546,7 +593,15 @@ export default function BankingPage() {
             column — which put the delete button behind a horizontal scroll for
             the one role allowed to use it. Cheaper to buy the width back here.
           */}
-          <Table size="small" stickyHeader sx={{ "& th, & td": { px: 1.25 } }}>
+          <Table
+            size="small"
+            stickyHeader
+            sx={{
+              "& th, & td": { px: 0.75 },
+              "& tbody td": { py: 0.5, fontSize: 12.5 },
+              "& tbody .MuiTypography-root": { fontSize: 12.5 },
+            }}
+          >
             <TableHead>
               <TableRow>
                 <TableCell sx={{ whiteSpace: "nowrap" }}>Number</TableCell>
@@ -598,7 +653,7 @@ export default function BankingPage() {
                     sx={{
                       fontFamily: "monospace",
                       whiteSpace: "nowrap",
-                      fontSize: 12.5,
+                      fontSize: 12,
                     }}
                   >
                     {row.transactionNumber}
@@ -607,19 +662,29 @@ export default function BankingPage() {
                     {formatInstant(row.transactionDate)}
                   </TableCell>
                   <TableCell>
-                    <Chip
-                      size="small"
-                      variant="outlined"
-                      color={row.type === "RECEIVE" ? "success" : "error"}
-                      icon={
-                        row.type === "RECEIVE" ? (
-                          <CallReceivedIcon sx={{ fontSize: 14 }} />
-                        ) : (
-                          <CallMadeIcon sx={{ fontSize: 14 }} />
-                        )
-                      }
-                      label={BANK_TRANSACTION_TYPE_LABELS[row.type] ?? row.type}
-                    />
+                    {/* Short code to keep the row narrow; the full name is on hover. */}
+                    <Tooltip
+                      title={BANK_TRANSACTION_TYPE_LABELS[row.type] ?? row.type}
+                    >
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        color={row.type === "RECEIVE" ? "success" : "error"}
+                        icon={
+                          row.type === "RECEIVE" ? (
+                            <CallReceivedIcon sx={{ fontSize: 14 }} />
+                          ) : (
+                            <CallMadeIcon sx={{ fontSize: 14 }} />
+                          )
+                        }
+                        label={
+                          row.type === "RECEIVE"
+                            ? "AR (Cash Out)"
+                            : "AT (Cash In)"
+                        }
+                        sx={{ height: 22 }}
+                      />
+                    </Tooltip>
                   </TableCell>
                   <TableCell>
                     <AccountSide
@@ -811,7 +876,17 @@ export default function BankingPage() {
         />
       )}
 
-      {cashHistoryOpen && <CashHistoryDialog onClose={() => setCashHistoryOpen(false)} />}
+      {cashHistoryOpen && (
+        <CashHistoryDialog onClose={() => setCashHistoryOpen(false)} />
+      )}
+      {feeHistory && (
+        <FeeHistoryDialog
+          direction={feeHistory}
+          from={range.from}
+          to={range.to}
+          onClose={() => setFeeHistory(null)}
+        />
+      )}
 
       {cashOpen && cash && (
         <CashCountDialog

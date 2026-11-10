@@ -28,6 +28,7 @@ import { useMoneyFormatter } from "../hooks/useSettings";
 import { useDebounced } from "../hooks/useDebounced";
 import BankingTabs from "../components/BankingTabs";
 import SummaryCard from "../components/SummaryCard";
+import { historyTableSx } from "../components/historyTableSx";
 import InternalTransferDialog from "../components/InternalTransferDialog";
 import DeleteReasonDialog from "../components/DeleteReasonDialog";
 import { PosApiError } from "@shared/errors";
@@ -163,7 +164,7 @@ export default function InternalTransfersPage() {
         />
       </Paper>
 
-      <Paper sx={{ border: "1px solid", borderColor: "divider" }}>
+      <Paper sx={historyTableSx}>
         <TableContainer>
           <Table size="small" sx={{ "& th, & td": { px: 1.25 } }}>
             <TableHead>

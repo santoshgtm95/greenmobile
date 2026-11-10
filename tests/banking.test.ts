@@ -27,6 +27,7 @@ import {
   getBankAdvance,
   listBankAccounts,
   listBankAdvances,
+  listFeeHistory,
   listBankTransactions,
   openBankAdvance,
   saveBankAccount,
@@ -1089,6 +1090,26 @@ describe('cash in hand history', () => {
     expect(rows[0].countedByName).toBe('Owner');
   });
 
+  it('filters by source, in/out, day and search, keeping each balance as it really was', () => {
+    emptyTill();
+    saveCashCount({ amount: 1_000_000, notes: 'Morning till' }, actor, ctx.db);
+    transfer(300_000);
+    receive(100_000, { feeBasisPoints: 100 });
+
+    const list = (q: Parameters<typeof listCashHistory>[0]) => listCashHistory(q, ctx.db);
+    const base = { page: 0, pageSize: 50 };
+
+    const out = list({ ...base, direction: 'OUT' });
+    expect(out.total).toBe(1);
+    expect(out.rows.map((r) => [r.source, r.change, r.balance])).toEqual([['Cash Out', -99_000, 1_201_000]]);
+    expect(out.sources).toEqual(expect.arrayContaining(['Cash count', 'Cash In', 'Cash Out']));
+
+    expect(list({ ...base, direction: 'IN' }).rows.map((r) => r.source)).toEqual(['Cash In', 'Cash count']);
+    expect(list({ ...base, source: 'Cash In' }).rows.map((r) => r.balance)).toEqual([1_300_000]);
+    expect(list({ ...base, search: 'morning' }).rows.map((r) => r.source)).toEqual(['Cash count']);
+    expect(list({ ...base, from: '2000-01-01', to: '2000-01-02' }).total).toBe(0);
+  });
+
   it('labels entries recorded before sources were kept', () => {
     emptyTill();
     const insert = ctx.db.prepare(
@@ -1825,6 +1846,18 @@ describe('customer advances', () => {
     expect(open.rows).toHaveLength(2);
     const done = listBankAdvances({ status: 'SETTLED', page: 0, pageSize: 50 }, ctx.db);
     expect(done.rows.map((r) => r.fromName)).toEqual(['Ko Min']);
+  });
+
+  it('lists by latest activity, so a withdrawal brings an older advance back to the top', () => {
+    const older = openAdvance(MILLION, { day: '2026-10-09', time: '10:00', customer: 'U Aung' });
+    openAdvance(MILLION, { day: '2026-10-10', time: '09:00', customer: 'Daw Hla' });
+    openAdvance(MILLION, { day: '2026-10-10', time: '11:00', customer: 'Ko Min' });
+
+    const order = () => listBankAdvances({ page: 0, pageSize: 50 }, ctx.db).rows.map((r) => r.fromName);
+    expect(order()).toEqual(['Ko Min', 'Daw Hla', 'U Aung']);
+
+    withdraw(older.id, 1_000, { day: '2026-10-10', time: '12:00' });
+    expect(order()).toEqual(['U Aung', 'Ko Min', 'Daw Hla']);
   });
 
   it('keeps advance movements out of the ordinary history', () => {
@@ -2637,6 +2670,19 @@ describe('audit trail', () => {
         feeAmount: 777,
         feeBasisPoints: 78,
       });
+
+      // The fee histories list exactly what the Fees received / Fees paid cards add up.
+      const { totals } = bankingOverview(ALL_TIME, ctx.db);
+      const got = listFeeHistory({ direction: 'RECEIVE', page: 0, pageSize: 50 }, ctx.db);
+      expect(got.rows.map((r) => [r.kind, r.feeAmount]).sort()).toEqual([
+        ['Advance withdrawal', 500],
+        ['Cash Out', 1_234],
+      ]);
+      expect(got.feeTotal).toBe(totals.feeReceived);
+      const paid = listFeeHistory({ direction: 'PAY', page: 0, pageSize: 50 }, ctx.db);
+      expect(paid.rows.map((r) => [r.kind, r.party, r.feeAmount])).toEqual([['Shop advance repayment', 'Ko Tun', 777]]);
+      expect(paid.feeTotal).toBe(totals.feePaid);
+      expect(listFeeHistory({ direction: 'RECEIVE', kind: 'Cash Out', page: 0, pageSize: 50 }, ctx.db).feeTotal).toBe(1_234);
 
       expect(resolveFee(100_000, 0, 1_000, true)).toEqual({ feeAmount: 1_000, feeBasisPoints: 101 });
       expect(() => resolveFee(100, 0, 101)).toThrow();

@@ -2,10 +2,8 @@ import { useState } from "react";
 import {
   Alert,
   Button,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Divider,
   MenuItem,
   Paper,
@@ -26,7 +24,14 @@ import { PosApiError } from "@shared/errors";
 import { addMoney, formatRate, subtractMoney } from "@shared/money";
 import { formatInstant, nowLocalDateTime } from "@shared/datetime";
 import type { BankAccount, BankAdvance } from "@shared/api";
-import { FeeFields, Section, SummaryLine, TypeButton, useFeeInput } from "./MovementParts";
+import {
+  FeeFields,
+  MovementDialog,
+  Section,
+  SummaryLine,
+  TypeButton,
+  useFeeInput,
+} from "./MovementParts";
 
 type Method = "cash" | "account";
 
@@ -129,8 +134,12 @@ export default function AdvanceWithdrawDialog({
     (isCash || (shopAccount !== null && customerNumber.trim() !== "" && customerName.trim() !== ""));
 
   return (
-    <Dialog open fullWidth maxWidth="sm" onClose={onClose}>
-      <DialogTitle>Withdraw from advance</DialogTitle>
+    <MovementDialog
+      title="Withdraw from advance"
+      subtitle={`${advance.transactionNumber} · ${advance.fromName}`}
+      icon={<LocalAtmIcon />}
+      onClose={onClose}
+    >
       <DialogContent dividers>
         <Stack spacing={2.5}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -338,6 +347,6 @@ export default function AdvanceWithdrawDialog({
           {save.isPending ? "Saving…" : "Record withdrawal"}
         </Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }

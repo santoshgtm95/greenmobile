@@ -143,10 +143,21 @@ export const zPurgeModule = z.object({
   confirm: z.literal('DELETE', { message: 'Type DELETE to confirm' }),
 });
 
-export const zCashHistoryQuery = z.object({
-  page: z.number().int().min(0).max(100_000).default(0),
-  pageSize: z.number().int().min(1).max(200).default(50),
+export const zCashHistoryQuery = zPaging.extend({
+  source: zShortText,
+  direction: z.enum(['IN', 'OUT']).optional(),
+  from: zBusinessDay.optional(),
+  to: zBusinessDay.optional(),
 });
+export const zFeeHistoryQuery = zPaging.extend({
+  direction: z.enum(['RECEIVE', 'PAY']),
+  kind: zShortText,
+  from: zBusinessDay.optional(),
+  to: zBusinessDay.optional(),
+});
+export type FeeHistoryQuery = z.output<typeof zFeeHistoryQuery>;
+export type FeeHistoryQueryInput = z.input<typeof zFeeHistoryQuery>;
+
 export type CashHistoryQuery = z.output<typeof zCashHistoryQuery>;
 export type CashHistoryQueryInput = z.input<typeof zCashHistoryQuery>;
 

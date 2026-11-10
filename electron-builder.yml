@@ -6,6 +6,10 @@ directories:
   output: release
   buildResources: build
 
+# Package the Electron already installed by npm instead of downloading it again,
+# so a GitHub outage (504) or no internet cannot fail the build.
+electronDist: node_modules/electron/dist
+
 files:
   - dist/**/*
   - dist-electron/**/*

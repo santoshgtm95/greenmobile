@@ -35,6 +35,7 @@ import { useMoneyFormatter } from '../hooks/useSettings';
 import { useDebounced } from '../hooks/useDebounced';
 import BankingTabs from '../components/BankingTabs';
 import SummaryCard from '../components/SummaryCard';
+import { historyTableSx } from '../components/historyTableSx';
 import ShopAdvanceDialog from '../components/ShopAdvanceDialog';
 import ShopAdvanceReceiveDialog from '../components/ShopAdvanceReceiveDialog';
 import ShopAdvanceDetailDialog from '../components/ShopAdvanceDetailDialog';
@@ -204,7 +205,7 @@ export default function ShopAdvancesPage() {
       </Paper>
 
       {/* Main Table */}
-      <Paper sx={{ border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
+      <Paper sx={historyTableSx}>
         <TableContainer>
           <Table size="small">
             <TableHead>

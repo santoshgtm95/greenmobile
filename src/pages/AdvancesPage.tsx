@@ -30,6 +30,7 @@ import { useMoneyFormatter } from '../hooks/useSettings';
 import { useDebounced } from '../hooks/useDebounced';
 import BankingTabs from '../components/BankingTabs';
 import SummaryCard from '../components/SummaryCard';
+import { historyTableSx } from '../components/historyTableSx';
 import AccountSide from '../components/AccountSide';
 import AdvanceDetailDialog from '../components/AdvanceDetailDialog';
 import CustomerAdvanceDialog from '../components/CustomerAdvanceDialog';
@@ -199,7 +200,7 @@ export default function AdvancesPage() {
         </Stack>
       </Paper>
 
-      <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
+      <Paper sx={historyTableSx}>
         <TableContainer>
           <Table size="small" sx={{ '& th, & td': { px: 1.25 } }}>
             <TableHead>
@@ -244,6 +245,11 @@ export default function AdvancesPage() {
                   </TableCell>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>
                     {formatInstant(row.transactionDate)}
+                    {row.lastWithdrawalDate && (
+                      <Typography variant="caption" color="warning.main" sx={{ display: 'block' }}>
+                        Withdrawn {formatInstant(row.lastWithdrawalDate)}
+                      </Typography>
+                    )}
                   </TableCell>
                   <TableCell>
                     <AccountSide

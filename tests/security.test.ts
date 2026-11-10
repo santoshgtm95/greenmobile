@@ -838,6 +838,8 @@ describe('database security', () => {
       'SERVICE_SELECT',
       'BANK_TRANSACTION_SELECT',
       'BANK_ADVANCE_SELECT',
+      'CASH_HISTORY_SELECT',
+      'FEE_HISTORY_SELECT',
       'BANK_ACCOUNT_USE_COUNT',
       'NET_LINES',
       'table',

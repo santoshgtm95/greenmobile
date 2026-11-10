@@ -53,6 +53,7 @@ import type {
   CreateInternalTransferInput,
   InternalTransferListQueryInput,
   CashHistoryQueryInput,
+  FeeHistoryQueryInput,
   DeleteInternalTransferInput,
   CreateShopAdvanceInput,
   ReceiveShopAdvanceInput,
@@ -575,9 +576,34 @@ export interface CashHistoryEntry {
   countedByName: string | null;
 }
 
+export interface FeeHistoryEntry {
+  id: string;
+  date: string;
+  /** Cash In, Cash Out, Customer advance, Advance withdrawal, Shop advance repayment. */
+  kind: string;
+  reference: string;
+  /** The customer or recipient on the other side. */
+  party: string | null;
+  amount: number;
+  feeBasisPoints: number;
+  feeAmount: number;
+  notes: string | null;
+  recordedByName: string | null;
+}
+
+export interface FeeHistoryResult {
+  rows: FeeHistoryEntry[];
+  total: number;
+  /** Sum of every fee matching the filters, not just this page. */
+  feeTotal: number;
+  kinds: string[];
+}
+
 export interface CashHistoryResult {
   rows: CashHistoryEntry[];
   total: number;
+  /** Every source in the history, for the filter. */
+  sources: string[];
 }
 
 export interface InternalTransferListResult {
@@ -1043,6 +1069,8 @@ export interface PosApi {
     saveCashCount(input: SaveCashCountInput): Promise<CashInHand>;
     /** Every change to cash in hand, newest first, with its source. */
     cashHistory(query: CashHistoryQueryInput): Promise<CashHistoryResult>;
+    /** Every fee received or paid, newest first — the rows behind the Fees cards. */
+    feeHistory(query: FeeHistoryQueryInput): Promise<FeeHistoryResult>;
     /** Updates bank/wallet account balances to match statements or mobile apps. */
     saveBankBalances(input: SaveBankBalancesInput): Promise<{ updated: true; count: number }>;
     /** Internal transfer between shop bank accounts. */

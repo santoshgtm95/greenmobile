@@ -3,10 +3,8 @@ import {
   Alert,
   Button,
   Checkbox,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Divider,
   FormControlLabel,
   MenuItem,
@@ -29,7 +27,14 @@ import { nowLocalDateTime } from '@shared/datetime';
 import { addMoney, bankFee, formatRate, subtractMoney } from '@shared/money';
 import type { ShopAdvance, ShopBankAccount } from '@shared/api';
 import type { ShopAdvanceSourceType } from '@shared/domain';
-import { FeeFields, Section, SummaryLine, TypeButton, useFeeInput } from './MovementParts';
+import {
+  FeeFields,
+  MovementDialog,
+  Section,
+  SummaryLine,
+  TypeButton,
+  useFeeInput,
+} from './MovementParts';
 
 /**
  * Money lent out by the shop coming back.
@@ -116,8 +121,12 @@ export default function ShopAdvanceReceiveDialog({
     Boolean(receivedAt);
 
   return (
-    <Dialog open fullWidth maxWidth="sm" onClose={save.isPending ? undefined : onClose}>
-      <DialogTitle>Receive advance repayment</DialogTitle>
+    <MovementDialog
+      title="Receive advance repayment"
+      subtitle={`${advance.advanceNumber} · ${advance.recipientName}`}
+      icon={<LocalAtmIcon />}
+      onClose={save.isPending ? undefined : onClose}
+    >
       <DialogContent dividers>
         <Stack spacing={2.5}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -343,6 +352,6 @@ export default function ShopAdvanceReceiveDialog({
           {save.isPending ? 'Saving…' : 'Record repayment'}
         </Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }

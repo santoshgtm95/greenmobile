@@ -3,18 +3,18 @@ import {
   Alert,
   Button,
   Chip,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
-  Divider,
   IconButton,
+  InputAdornment,
   MenuItem,
+  Paper,
   Stack,
   Switch,
   Table,
   TableBody,
   TableCell,
+  TableContainer,
   TableHead,
   TableRow,
   TextField,
@@ -25,6 +25,7 @@ import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import HistoryIcon from '@mui/icons-material/History';
+import SearchIcon from '@mui/icons-material/Search';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
@@ -33,6 +34,8 @@ import { useAuth } from '../hooks/useAuth';
 import { useMoneyFormatter } from '../hooks/useSettings';
 import type { ShopBankAccount } from '@shared/api';
 import ShopAccountHistoryDialog from './ShopAccountHistoryDialog';
+import { MovementDialog } from './MovementParts';
+import { historyTableSx } from './historyTableSx';
 
 /**
  * Register and manage the shop's own banking accounts.
@@ -61,6 +64,9 @@ export default function RegisterShopAccountsDialog({
   const [isActive, setIsActive] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [search, setSearch] = useState('');
+  const [providerFilter, setProviderFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'on' | 'off'>('all');
 
   // Providers registered in the system (e.g. KBZ Bank, Kpay, WavePay)
   const bankProviders = useQuery({
@@ -123,15 +129,28 @@ export default function RegisterShopAccountsDialog({
   });
 
   const providers = bankProviders.data ?? [];
-  const rows = shopAccounts.data ?? [];
+  const allRows = shopAccounts.data ?? [];
+  const needle = search.trim().toLowerCase();
+  const rows = allRows.filter(
+    (a) =>
+      (!providerFilter || a.bankAccountId === providerFilter) &&
+      (statusFilter === 'all' || (statusFilter === 'on') === (a.isActive === 1)) &&
+      (!needle ||
+        [a.accountNumber, a.accountName, a.bankName, a.bankKey].some((v) =>
+          v.toLowerCase().includes(needle),
+        )),
+  );
+  const filteredBalance = rows.reduce((sum, a) => sum + (a.balance ?? 0), 0);
 
   return (
     <>
-    <Dialog open fullWidth maxWidth="md" onClose={onClose}>
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        <AccountBalanceWalletIcon color="primary" />
-        Register Shop Accounts
-      </DialogTitle>
+    <MovementDialog
+      title="Register Shop Accounts"
+      subtitle="Our bank and wallet accounts: balances and history"
+      icon={<AccountBalanceWalletIcon />}
+      onClose={onClose}
+      maxWidth="md"
+    >
       <DialogContent dividers>
         <Stack spacing={2.5}>
           {error && (
@@ -154,6 +173,7 @@ export default function RegisterShopAccountsDialog({
             </Alert>
           )}
 
+          <Typography variant="overline">{editing ? 'Edit account' : 'Register an account'}</Typography>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ alignItems: 'flex-start' }}>
             <TextField
               select
@@ -243,8 +263,61 @@ export default function RegisterShopAccountsDialog({
             </Stack>
           )}
 
-          <Divider />
+          <Typography variant="overline">Accounts</Typography>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ alignItems: 'center' }}>
+            <TextField
+              size="small"
+              placeholder="Search number, name or bank"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon fontSize="small" />
+                    </InputAdornment>
+                  ),
+                },
+              }}
+              sx={{ flex: 1, minWidth: 200 }}
+            />
+            <TextField
+              select
+              size="small"
+              label="Bank / Wallet"
+              value={providerFilter}
+              onChange={(e) => setProviderFilter(e.target.value)}
+              sx={{ minWidth: 170 }}
+            >
+              <MenuItem value="">All</MenuItem>
+              {providers.map((p) => (
+                <MenuItem key={p.id} value={p.id}>
+                  {p.name}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              size="small"
+              label="Status"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as 'all' | 'on' | 'off')}
+              sx={{ minWidth: 110 }}
+            >
+              <MenuItem value="all">All</MenuItem>
+              <MenuItem value="on">On</MenuItem>
+              <MenuItem value="off">Off</MenuItem>
+            </TextField>
+            <Chip
+              color="primary"
+              variant="outlined"
+              label={`${rows.length} of ${allRows.length} · ${money(filteredBalance)}`}
+              sx={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}
+            />
+          </Stack>
 
+          <Paper sx={historyTableSx}>
+          <TableContainer>
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -260,7 +333,9 @@ export default function RegisterShopAccountsDialog({
               {rows.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                    No shop accounts registered yet. Register your first account above.
+                    {allRows.length === 0
+                      ? 'No shop accounts registered yet. Register your first account above.'
+                      : 'No accounts match these filters.'}
                   </TableCell>
                 </TableRow>
               )}
@@ -345,12 +420,14 @@ export default function RegisterShopAccountsDialog({
               ))}
             </TableBody>
           </Table>
+          </TableContainer>
+          </Paper>
         </Stack>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Close</Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
 
       {historyAccount && (
         <ShopAccountHistoryDialog

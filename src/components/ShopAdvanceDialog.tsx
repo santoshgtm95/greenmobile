@@ -4,10 +4,8 @@ import {
   Box,
   Button,
   Chip,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   MenuItem,
   Stack,
   TextField,
@@ -21,6 +19,7 @@ import LocalAtmIcon from '@mui/icons-material/LocalAtm';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import MoneyField from './MoneyField';
+import { MovementDialog } from './MovementParts';
 import AccountFields from './AccountFields';
 import { useMoneyFormatter } from '../hooks/useSettings';
 import { PosApiError } from '@shared/errors';
@@ -114,13 +113,12 @@ export default function ShopAdvanceDialog({
     advanceAt;
 
   return (
-    <Dialog open fullWidth maxWidth="sm" onClose={save.isPending ? undefined : onClose}>
-      <DialogTitle>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-          <PaymentsOutlinedIcon color="primary" />
-          <span>{parent ? `Pay More · ${parent.advanceNumber}` : 'New Shop Advance'}</span>
-        </Stack>
-      </DialogTitle>
+    <MovementDialog
+      title={parent ? `Pay More · ${parent.advanceNumber}` : 'New Shop Advance'}
+      subtitle={parent ? 'Add to an existing advance' : 'Money the shop lends out'}
+      icon={<PaymentsOutlinedIcon />}
+      onClose={save.isPending ? undefined : onClose}
+    >
 
       <DialogContent>
         <Stack spacing={2.5} sx={{ pt: 1 }}>
@@ -401,6 +399,6 @@ export default function ShopAdvanceDialog({
           {save.isPending ? 'Recording…' : 'Record Advance'}
         </Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }

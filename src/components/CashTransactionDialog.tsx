@@ -3,10 +3,8 @@ import {
   Alert,
   Button,
   Checkbox,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Divider,
   FormControlLabel,
   MenuItem,
@@ -26,7 +24,14 @@ import CashInHandBox from "./CashInHandBox";
 import { useMoneyFormatter } from "../hooks/useSettings";
 import { PosApiError } from "@shared/errors";
 import { addMoney, formatRate, subtractMoney } from "@shared/money";
-import { FeeFields, Section, SummaryLine, TypeButton, useFeeInput } from "./MovementParts";
+import {
+  FeeFields,
+  MovementDialog,
+  Section,
+  SummaryLine,
+  TypeButton,
+  useFeeInput,
+} from "./MovementParts";
 import { nowLocalDateTime } from "@shared/datetime";
 import type { BankTransactionType } from "@shared/domain";
 import type { BankAccount } from "@shared/api";
@@ -144,8 +149,12 @@ export default function CashTransactionDialog({
     : "Our account";
 
   return (
-    <Dialog open fullWidth maxWidth="sm" onClose={onClose}>
-      <DialogTitle>New transaction</DialogTitle>
+    <MovementDialog
+      title="New transaction"
+      subtitle="Cash In or Cash Out at the counter"
+      icon={isCashIn ? <CallMadeIcon /> : <CallReceivedIcon />}
+      onClose={onClose}
+    >
       <DialogContent dividers>
         <Stack spacing={2.5}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -355,6 +364,6 @@ export default function CashTransactionDialog({
           {save.isPending ? "Saving…" : isCashIn ? "Record Cash In" : "Record Cash Out"}
         </Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }

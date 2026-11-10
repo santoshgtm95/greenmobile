@@ -69,6 +69,7 @@ import {
 import type {
   ShopBankAccountHistoryResult,
   ShopBankAccountTransactionItem,
+  FeeHistoryResult,
 } from '../../shared/api';
 import {
   zShopBankAccountHistoryQuery,
@@ -87,6 +88,7 @@ import {
   CreateInternalTransferInput,
   InternalTransferListQuery,
   CashHistoryQuery,
+  FeeHistoryQuery,
   CreateShopAdvanceInput,
   ReceiveShopAdvanceInput,
   ShopAdvanceListQuery,
@@ -1605,7 +1607,9 @@ export function listBankAdvances(
     db
       .prepare(
         `SELECT * FROM (${BANK_ADVANCE_SELECT}) a ${whereSql}
-          ORDER BY a.transactionDate DESC, a.createdAt DESC LIMIT ? OFFSET ?`,
+          -- Latest activity first: a withdrawal brings its advance back to the top.
+          ORDER BY MAX(a.transactionDate, COALESCE(a.lastWithdrawalDate, a.transactionDate)) DESC,
+                   a.createdAt DESC LIMIT ? OFFSET ?`,
       )
       .all(...params, query.pageSize, query.page * query.pageSize) as Array<
       Omit<BankAdvanceRow, 'status'>
@@ -1851,27 +1855,135 @@ export interface CashHistoryRow {
  * the in/out is the difference from the entry before it — for a count by hand,
  * that is what the drawer was found to be over or short.
  */
+/**
+ * Every fee behind the Fees received / Fees paid cards: the same rows the
+ * overview sums (transactions, customer advances, shop advance repayments).
+ * Takes the fee direction twice.
+ */
+const FEE_HISTORY_SELECT = `
+  SELECT t.id, t.transactionDate AS date, t.transactionDay AS day,
+         CASE t.advanceRole WHEN 'DEPOSIT' THEN 'Customer advance'
+                            WHEN 'WITHDRAWAL' THEN 'Advance withdrawal'
+                            ELSE CASE t.type WHEN 'RECEIVE' THEN 'Cash Out' ELSE 'Cash In' END END AS kind,
+         t.transactionNumber AS reference,
+         CASE t.type WHEN 'RECEIVE' THEN t.fromName ELSE t.toName END AS party,
+         t.amount, t.feeBasisPoints, t.feeAmount, t.notes, u.fullName AS recordedByName,
+         t.createdAt
+    FROM "BankTransaction" t
+    LEFT JOIN "User" u ON u.id = t.createdBy
+   WHERE t.isDeleted = 0 AND t.feeDirection = ? AND t.feeAmount > 0
+  UNION ALL
+  SELECT s.id, s.settlementDate, s.settlementDay, 'Shop advance repayment',
+         s.settlementNumber, a.recipientName,
+         s.amount, s.feeBasisPoints, s.feeAmount, s.notes, u.fullName,
+         s.createdAt
+    FROM "ShopAdvanceSettlement" s
+    JOIN "ShopAdvance" a ON a.id = s.shopAdvanceId
+    LEFT JOIN "User" u ON u.id = s.createdBy
+   WHERE s.isDeleted = 0 AND s.feeDirection = ? AND s.feeAmount > 0
+`;
+
+export function listFeeHistory(query: FeeHistoryQuery, db: Db = getDatabase()): FeeHistoryResult {
+  const where: string[] = [];
+  const params: unknown[] = [query.direction, query.direction];
+  if (query.kind) {
+    where.push('f.kind = ?');
+    params.push(query.kind);
+  }
+  if (query.from) {
+    where.push('f.day >= ?');
+    params.push(query.from);
+  }
+  if (query.to) {
+    where.push('f.day <= ?');
+    params.push(query.to);
+  }
+  if (query.search) {
+    where.push(
+      '(f.reference LIKE ? COLLATE NOCASE OR f.party LIKE ? COLLATE NOCASE OR f.notes LIKE ? COLLATE NOCASE)',
+    );
+    const like = `%${query.search}%`;
+    params.push(like, like, like);
+  }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const rows = db
+    .prepare(
+      `SELECT f.* FROM (${FEE_HISTORY_SELECT}) f ${whereSql}
+        ORDER BY f.date DESC, f.createdAt DESC LIMIT ? OFFSET ?`,
+    )
+    .all(...params, query.pageSize, query.page * query.pageSize) as Array<
+    FeeHistoryResult['rows'][number] & { day: string; createdAt: string }
+  >;
+  const sums = db
+    .prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(f.feeAmount), 0) AS fees FROM (${FEE_HISTORY_SELECT}) f ${whereSql}`)
+    .get(...params) as { n: number; fees: number };
+  const kinds = (
+    db
+      .prepare(`SELECT DISTINCT f.kind FROM (${FEE_HISTORY_SELECT}) f ORDER BY f.kind`)
+      .all(query.direction, query.direction) as Array<{ kind: string }>
+  ).map((r) => r.kind);
+  return {
+    rows: rows.map(({ day: _day, createdAt: _createdAt, ...row }) => row),
+    total: sums.n,
+    feeTotal: sums.fees,
+    kinds,
+  };
+}
+
+const CASH_HISTORY_SELECT = `
+  SELECT c.id, c.countedAt, c.countedDay, COALESCE(c.source, 'Cash count') AS source, c.notes,
+         c.amount AS balance,
+         c.amount - COALESCE(LAG(c.amount) OVER (ORDER BY c.countedAt, c.createdAt, c.rowid), 0) AS change,
+         u.fullName AS countedByName,
+         ROW_NUMBER() OVER (ORDER BY c.countedAt, c.createdAt, c.rowid) AS seq
+    FROM "CashCount" c
+    LEFT JOIN "User" u ON u.id = c.createdBy
+`;
+
 export function listCashHistory(
   query: CashHistoryQuery,
   db: Db = getDatabase(),
-): { rows: CashHistoryRow[]; total: number } {
+): { rows: CashHistoryRow[]; total: number; sources: string[] } {
+  // Filters apply outside the window, so each row keeps its true change and balance.
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (query.source) {
+    where.push('h.source = ?');
+    params.push(query.source);
+  }
+  if (query.direction) where.push(query.direction === 'IN' ? 'h.change > 0' : 'h.change < 0');
+  if (query.from) {
+    where.push('h.countedDay >= ?');
+    params.push(query.from);
+  }
+  if (query.to) {
+    where.push('h.countedDay <= ?');
+    params.push(query.to);
+  }
+  if (query.search) {
+    where.push(
+      '(h.notes LIKE ? COLLATE NOCASE OR h.source LIKE ? COLLATE NOCASE OR h.countedByName LIKE ? COLLATE NOCASE)',
+    );
+    const like = `%${query.search}%`;
+    params.push(like, like, like);
+  }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const rows = db
-    .prepare(
-      `SELECT * FROM (
-         SELECT c.id, c.countedAt, COALESCE(c.source, 'Cash count') AS source, c.notes,
-                c.amount AS balance,
-                c.amount - COALESCE(LAG(c.amount) OVER (ORDER BY c.countedAt, c.createdAt, c.rowid), 0) AS change,
-                u.fullName AS countedByName,
-                ROW_NUMBER() OVER (ORDER BY c.countedAt, c.createdAt, c.rowid) AS seq
-           FROM "CashCount" c
-           LEFT JOIN "User" u ON u.id = c.createdBy
-       )
-       ORDER BY seq DESC
-       LIMIT ? OFFSET ?`,
-    )
-    .all(query.pageSize, query.page * query.pageSize) as Array<CashHistoryRow & { seq: number }>;
-  const total = (db.prepare(`SELECT COUNT(*) AS n FROM "CashCount"`).get() as { n: number }).n;
-  return { rows: rows.map(({ seq: _seq, ...row }) => row), total };
+    .prepare(`SELECT h.* FROM (${CASH_HISTORY_SELECT}) h ${whereSql} ORDER BY h.seq DESC LIMIT ? OFFSET ?`)
+    .all(...params, query.pageSize, query.page * query.pageSize) as Array<
+    CashHistoryRow & { seq: number; countedDay: string }
+  >;
+  const total = (
+    db.prepare(`SELECT COUNT(*) AS n FROM (${CASH_HISTORY_SELECT}) h ${whereSql}`).get(...params) as {
+      n: number;
+    }
+  ).n;
+  const sources = (
+    db
+      .prepare(`SELECT DISTINCT COALESCE(source, 'Cash count') AS s FROM "CashCount" ORDER BY s`)
+      .all() as Array<{ s: string }>
+  ).map((r) => r.s);
+  return { rows: rows.map(({ seq: _seq, countedDay: _day, ...row }) => row), total, sources };
 }
 
 export function saveCashCount(

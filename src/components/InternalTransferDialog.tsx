@@ -3,10 +3,8 @@ import {
   Alert,
   Button,
   Chip,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   MenuItem,
   Stack,
   TextField,
@@ -16,6 +14,7 @@ import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import MoneyField from './MoneyField';
+import { MovementDialog } from './MovementParts';
 import { useSettings } from '../hooks/useSettings';
 import { PosApiError } from '@shared/errors';
 import { formatMoney } from '@shared/money';
@@ -90,13 +89,12 @@ export default function InternalTransferDialog({
     transferAt;
 
   return (
-    <Dialog open fullWidth maxWidth="sm" onClose={save.isPending ? undefined : onClose}>
-      <DialogTitle>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-          <SwapHorizIcon />
-          <span>New Internal Account Transfer</span>
-        </Stack>
-      </DialogTitle>
+    <MovementDialog
+      title="New Internal Account Transfer"
+      subtitle="Between two of our accounts"
+      icon={<SwapHorizIcon />}
+      onClose={save.isPending ? undefined : onClose}
+    >
 
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
@@ -287,6 +285,6 @@ export default function InternalTransferDialog({
           {save.isPending ? 'Recording…' : 'Record Transfer'}
         </Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }
