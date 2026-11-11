@@ -1,4 +1,4 @@
-import { Divider, Paper, Tab, Tabs } from '@mui/material';
+import { Paper, Tab, Tabs } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 
 export type BankingTab = 'transactions' | 'advances' | 'shop-advances' | 'internal-transfers';
@@ -35,7 +35,6 @@ export default function BankingTabs({ active }: { active: BankingTab }) {
           <Tab key={tab.value} value={tab.value} label={tab.label} />
         ))}
       </Tabs>
-      <Divider />
     </Paper>
   );
 }

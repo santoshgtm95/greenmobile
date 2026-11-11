@@ -31,6 +31,7 @@ import { api } from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
 import { useMoneyFormatter } from '../hooks/useSettings';
 import DeleteReasonDialog from './DeleteReasonDialog';
+import { historyTableSx } from './historyTableSx';
 import { PosApiError } from '@shared/errors';
 import { formatInstant } from '@shared/datetime';
 import type { ShopAdvance, ShopAdvancePayment, ShopAdvanceSettlement } from '@shared/api';
@@ -249,7 +250,7 @@ export default function ShopAdvanceDetailDialog({
                     )}
                   </Stack>
 
-                  <TableContainer component={Paper} variant="outlined">
+                  <TableContainer component={Paper} sx={historyTableSx}>
                     <Table size="small">
                       <TableHead>
                         <TableRow>
@@ -323,7 +324,7 @@ export default function ShopAdvanceDetailDialog({
                     )}
                   </Stack>
 
-                  <TableContainer component={Paper} variant="outlined">
+                  <TableContainer component={Paper} sx={historyTableSx}>
                     <Table size="small">
                       <TableHead>
                         <TableRow>

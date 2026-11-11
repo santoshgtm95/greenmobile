@@ -4,10 +4,10 @@ import {
   Button,
   Chip,
   Dialog,
+  Paper,
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   IconButton,
   Stack,
   Switch,
@@ -29,6 +29,7 @@ import { api } from '../lib/api';
 import { PosApiError } from '@shared/errors';
 import { useAuth } from '../hooks/useAuth';
 import type { BankAccount } from '@shared/api';
+import { historyTableSx } from './historyTableSx';
 
 /**
  * The shop's own banks and mobile wallets.
@@ -211,8 +212,7 @@ export default function BankAccountsDialog({
               </Typography>
             </Stack>
           )}
-
-          <Divider />
+          <Paper sx={historyTableSx}>
 
           <Table size="small">
             <TableHead>
@@ -314,6 +314,8 @@ export default function BankAccountsDialog({
               ))}
             </TableBody>
           </Table>
+
+          </Paper>
         </Stack>
       </DialogContent>
       <DialogActions>

@@ -118,7 +118,6 @@ export default function InventoryPage() {
             />
           ))}
         </Tabs>
-        <Divider />
       </Paper>
 
       {active === 'levels' && <StockLevels />}

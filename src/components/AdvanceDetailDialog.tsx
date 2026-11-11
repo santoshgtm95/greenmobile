@@ -5,6 +5,7 @@ import {
   Chip,
   CircularProgress,
   Dialog,
+  Paper,
   DialogActions,
   DialogContent,
   DialogTitle,
@@ -30,6 +31,7 @@ import { formatRate } from '@shared/money';
 import type { BankAdvance, BankTransaction } from '@shared/api';
 import AccountSide from './AccountSide';
 import DeleteReasonDialog from './DeleteReasonDialog';
+import { historyTableSx } from './historyTableSx';
 
 /**
  * One advance from start to finish: the deposit, then every withdrawal in the
@@ -144,6 +146,8 @@ export default function AdvanceDetailDialog({
               </Box>
             </Stack>
 
+            <Paper sx={historyTableSx}>
+
             <Table size="small">
               <TableHead>
                 <TableRow>
@@ -181,6 +185,8 @@ export default function AdvanceDetailDialog({
                 ))}
               </TableBody>
             </Table>
+
+            </Paper>
 
             {withdrawals.length === 0 && (
               <Typography variant="body2" color="text.secondary">

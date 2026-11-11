@@ -454,7 +454,12 @@ function RestoreDialog({
 
   return (
     <Dialog open={Boolean(file && inspection)} onClose={busy ? undefined : onCancel} maxWidth="sm" fullWidth>
-      <DialogTitle sx={{ color: usable ? 'warning.dark' : 'error.main' }}>
+      <DialogTitle
+        sx={(theme) => {
+          const tone = usable ? theme.palette.warning : theme.palette.error;
+          return { backgroundImage: `linear-gradient(135deg, ${tone.dark}, ${tone.main})` };
+        }}
+      >
         {usable ? 'Restore this backup?' : 'This backup cannot be used'}
       </DialogTitle>
       <DialogContent>

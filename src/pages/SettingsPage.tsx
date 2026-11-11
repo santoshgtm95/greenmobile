@@ -1,4 +1,4 @@
-import { Divider, Paper, Stack, Tab, Tabs, Typography } from '@mui/material';
+import { Paper, Stack, Tab, Tabs, Typography } from '@mui/material';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import SystemInfoPage from './SystemInfoPage';
@@ -64,7 +64,6 @@ export default function SettingsPage() {
             <Tab key={entry.value} value={entry.value} label={entry.label} />
           ))}
         </Tabs>
-        <Divider />
       </Paper>
 
       {active === 'shop' && <ShopPanel />}

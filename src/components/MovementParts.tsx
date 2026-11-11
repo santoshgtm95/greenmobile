@@ -152,6 +152,9 @@ export function MovementDialog({
           py: 2,
           background: `linear-gradient(120deg, ${alpha(theme.palette.primary.main, 0.16)} 0%, ${alpha(theme.palette.primary.main, 0.03)} 60%, transparent 100%)`,
           borderBottom: `1px solid ${theme.palette.divider}`,
+          // This header is light, so undo the theme's white header text.
+          color: theme.palette.text.primary,
+          "& .MuiTypography-caption": { color: theme.palette.text.secondary },
         })}
       >
         <Box
