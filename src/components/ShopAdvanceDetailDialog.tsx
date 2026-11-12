@@ -32,6 +32,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useMoneyFormatter } from '../hooks/useSettings';
 import DeleteReasonDialog from './DeleteReasonDialog';
 import { historyTableSx } from './historyTableSx';
+import { DeletedChip, deletedRowSx } from './DeletedMark';
 import { PosApiError } from '@shared/errors';
 import { formatInstant } from '@shared/datetime';
 import type { ShopAdvance, ShopAdvancePayment, ShopAdvanceSettlement } from '@shared/api';
@@ -64,11 +65,16 @@ export default function ShopAdvanceDetailDialog({
   });
 
   const advance = detail.data?.advance;
+  // Deleted rows are listed for checking; only live ones are counted.
   const payments = detail.data?.payments ?? [];
   const settlements = detail.data?.settlements ?? [];
+  const livePayments = payments.filter((p) => !p.isDeleted).length;
+  const liveSettlements = settlements.filter((s) => !s.isDeleted).length;
 
-  const canManage = can('banking.manage');
-  const canDelete = can('banking.delete');
+  // A deleted advance is shown for checking only.
+  const isDeleted = advance?.isDeleted === 1;
+  const canManage = can('banking.manage') && !isDeleted;
+  const canDelete = can('banking.delete') && !isDeleted;
 
   return (
     <>
@@ -86,11 +92,14 @@ export default function ShopAdvanceDetailDialog({
               )}
             </Stack>
             {advance && (
-              <Chip
-                label={advance.status}
-                color={advance.status === 'OPEN' ? 'warning' : 'success'}
-                size="small"
-              />
+              <Stack direction="row" sx={{ alignItems: 'center' }}>
+                <Chip
+                  label={advance.status}
+                  color={advance.status === 'OPEN' ? 'warning' : 'success'}
+                  size="small"
+                />
+                {isDeleted && <DeletedChip reason={advance.deletedReason} />}
+              </Stack>
             )}
           </Stack>
         </DialogTitle>
@@ -236,7 +245,7 @@ export default function ShopAdvanceDetailDialog({
                 <Box>
                   <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                     <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                      Payments Given ({payments.length})
+                      Payments Given ({livePayments})
                     </Typography>
                     {canManage && !advance.isDeleted && (
                       <Button
@@ -265,8 +274,11 @@ export default function ShopAdvanceDetailDialog({
                       </TableHead>
                       <TableBody>
                         {payments.map((p) => (
-                          <TableRow key={p.id}>
-                            <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>{p.advanceNumber}</TableCell>
+                          <TableRow key={p.id} sx={p.isDeleted ? deletedRowSx : undefined}>
+                            <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>
+                              {p.advanceNumber}
+                              {p.isDeleted === 1 && <DeletedChip reason={p.deletedReason} />}
+                            </TableCell>
                             <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatInstant(p.advanceDate)}</TableCell>
                             <TableCell>
                               {p.fromType === 'OLD' ? 'Old record' : p.fromType === 'CASH' ? 'Cash in Hand' : `${p.fromBankName} (${p.fromAccountNumber})`}
@@ -289,7 +301,7 @@ export default function ShopAdvanceDetailDialog({
                             <TableCell>{p.notes || '—'}</TableCell>
                             {canDelete && (
                               <TableCell align="right">
-                                {p.parentId && (
+                                {p.parentId && !p.isDeleted && (
                                   <Tooltip title="Delete payment">
                                     <IconButton size="small" color="error" onClick={() => setDeletingPayment(p)}>
                                       <DeleteOutlinedIcon fontSize="small" />
@@ -309,7 +321,7 @@ export default function ShopAdvanceDetailDialog({
                 <Box>
                   <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                     <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                      Repayments Received ({settlements.length})
+                      Repayments Received ({liveSettlements})
                     </Typography>
                     {canManage && advance.remaining > 0 && (
                       <Button
@@ -345,9 +357,10 @@ export default function ShopAdvanceDetailDialog({
                           </TableRow>
                         ) : (
                           settlements.map((s) => (
-                            <TableRow key={s.id}>
+                            <TableRow key={s.id} sx={s.isDeleted ? deletedRowSx : undefined}>
                               <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>
                                 {s.settlementNumber}
+                                {s.isDeleted === 1 && <DeletedChip reason={s.deletedReason} />}
                               </TableCell>
                               <TableCell sx={{ whiteSpace: 'nowrap' }}>
                                 {formatInstant(s.settlementDate)}
@@ -385,15 +398,17 @@ export default function ShopAdvanceDetailDialog({
                               <TableCell>{s.notes || '—'}</TableCell>
                               {canDelete && (
                                 <TableCell align="right">
-                                  <Tooltip title="Delete repayment">
-                                    <IconButton
-                                      size="small"
-                                      color="error"
-                                      onClick={() => setDeletingSettlement(s)}
-                                    >
-                                      <DeleteOutlinedIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
+                                  {!s.isDeleted && (
+                                    <Tooltip title="Delete repayment">
+                                      <IconButton
+                                        size="small"
+                                        color="error"
+                                        onClick={() => setDeletingSettlement(s)}
+                                      >
+                                        <DeleteOutlinedIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  )}
                                 </TableCell>
                               )}
                             </TableRow>
@@ -410,7 +425,7 @@ export default function ShopAdvanceDetailDialog({
 
         <DialogActions sx={{ justifyContent: 'space-between', px: 3, pb: 2 }}>
           <Box>
-            {canDelete && advance && settlements.length === 0 && payments.length <= 1 && (
+            {canDelete && advance && liveSettlements === 0 && livePayments <= 1 && (
               <Button
                 color="error"
                 startIcon={<DeleteOutlinedIcon />}

@@ -1116,7 +1116,8 @@ export function listBankTransactions(
   const where: string[] = [];
   const params: unknown[] = [];
 
-  if (!query.includeDeleted) where.push('t.isDeleted = 0');
+  if (query.deletedOnly) where.push('t.isDeleted = 1');
+  else if (!query.includeDeleted) where.push('t.isDeleted = 0');
   // Advance deposits and withdrawals live on the Advances tab only.
   where.push('t.advanceRole IS NULL');
 
@@ -1165,8 +1166,9 @@ export function listBankTransactions(
   const aggregate = db
     .prepare(
       `SELECT COUNT(*) AS n,
-              COALESCE(SUM(CASE WHEN t.type = 'TRANSFER' THEN t.amount ELSE 0 END), 0) AS transferTotal,
-              COALESCE(SUM(CASE WHEN t.type = 'RECEIVE' THEN t.amount ELSE 0 END), 0) AS receiveTotal
+              -- Deleted rows may be listed for checking, but never counted.
+              COALESCE(SUM(CASE WHEN t.type = 'TRANSFER' AND t.isDeleted = 0 THEN t.amount ELSE 0 END), 0) AS transferTotal,
+              COALESCE(SUM(CASE WHEN t.type = 'RECEIVE' AND t.isDeleted = 0 THEN t.amount ELSE 0 END), 0) AS receiveTotal
          FROM "BankTransaction" t
          LEFT JOIN "BankAccount" f ON f.id = t.fromAccountId
          LEFT JOIN "BankAccount" o ON o.id = t.toAccountId
@@ -1529,8 +1531,9 @@ export interface BankAdvanceRow extends BankTransactionRow {
  *
  * Built on BANK_TRANSACTION_SELECT rather than beside it, so an advance carries
  * exactly the columns a transaction does and the two cannot drift. A deleted
- * withdrawal does not count — its money is back on the advance — and a deleted
- * deposit is not an advance at all.
+ * withdrawal does not count — its money is back on the advance. A deleted
+ * deposit is kept here (flagged isDeleted) so it can be looked at; every total
+ * filters it out.
  */
 const BANK_ADVANCE_SELECT = `
   SELECT a.*, a.amount - a.withdrawn AS remaining
@@ -1546,7 +1549,7 @@ const BANK_ADVANCE_SELECT = `
                WHERE w.advanceDepositId = d.id AND w.advanceRole = 'WITHDRAWAL'
                  AND w.isDeleted = 0) AS lastWithdrawalDate
         FROM (${BANK_TRANSACTION_SELECT}
-               WHERE t.advanceRole = 'DEPOSIT' AND t.isDeleted = 0) d
+               WHERE t.advanceRole = 'DEPOSIT') d
     ) a
 `;
 
@@ -1566,7 +1569,7 @@ function liveWithdrawalCount(depositId: string, db: Db): number {
 }
 
 export function listBankAdvances(
-  query: BankAdvanceListQuery,
+  query: Omit<BankAdvanceListQuery, 'includeDeleted'> & { includeDeleted?: boolean },
   db: Db = getDatabase(),
 ): {
   rows: BankAdvanceRow[];
@@ -1582,6 +1585,8 @@ export function listBankAdvances(
   const where: string[] = [];
   const params: unknown[] = [];
 
+  if (query.status === 'DELETED') where.push('a.isDeleted = 1');
+  else if (!query.includeDeleted) where.push('a.isDeleted = 0');
   if (query.status === 'OPEN') where.push('a.remaining > 0');
   if (query.status === 'SETTLED') where.push('a.remaining <= 0');
 
@@ -1619,14 +1624,18 @@ export function listBankAdvances(
   const held = db
     .prepare(
       `SELECT COALESCE(SUM(a.remaining), 0) AS heldTotal, COUNT(*) AS openCount
-         FROM (${BANK_ADVANCE_SELECT}) a WHERE a.remaining > 0`,
+         FROM (${BANK_ADVANCE_SELECT}) a WHERE a.isDeleted = 0 AND a.remaining > 0`,
     )
     .get() as { heldTotal: number; openCount: number };
 
   return { rows, total, heldTotal: held.heldTotal, openCount: held.openCount };
 }
 
-/** One advance with its withdrawals, oldest first — the order they happened in. */
+/**
+ * One advance with its withdrawals, oldest first — the order they happened in.
+ * Deleted withdrawals are included (flagged isDeleted) so they can be checked;
+ * the advance's own figures already leave them out.
+ */
 export function getBankAdvance(
   id: string,
   db: Db = getDatabase(),
@@ -1639,7 +1648,7 @@ export function getBankAdvance(
   const withdrawals = db
     .prepare(
       `${BANK_TRANSACTION_SELECT}
-        WHERE t.advanceDepositId = ? AND t.advanceRole = 'WITHDRAWAL' AND t.isDeleted = 0
+        WHERE t.advanceDepositId = ? AND t.advanceRole = 'WITHDRAWAL'
         ORDER BY t.transactionDate ASC, t.createdAt ASC`,
     )
     .all(id) as BankTransactionRow[];
@@ -2458,7 +2467,8 @@ export function listInternalTransfers(
   const where: string[] = [];
   const params: unknown[] = [];
 
-  if (!query.includeDeleted) where.push('it.isDeleted = 0');
+  if (query.deletedOnly) where.push('it.isDeleted = 1');
+  else if (!query.includeDeleted) where.push('it.isDeleted = 0');
   if (query.from) {
     where.push('it.transferDay >= ?');
     params.push(query.from);
@@ -2497,7 +2507,7 @@ export function listInternalTransfers(
   const aggregate = db
     .prepare(
       `SELECT COUNT(*) AS total,
-              COALESCE(SUM(it.amount), 0) AS totalAmount
+              COALESCE(SUM(CASE WHEN it.isDeleted = 0 THEN it.amount ELSE 0 END), 0) AS totalAmount
          FROM "InternalTransfer" it
          JOIN "BankAccount" fb ON fb.id = it.fromAccountId
          JOIN "BankAccount" tb ON tb.id = it.toAccountId
@@ -2793,9 +2803,10 @@ export type ShopAdvancePaymentRow = Pick<
   ShopAdvanceRow,
   | 'id' | 'advanceNumber' | 'advanceDate' | 'fromType' | 'fromBankName' | 'fromAccountNumber'
   | 'fromAccountName' | 'toType' | 'toBankName' | 'toAccountNumber' | 'toAccountName'
-  | 'amount' | 'bankCharges' | 'notes' | 'parentId'
+  | 'amount' | 'bankCharges' | 'notes' | 'parentId' | 'isDeleted' | 'deletedReason'
 >;
 
+/** Deleted payments and repayments are included (flagged isDeleted) so they can be checked. */
 export function getShopAdvance(
   id: string,
   db: Db = getDatabase(),
@@ -2809,9 +2820,9 @@ export function getShopAdvance(
     .prepare(
       `SELECT id, advanceNumber, advanceDate, fromType, fromBankName, fromAccountNumber,
               fromAccountName, toType, toBankName, toAccountNumber, toAccountName,
-              amount, bankCharges, notes, parentId
+              amount, bankCharges, notes, parentId, isDeleted, deletedReason
          FROM "ShopAdvance"
-        WHERE id = ? OR (parentId = ? AND isDeleted = 0)
+        WHERE id = ? OR parentId = ?
         ORDER BY advanceDate ASC, createdAt ASC`,
     )
     .all(id, id) as ShopAdvancePaymentRow[];
@@ -2819,7 +2830,7 @@ export function getShopAdvance(
   const settlements = db
     .prepare(
       `${SHOP_ADVANCE_SETTLEMENT_SELECT}
-       WHERE sas.shopAdvanceId = ? AND sas.isDeleted = 0
+       WHERE sas.shopAdvanceId = ?
        ORDER BY sas.settlementDate ASC, sas.createdAt ASC`,
     )
     .all(id) as ShopAdvanceSettlementRow[];
@@ -2841,7 +2852,8 @@ export function listShopAdvances(
   const where: string[] = ['a.parentId IS NULL'];
   const params: unknown[] = [];
 
-  if (!query.includeDeleted) where.push('a.isDeleted = 0');
+  if (query.status === 'DELETED') where.push('a.isDeleted = 1');
+  else if (!query.includeDeleted) where.push('a.isDeleted = 0');
   if (query.status === 'OPEN') where.push('a.remaining > 0');
   if (query.status === 'SETTLED') where.push('a.remaining <= 0');
   if (query.from) {
@@ -3260,7 +3272,11 @@ export function deleteShopAdvance(
   db: Db = getDatabase(),
 ): { deleted: true } {
   return transaction(() => {
-    const { advance, payments, settlements } = getShopAdvance(id, db);
+    const detail = getShopAdvance(id, db);
+    const { advance } = detail;
+    // Deleted payments and repayments are listed for checking; only live ones block this.
+    const payments = detail.payments.filter((p) => !p.isDeleted);
+    const settlements = detail.settlements.filter((s) => !s.isDeleted);
     if (advance.isDeleted) {
       throw errors.invalidState('This advance has already been deleted.');
     }

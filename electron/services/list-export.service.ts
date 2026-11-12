@@ -374,7 +374,7 @@ function bankTransactionList(query: BankTransactionListQuery, db: Db): Body {
       dayRangeLabel(query.from, query.to),
       query.search ? `Search "${query.search}"` : null,
       query.type ? BANK_TRANSACTION_TYPE_LABELS[query.type] : null,
-      query.includeDeleted ? 'Including deleted' : null,
+      query.deletedOnly ? 'Deleted only' : query.includeDeleted ? 'Including deleted' : null,
     ]),
     figures: [
       { label: 'Transactions', value: rows.length, type: 'number' },

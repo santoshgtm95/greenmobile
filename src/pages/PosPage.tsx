@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Box,
+  Breadcrumbs,
   Button,
   Chip,
   Divider,
   IconButton,
   InputAdornment,
+  Link,
   List,
   ListItemButton,
   Paper,
@@ -33,6 +35,7 @@ import SerialPickerDialog from '../components/SerialPickerDialog';
 import CustomerPickerDialog from '../components/CustomerPickerDialog';
 import PaymentDialog from '../components/PaymentDialog';
 import MoneyField from '../components/MoneyField';
+import CategoryTree, { type StockSelection } from './stocks/CategoryTree';
 
 export interface CartLine {
   key: string;
@@ -65,18 +68,26 @@ export default function PosPage() {
   const searchRef = useRef<HTMLInputElement>(null);
   const debouncedSearch = useDebounced(search, 200);
 
+  // Category / brand picked in the tree; narrows the product list like Stocks does.
+  const [selection, setSelection] = useState<StockSelection>({});
+  const categories = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => api.categories.list({ includeInactive: false }),
+  });
+
   const results = useQuery({
-    queryKey: ['pos-search', debouncedSearch],
+    queryKey: ['pos-search', debouncedSearch, selection.categoryId, selection.brandId],
     queryFn: () =>
       api.products.list({
         search: debouncedSearch || undefined,
-        categoryId: undefined,
-        brandId: undefined,
+        categoryId: selection.categoryId,
+        brandId: selection.brandId,
         lowStockOnly: false,
         includeInactive: false,
         page: 0,
-        pageSize: 30,
+        pageSize: 100,
       }),
+    placeholderData: (previous) => previous,
   });
 
   // The authoritative quote. Recomputed by the main process on every change.
@@ -279,15 +290,71 @@ export default function PosPage() {
       )}
 
       <Stack direction="row" spacing={2} sx={{ flexGrow: 1, minHeight: 0 }}>
+        {/* Category → Brand → Product; a product row goes straight into the cart. */}
+        <Box
+          sx={{
+            width: 280,
+            flexShrink: 0,
+            minHeight: 0,
+            display: { xs: 'none', md: 'flex' },
+            // One scrollbar: the tree's list fills the panel height and scrolls by itself.
+            '& > .MuiPaper-root': { display: 'flex', flexDirection: 'column', maxHeight: '100%', minWidth: 0, flex: 1 },
+            '& .MuiList-root': { maxHeight: 'none', flex: 1, minHeight: 0 },
+          }}
+        >
+          <CategoryTree
+            categories={categories.data ?? []}
+            includeInactive={false}
+            selection={selection}
+            onSelect={(picked) => {
+              if (!picked.productId) return setSelection(picked);
+              api.products
+                .get({ id: picked.productId })
+                .then((product) => addProduct(product))
+                .catch((err) => setError(err instanceof PosApiError ? err.message : 'Unable to load that product.'));
+            }}
+          />
+        </Box>
+
         {/* Search results */}
-        <Paper sx={{ flex: 1, border: '1px solid', borderColor: 'divider', overflow: 'auto' }}>
+        <Paper sx={{ flex: 1, minWidth: 0, border: '1px solid', borderColor: 'divider', overflow: 'auto' }}>
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{ px: 1.5, py: 1, borderBottom: '1px solid', borderColor: 'divider', alignItems: 'center' }}
+          >
+            <Breadcrumbs sx={{ flexGrow: 1, minWidth: 0, fontSize: 14 }}>
+              <Link component="button" underline="hover" onClick={() => setSelection({})}>
+                All products
+              </Link>
+              {selection.categoryName && (
+                <Link
+                  component="button"
+                  underline="hover"
+                  onClick={() => setSelection({ categoryId: selection.categoryId, categoryName: selection.categoryName })}
+                >
+                  {selection.categoryName}
+                </Link>
+              )}
+              {selection.brandName && <Typography sx={{ fontSize: 14 }}>{selection.brandName}</Typography>}
+            </Breadcrumbs>
+            {results.data && results.data.total > results.data.rows.length && (
+              <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                Showing {results.data.rows.length} of {results.data.total} — search to narrow
+              </Typography>
+            )}
+          </Stack>
           <List dense disablePadding>
             {results.isLoading && (
               <Box sx={{ p: 3, textAlign: 'center', color: 'text.secondary' }}>Searching…</Box>
             )}
             {!results.isLoading && (results.data?.rows.length ?? 0) === 0 && (
               <Box sx={{ p: 4, textAlign: 'center', color: 'text.secondary' }}>
-                {search ? `Nothing matches "${search}".` : 'Search or scan to begin.'}
+                {search
+                  ? `Nothing matches "${search}".`
+                  : selection.categoryId
+                    ? 'No products here.'
+                    : 'Search or scan to begin.'}
               </Box>
             )}
             {(results.data?.rows ?? []).map((product) => {

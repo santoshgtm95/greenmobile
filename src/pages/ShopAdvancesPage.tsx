@@ -36,15 +36,17 @@ import { useDebounced } from '../hooks/useDebounced';
 import BankingTabs from '../components/BankingTabs';
 import SummaryCard from '../components/SummaryCard';
 import { historyTableSx } from '../components/historyTableSx';
+import { DeletedChip, deletedRowSx } from '../components/DeletedMark';
 import ShopAdvanceDialog from '../components/ShopAdvanceDialog';
 import ShopAdvanceReceiveDialog from '../components/ShopAdvanceReceiveDialog';
 import ShopAdvanceDetailDialog from '../components/ShopAdvanceDetailDialog';
+import ShopAdvanceCollectableDialog from '../components/ShopAdvanceCollectableDialog';
 import { PosApiError } from '@shared/errors';
 import { formatInstant, businessDay } from '@shared/datetime';
 import { SHOP_ADVANCE_STATUS_LABELS, type ShopAdvanceStatus } from '@shared/domain';
 import type { ShopAdvance } from '@shared/api';
 
-type StatusFilter = ShopAdvanceStatus | 'ALL';
+type StatusFilter = ShopAdvanceStatus | 'ALL' | 'DELETED';
 
 export default function ShopAdvancesPage() {
   const { can } = useAuth();
@@ -57,6 +59,7 @@ export default function ShopAdvancesPage() {
   const [pageSize, setPageSize] = useState(25);
 
   const [opening, setOpening] = useState(false);
+  const [collectableOpen, setCollectableOpen] = useState(false);
   const [receiving, setReceiving] = useState<ShopAdvance | null>(null);
   const [payingMore, setPayingMore] = useState<ShopAdvance | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
@@ -108,6 +111,13 @@ export default function ShopAdvancesPage() {
         <Typography variant="h5" sx={{ flexGrow: 1 }}>
           Banking
         </Typography>
+        <Button
+          variant="outlined"
+          startIcon={<PendingActionsOutlinedIcon />}
+          onClick={() => setCollectableOpen(true)}
+        >
+          Collectable
+        </Button>
         {canManage && (
           <Button
             variant="contained"
@@ -200,6 +210,7 @@ export default function ShopAdvancesPage() {
             <MenuItem value="OPEN">Open (Outstanding)</MenuItem>
             <MenuItem value="SETTLED">Settled</MenuItem>
             <MenuItem value="ALL">All Advances</MenuItem>
+            <MenuItem value="DELETED">Deleted</MenuItem>
           </TextField>
         </Stack>
       </Paper>
@@ -244,10 +255,11 @@ export default function ShopAdvancesPage() {
                   key={row.id}
                   hover
                   onClick={() => setViewingId(row.id)}
-                  sx={{ cursor: 'pointer' }}
+                  sx={{ cursor: 'pointer', ...(row.isDeleted ? deletedRowSx : {}) }}
                 >
                   <TableCell sx={{ fontFamily: 'monospace', fontSize: 12.5, whiteSpace: 'nowrap' }}>
                     {row.advanceNumber}
+                    {row.isDeleted === 1 && <DeletedChip reason={row.deletedReason} />}
                   </TableCell>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>
                     {formatInstant(row.advanceDate)}
@@ -335,7 +347,7 @@ export default function ShopAdvancesPage() {
                     />
                   </TableCell>
                   <TableCell align="right">
-                    {canManage && (row.status === 'OPEN' || row.remaining > 0) && (
+                    {canManage && row.isDeleted === 0 && (row.status === 'OPEN' || row.remaining > 0) && (
                       <Button
                         size="small"
                         variant="contained"
@@ -368,6 +380,8 @@ export default function ShopAdvancesPage() {
           rowsPerPageOptions={[25, 50, 100]}
         />
       </Paper>
+
+      {collectableOpen && <ShopAdvanceCollectableDialog onClose={() => setCollectableOpen(false)} />}
 
       {/* New Advance Dialog */}
       {opening && (

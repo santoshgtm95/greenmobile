@@ -705,6 +705,12 @@ describe('deleting a transaction', () => {
     const deleted = all.rows.find((r) => r.id === removed.id)!;
     expect(deleted.isDeleted).toBe(1);
     expect(deleted.deletedReason).toBe('Duplicate entry');
+
+    const onlyDeleted = listBankTransactions(
+      { ...ALL_TIME, includeDeleted: false, deletedOnly: true, page: 0, pageSize: 50 },
+      ctx.db,
+    );
+    expect(onlyDeleted.rows.map((r) => r.id)).toEqual([removed.id]);
   });
 
   it('takes the amount out of the balance', () => {
@@ -1738,7 +1744,8 @@ describe('customer advances', () => {
     const restored = getBankAdvance(opened.id, ctx.db);
     expect(restored.advance.remaining).toBe(MILLION);
     expect(restored.advance.status).toBe('OPEN');
-    expect(restored.withdrawals).toHaveLength(0);
+    // Still listed for checking, but flagged and no longer taking anything off.
+    expect(restored.withdrawals.map((w) => w.isDeleted)).toEqual([1]);
   });
 
   it('will not delete a deposit that withdrawals still draw on', () => {
@@ -1756,10 +1763,17 @@ describe('customer advances', () => {
     const opened = openAdvance(MILLION);
     deleteBankTransaction(opened.id, 'Recorded twice', actor, ctx.db);
 
-    expect(captureError(() => getBankAdvance(opened.id, ctx.db)).code).toBe('NOT_FOUND');
+    // Still readable for checking, but flagged and out of every list and total.
+    expect(getBankAdvance(opened.id, ctx.db).advance.isDeleted).toBe(1);
+    const listed = listBankAdvances({ page: 0, pageSize: 50 }, ctx.db);
+    expect(listed.rows.map((r) => r.id)).not.toContain(opened.id);
+    expect(listed.heldTotal).toBe(0);
     expect(
-      listBankAdvances({ page: 0, pageSize: 50 }, ctx.db).rows.map((r) => r.id),
-    ).not.toContain(opened.id);
+      listBankAdvances({ includeDeleted: true, page: 0, pageSize: 50 }, ctx.db).rows.map((r) => r.id),
+    ).toContain(opened.id);
+    expect(
+      listBankAdvances({ status: 'DELETED', page: 0, pageSize: 50 }, ctx.db).rows.map((r) => r.id),
+    ).toEqual([opened.id]);
   });
 
   it('tracks what is owed on the amount, never on the fee', () => {

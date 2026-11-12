@@ -10,7 +10,8 @@
  * data: URL, because Chromium restricts what it will render and print from a
  * data URL.
  */
-import { BrowserWindow, app } from 'electron';
+import { BrowserWindow, Menu, app, dialog } from 'electron';
+import { hardenWindow } from '../security';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -110,41 +111,106 @@ export async function listPrinters(): Promise<PrinterInfo[]> {
 }
 
 /**
- * Sends a document to a printer.
+ * Sends a loaded document to a printer. Resolves false when the user cancels.
  *
  * `silent: true` prints straight to the chosen printer, which is what a busy
  * till wants. `silent: false` opens the Windows dialog so the user can pick.
  */
-export async function printDocument(html: string, options: PrintOptions = {}): Promise<void> {
-  await withRenderedDocument(html, async (win) => {
-    await new Promise<void>((resolve, reject) => {
-      win.webContents.print(
-        {
-          silent: options.silent ?? false,
-          printBackground: true,
-          deviceName: options.deviceName || undefined,
-          copies: Math.min(Math.max(options.copies ?? 1, 1), 10),
-          landscape: options.landscape ?? false,
-          margins: { marginType: 'default' },
-          ...(options.pageSize ? { pageSize: options.pageSize } : {}),
-        },
-        (success, failureReason) => {
-          if (success) {
-            resolve();
-            return;
-          }
-          // Cancelling the Windows dialog is a normal outcome, not an error.
-          if (/cancel/i.test(failureReason ?? '')) {
-            logger.info('Print cancelled by the user');
-            resolve();
-            return;
-          }
-          logger.error('Printing failed', { failureReason, deviceName: options.deviceName });
-          reject(errors.printFailed());
-        },
-      );
-    });
+function sendToPrinter(win: BrowserWindow, options: PrintOptions): Promise<boolean> {
+  return new Promise<boolean>((resolve, reject) => {
+    win.webContents.print(
+      {
+        silent: options.silent ?? false,
+        printBackground: true,
+        deviceName: options.deviceName || undefined,
+        copies: Math.min(Math.max(options.copies ?? 1, 1), 10),
+        landscape: options.landscape ?? false,
+        margins: { marginType: 'default' },
+        ...(options.pageSize ? { pageSize: options.pageSize } : {}),
+      },
+      (success, failureReason) => {
+        if (success) {
+          resolve(true);
+          return;
+        }
+        // Cancelling the Windows dialog is a normal outcome, not an error.
+        if (/cancel/i.test(failureReason ?? '')) {
+          logger.info('Print cancelled by the user');
+          resolve(false);
+          return;
+        }
+        logger.error('Printing failed', { failureReason, deviceName: options.deviceName });
+        reject(errors.printFailed());
+      },
+    );
   });
+}
+
+/**
+ * Opens the document in a preview window; it is printed only when the user
+ * presses Print there, with the printer and copies the caller asked for.
+ * Resolves once the preview is showing, not when (or whether) it is printed.
+ */
+export async function printDocument(html: string, options: PrintOptions = {}): Promise<void> {
+  const file = path.join(printTempDir(), `${randomUUID()}.html`);
+  fs.writeFileSync(file, html, 'utf8');
+
+  const receipt = typeof options.pageSize === 'object';
+  const win = new BrowserWindow({
+    title: 'Print preview',
+    width: receipt ? 480 : 920,
+    height: 860,
+    parent: BrowserWindow.getFocusedWindow() ?? undefined,
+    backgroundColor: '#ffffff',
+    autoHideMenuBar: false,
+    webPreferences: {
+      // A print document is inert markup: it needs no bridge and no Node.
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      javascript: false,
+    },
+  });
+  hardenWindow(win);
+  win.on('page-title-updated', (event) => event.preventDefault());
+  win.on('closed', () => {
+    try {
+      fs.unlinkSync(file);
+    } catch {
+      // A leftover temp file is harmless; Windows will clear it.
+    }
+  });
+
+  let printing = false;
+  const print = async () => {
+    if (printing || win.isDestroyed()) return;
+    printing = true;
+    try {
+      if (await sendToPrinter(win, options)) win.close();
+    } catch {
+      await dialog.showMessageBox(win, {
+        type: 'error',
+        title: 'Print preview',
+        message: 'The document could not be printed. Check the printer and try again.',
+      });
+    } finally {
+      printing = false;
+    }
+  };
+  win.setMenu(
+    Menu.buildFromTemplate([
+      { label: '&Print…', accelerator: 'CmdOrCtrl+P', click: () => void print() },
+      { label: '&Close', accelerator: 'Esc', click: () => win.close() },
+    ]),
+  );
+
+  try {
+    await win.loadFile(file);
+  } catch (err) {
+    if (!win.isDestroyed()) win.destroy();
+    logger.error('Unable to open the print preview', err);
+    throw errors.printFailed();
+  }
 }
 
 /** Renders a document to PDF and returns the bytes. */

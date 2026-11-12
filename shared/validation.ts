@@ -746,8 +746,9 @@ export const zWithdrawBankAdvance = z
 
 export const zBankAdvanceListQuery = z.object({
   search: zShortText,
-  /** Omitted for every advance, open or settled. */
-  status: z.enum(BANK_ADVANCE_STATUSES).optional(),
+  /** Omitted for every advance, open or settled. DELETED lists deleted ones only. */
+  status: z.enum([...BANK_ADVANCE_STATUSES, 'DELETED']).optional(),
+  includeDeleted: z.boolean().default(false),
   page: z.number().int().min(0).max(100_000).default(0),
   pageSize: z.number().int().min(1).max(200).default(50),
 });
@@ -767,6 +768,8 @@ export const zBankTransactionListQuery = z.object({
   /** One of the shop's own accounts (provider + account number), either side. */
   shopAccountId: zId.optional(),
   includeDeleted: z.boolean().default(false),
+  /** Lists deleted rows only; wins over includeDeleted. */
+  deletedOnly: z.boolean().optional(),
   page: z.number().int().min(0).max(100_000).default(0),
   pageSize: z.number().int().min(1).max(200).default(50),
 });
@@ -819,6 +822,8 @@ export const zInternalTransferListQuery = zPaging.extend({
   toShopAccountId: zId.optional(),
   shopAccountId: zId.optional(),
   includeDeleted: z.boolean().default(false),
+  /** Lists deleted rows only; wins over includeDeleted. */
+  deletedOnly: z.boolean().optional(),
 });
 
 export const zCreateShopAdvance = z
@@ -889,7 +894,7 @@ export const zReceiveShopAdvance = z
 
 export const zShopAdvanceListQuery = zPaging.extend({
   search: zShortText.optional(),
-  status: z.enum(['OPEN', 'SETTLED', 'ALL']).default('ALL'),
+  status: z.enum(['OPEN', 'SETTLED', 'ALL', 'DELETED']).default('ALL'),
   from: zBusinessDay.optional(),
   to: zBusinessDay.optional(),
   includeDeleted: z.boolean().default(false),

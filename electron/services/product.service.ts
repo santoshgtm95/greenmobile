@@ -643,6 +643,7 @@ export interface LookupRow {
   description: string | null;
   isActive: number;
   productCount: number;
+  activeProductCount: number;
 }
 
 function listLookup(table: 'Category' | 'Brand', includeInactive: boolean, db: Db): LookupRow[] {
@@ -650,7 +651,8 @@ function listLookup(table: 'Category' | 'Brand', includeInactive: boolean, db: D
   return db
     .prepare(
       `SELECT t.id, t.name, t.description, t.isActive,
-              (SELECT COUNT(*) FROM "Product" p WHERE p.${column} = t.id) AS productCount
+              (SELECT COUNT(*) FROM "Product" p WHERE p.${column} = t.id) AS productCount,
+              (SELECT COUNT(*) FROM "Product" p WHERE p.${column} = t.id AND p.isActive = 1) AS activeProductCount
          FROM "${table}" t
         ${includeInactive ? '' : 'WHERE t.isActive = 1'}
         ORDER BY t.name ASC`,
@@ -707,7 +709,7 @@ function upsertLookup(
 
   const row = db
     .prepare(
-      `SELECT id, name, description, isActive, 0 AS productCount FROM "${table}" WHERE id = ?`,
+      `SELECT id, name, description, isActive, 0 AS productCount, 0 AS activeProductCount FROM "${table}" WHERE id = ?`,
     )
     .get(input.id) as LookupRow;
   return row;

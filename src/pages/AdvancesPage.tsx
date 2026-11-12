@@ -32,6 +32,7 @@ import BankingTabs from '../components/BankingTabs';
 import SummaryCard from '../components/SummaryCard';
 import { historyTableSx } from '../components/historyTableSx';
 import AccountSide from '../components/AccountSide';
+import { DeletedChip, deletedRowSx } from '../components/DeletedMark';
 import AdvanceDetailDialog from '../components/AdvanceDetailDialog';
 import CustomerAdvanceDialog from '../components/CustomerAdvanceDialog';
 import AdvanceWithdrawDialog from '../components/AdvanceWithdrawDialog';
@@ -40,7 +41,7 @@ import { formatInstant, businessDay } from '@shared/datetime';
 import { BANK_ADVANCE_STATUS_LABELS, type BankAdvanceStatus } from '@shared/domain';
 import type { BankAdvance } from '@shared/api';
 
-type StatusFilter = BankAdvanceStatus | 'ALL';
+type StatusFilter = BankAdvanceStatus | 'ALL' | 'DELETED';
 
 /**
  * Customer advances — money a customer leaves with the shop to collect later,
@@ -196,6 +197,7 @@ export default function AdvancesPage() {
             <MenuItem value="OPEN">{BANK_ADVANCE_STATUS_LABELS.OPEN}</MenuItem>
             <MenuItem value="SETTLED">{BANK_ADVANCE_STATUS_LABELS.SETTLED}</MenuItem>
             <MenuItem value="ALL">All advances</MenuItem>
+            <MenuItem value="DELETED">Deleted</MenuItem>
           </TextField>
         </Stack>
       </Paper>
@@ -238,10 +240,11 @@ export default function AdvancesPage() {
                   key={row.id}
                   hover
                   onClick={() => setViewing(row.id)}
-                  sx={{ cursor: 'pointer' }}
+                  sx={{ cursor: 'pointer', ...(row.isDeleted ? deletedRowSx : {}) }}
                 >
                   <TableCell sx={{ fontFamily: 'monospace', fontSize: 12.5, whiteSpace: 'nowrap' }}>
                     {row.transactionNumber}
+                    {row.isDeleted === 1 && <DeletedChip reason={row.deletedReason} />}
                   </TableCell>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>
                     {formatInstant(row.transactionDate)}
@@ -305,7 +308,7 @@ export default function AdvancesPage() {
                     />
                   </TableCell>
                   <TableCell align="right">
-                    {canManage && row.status === 'OPEN' && (
+                    {canManage && row.status === 'OPEN' && row.isDeleted === 0 && (
                       <Button
                         size="small"
                         variant="outlined"

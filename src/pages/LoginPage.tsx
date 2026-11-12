@@ -50,14 +50,19 @@ const shakeFrames = `
   40%, 60% { transform: translateX(6px); }
 `;
 // Two identical animations: alternating names replays the shake without remounting the form.
-const shakes = [keyframes`${shakeFrames}`, keyframes`${shakeFrames} 100% { transform: none; }`];
+const shakes = [
+  keyframes`${shakeFrames}`,
+  keyframes`${shakeFrames} 100% { transform: none; }`,
+];
 const sheen = keyframes`
   from { transform: translateX(-120%) skewX(-20deg); }
   to { transform: translateX(220%) skewX(-20deg); }
 `;
 
 /** Staggered entrance for the n-th block of the form. */
-const step = (n: number) => ({ animation: `${rise} 500ms ${150 + n * 70}ms ease-out both` });
+const step = (n: number) => ({
+  animation: `${rise} 500ms ${150 + n * 70}ms ease-out both`,
+});
 
 /**
  * Sign-in screen (spec §29). Works with no network of any kind.
@@ -118,9 +123,13 @@ export default function LoginPage() {
         display: "grid",
         placeItems: "center",
         p: 2,
-        background: "linear-gradient(160deg, #0f1b2d 0%, #0b1524 55%, #08101c 100%)",
+        background:
+          "linear-gradient(160deg, #ffffff 0%, #ffffff 55%, #ffffff 100%)",
         "@media (prefers-reduced-motion: reduce)": {
-          "& *": { animation: "none !important", transition: "none !important" },
+          "& *": {
+            animation: "none !important",
+            transition: "none !important",
+          },
         },
         // Faint dot grid over the gradient.
         "&::before": {
@@ -129,7 +138,8 @@ export default function LoginPage() {
           inset: 0,
           backgroundImage: `radial-gradient(${alpha(theme.palette.primary.light, 0.12)} 1px, transparent 1px)`,
           backgroundSize: "22px 22px",
-          maskImage: "radial-gradient(circle at center, #000 30%, transparent 75%)",
+          maskImage:
+            "radial-gradient(circle at center, #000 30%, transparent 75%)",
         },
       })}
     >
@@ -185,7 +195,10 @@ export default function LoginPage() {
               >
                 <Logo size={64} />
               </Box>
-              <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: -0.3, ...step(1) }}>
+              <Typography
+                variant="h5"
+                sx={{ fontWeight: 800, letterSpacing: -0.3, ...step(1) }}
+              >
                 Green Mobile
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={step(2)}>
@@ -235,7 +248,9 @@ export default function LoginPage() {
                       <IconButton
                         edge="end"
                         size="small"
-                        aria-label={showPassword ? "Hide password" : "Show password"}
+                        aria-label={
+                          showPassword ? "Hide password" : "Show password"
+                        }
                         onClick={() => setShowPassword((v) => !v)}
                       >
                         {showPassword ? (
@@ -279,7 +294,8 @@ export default function LoginPage() {
                   bottom: 0,
                   left: 0,
                   width: "40%",
-                  background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent)",
+                  background:
+                    "linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent)",
                   transform: "translateX(-120%) skewX(-20deg)",
                 },
                 "&:hover::after": { animation: `${sheen} 700ms ease-out` },
@@ -324,7 +340,9 @@ export default function LoginPage() {
         }}
       >
         <WifiOffIcon sx={{ fontSize: 15 }} />
-        <Typography variant="caption">Offline Point of Sale · your data stays on this computer</Typography>
+        <Typography variant="caption">
+          Offline Point of Sale · your data stays on this computer
+        </Typography>
       </Stack>
     </Box>
   );

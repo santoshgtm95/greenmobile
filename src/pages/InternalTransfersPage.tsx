@@ -3,10 +3,12 @@ import {
   Alert,
   Box,
   Button,
+  FormControlLabel,
   InputAdornment,
   Paper,
   Snackbar,
   Stack,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -31,6 +33,7 @@ import SummaryCard from "../components/SummaryCard";
 import { historyTableSx } from "../components/historyTableSx";
 import InternalTransferDialog from "../components/InternalTransferDialog";
 import DeleteReasonDialog from "../components/DeleteReasonDialog";
+import { DeletedChip, deletedRowSx } from "../components/DeletedMark";
 import { PosApiError } from "@shared/errors";
 import { formatInstant } from "@shared/datetime";
 import type { InternalTransfer } from "@shared/api";
@@ -48,6 +51,7 @@ export default function InternalTransfersPage() {
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState("");
+  const [showDeleted, setShowDeleted] = useState(false);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);
 
@@ -60,10 +64,11 @@ export default function InternalTransfersPage() {
   const query = useMemo(
     () => ({
       search: debouncedSearch || undefined,
+      deletedOnly: showDeleted,
       page,
       pageSize,
     }),
-    [debouncedSearch, page, pageSize],
+    [debouncedSearch, showDeleted, page, pageSize],
   );
 
   const transfers = useQuery({
@@ -143,7 +148,17 @@ export default function InternalTransfersPage() {
         /> */}
       </Box>
 
-      <Paper sx={{ p: 2, border: "1px solid", borderColor: "divider" }}>
+      <Paper
+        sx={{
+          p: 2,
+          border: "1px solid",
+          borderColor: "divider",
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 2,
+          alignItems: "center",
+        }}
+      >
         <TextField
           placeholder="Search account, number or notes"
           value={search}
@@ -161,6 +176,18 @@ export default function InternalTransfersPage() {
             },
           }}
           sx={{ width: 320 }}
+        />
+        <FormControlLabel
+          control={
+            <Switch
+              checked={showDeleted}
+              onChange={(e) => {
+                setShowDeleted(e.target.checked);
+                setPage(0);
+              }}
+            />
+          }
+          label="Deleted only"
         />
       </Paper>
 
@@ -205,7 +232,7 @@ export default function InternalTransfersPage() {
                 </TableRow>
               )}
               {rows.map((row) => (
-                <TableRow key={row.id} hover>
+                <TableRow key={row.id} hover sx={row.isDeleted ? deletedRowSx : undefined}>
                   <TableCell
                     sx={{
                       fontFamily: "monospace",
@@ -214,6 +241,7 @@ export default function InternalTransfersPage() {
                     }}
                   >
                     {row.transferNumber}
+                    {row.isDeleted === 1 && <DeletedChip reason={row.deletedReason} />}
                   </TableCell>
                   <TableCell sx={{ whiteSpace: "nowrap" }}>
                     {formatInstant(row.transferDate)}
@@ -287,14 +315,16 @@ export default function InternalTransfersPage() {
                   </TableCell>
                   {canManage && (
                     <TableCell align="right">
-                      <Button
-                        size="small"
-                        color="error"
-                        variant="outlined"
-                        onClick={() => setDeleting(row)}
-                      >
-                        Delete
-                      </Button>
+                      {row.isDeleted === 0 && (
+                        <Button
+                          size="small"
+                          color="error"
+                          variant="outlined"
+                          onClick={() => setDeleting(row)}
+                        >
+                          Delete
+                        </Button>
+                      )}
                     </TableCell>
                   )}
                 </TableRow>

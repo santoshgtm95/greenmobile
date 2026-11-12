@@ -117,7 +117,7 @@ function CategoryNode({
       <TreeRow
         depth={0}
         label={category.name}
-        count={category.productCount}
+        count={includeInactive ? category.productCount : category.activeProductCount}
         open={open}
         onToggle={() => setOpen(!open)}
         selected={selection.categoryId === category.id && !selection.brandId && !selection.productId}

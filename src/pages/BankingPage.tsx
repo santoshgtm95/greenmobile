@@ -7,12 +7,14 @@ import {
   Box,
   Button,
   Chip,
+  FormControlLabel,
   IconButton,
   InputAdornment,
   MenuItem,
   Paper,
   Snackbar,
   Stack,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -55,6 +57,7 @@ import { historyTableSx } from "../components/historyTableSx";
 import DeleteReasonDialog from "../components/DeleteReasonDialog";
 import BankingTabs from "../components/BankingTabs";
 import AccountSide from "../components/AccountSide";
+import { DeletedChip, deletedRowSx } from "../components/DeletedMark";
 import { PosApiError } from "@shared/errors";
 import {
   BANK_FEE_DIRECTION_LABELS,
@@ -104,6 +107,7 @@ export default function BankingPage() {
   const [type, setType] = useState("");
   const [accountId, setAccountId] = useState("");
   const [shopAccountId, setShopAccountId] = useState("");
+  const [showDeleted, setShowDeleted] = useState(false);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);
 
@@ -137,10 +141,11 @@ export default function BankingPage() {
       accountId: accountId || undefined,
       shopAccountId: shopAccountId || undefined,
       includeDeleted: false,
+      deletedOnly: showDeleted,
       page,
       pageSize,
     }),
-    [debouncedSearch, range, type, accountId, shopAccountId, page, pageSize],
+    [debouncedSearch, range, type, accountId, shopAccountId, showDeleted, page, pageSize],
   );
 
   const transactions = useQuery({
@@ -580,6 +585,19 @@ export default function BankingPage() {
               </MenuItem>
             ))}
           </TextField>
+
+          <FormControlLabel
+            control={
+              <Switch
+                checked={showDeleted}
+                onChange={(e) => {
+                  setShowDeleted(e.target.checked);
+                  setPage(0);
+                }}
+              />
+            }
+            label="Deleted only"
+          />
         </Stack>
       </Paper>
 
@@ -647,7 +665,7 @@ export default function BankingPage() {
               )}
 
               {rows.map((row) => (
-                <TableRow key={row.id} hover>
+                <TableRow key={row.id} hover sx={row.isDeleted ? deletedRowSx : undefined}>
                   {/* One token, never broken across three lines. */}
                   <TableCell
                     sx={{
@@ -657,6 +675,7 @@ export default function BankingPage() {
                     }}
                   >
                     {row.transactionNumber}
+                    {row.isDeleted === 1 && <DeletedChip reason={row.deletedReason} />}
                   </TableCell>
                   <TableCell sx={{ whiteSpace: "nowrap" }}>
                     {formatInstant(row.transactionDate)}
@@ -805,15 +824,17 @@ export default function BankingPage() {
                   </TableCell>
                   {can("banking.delete") && (
                     <TableCell align="right">
-                      <Tooltip title="Delete (administrators only)">
-                        <IconButton
-                          size="small"
-                          disabled={remove.isPending}
-                          onClick={() => setDeleting(row)}
-                        >
-                          <DeleteOutlinedIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
+                      {row.isDeleted === 0 && (
+                        <Tooltip title="Delete (administrators only)">
+                          <IconButton
+                            size="small"
+                            disabled={remove.isPending}
+                            onClick={() => setDeleting(row)}
+                          >
+                            <DeleteOutlinedIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
                     </TableCell>
                   )}
                 </TableRow>

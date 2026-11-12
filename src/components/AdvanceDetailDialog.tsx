@@ -30,6 +30,7 @@ import { BANK_ADVANCE_STATUS_LABELS } from '@shared/domain';
 import { formatRate } from '@shared/money';
 import type { BankAdvance, BankTransaction } from '@shared/api';
 import AccountSide from './AccountSide';
+import { DeletedChip, deletedRowSx } from './DeletedMark';
 import DeleteReasonDialog from './DeleteReasonDialog';
 import { historyTableSx } from './historyTableSx';
 
@@ -44,8 +45,8 @@ import { historyTableSx } from './historyTableSx';
  */
 export default function AdvanceDetailDialog({
   advanceId,
-  canWithdraw,
-  canDelete,
+  canWithdraw: mayWithdraw,
+  canDelete: mayDelete,
   onWithdraw,
   onChanged,
   onClose,
@@ -60,18 +61,24 @@ export default function AdvanceDetailDialog({
 }) {
   const money = useMoneyFormatter();
   const [deleting, setDeleting] = useState<BankTransaction | null>(null);
-  const onDelete = canDelete ? setDeleting : undefined;
   const detail = useQuery({
     queryKey: ['bankAdvance', advanceId],
     queryFn: () => api.banking.getAdvance({ id: advanceId }),
   });
 
   const advance = detail.data?.advance;
+  // A deleted advance is shown for checking only.
+  const isDeleted = advance?.isDeleted === 1;
+  const canWithdraw = mayWithdraw && !isDeleted;
+  const canDelete = mayDelete && !isDeleted;
+  const onDelete = canDelete ? setDeleting : undefined;
   const withdrawals = detail.data?.withdrawals ?? [];
 
   // Remaining after each step, worked out in order from the deposit down.
+  // A deleted withdrawal is listed for checking but takes nothing off.
   let running = advance?.amount ?? 0;
   const steps = withdrawals.map((withdrawal) => {
+    if (withdrawal.isDeleted) return { withdrawal, after: null };
     running -= withdrawal.amount;
     return { withdrawal, after: running };
   });
@@ -88,6 +95,7 @@ export default function AdvanceDetailDialog({
               label={BANK_ADVANCE_STATUS_LABELS[advance.status]}
             />
           )}
+          {isDeleted && <DeletedChip reason={advance?.deletedReason ?? null} />}
         </Stack>
       </DialogTitle>
       <DialogContent dividers>
@@ -178,9 +186,10 @@ export default function AdvanceDetailDialog({
                     // The same typographic minus as the Banking strip.
                     amount={`−${money(withdrawal.amount)}`}
                     tone="error.main"
-                    after={money(after)}
+                    after={after === null ? '—' : money(after)}
                     money={money}
                     onDelete={onDelete}
+                    showActionCell={canDelete}
                   />
                 ))}
               </TableBody>
@@ -188,7 +197,7 @@ export default function AdvanceDetailDialog({
 
             </Paper>
 
-            {withdrawals.length === 0 && (
+            {withdrawals.every((w) => w.isDeleted) && (
               <Typography variant="body2" color="text.secondary">
                 Nothing has been withdrawn yet.
               </Typography>
@@ -235,6 +244,7 @@ function StepRow({
   after,
   money,
   onDelete,
+  showActionCell = Boolean(onDelete),
 }: {
   movement: BankTransaction;
   label: string;
@@ -243,12 +253,16 @@ function StepRow({
   after: string;
   money: (minor: number) => string;
   onDelete?: (movement: BankTransaction) => void;
+  /** Keeps the column when this row has no button of its own. */
+  showActionCell?: boolean;
 }) {
+  const deleted = movement.isDeleted === 1;
   return (
-    <TableRow>
+    <TableRow sx={deleted ? deletedRowSx : undefined}>
       <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatInstant(movement.transactionDate)}</TableCell>
       <TableCell sx={{ fontFamily: 'monospace', fontSize: 12.5, whiteSpace: 'nowrap' }}>
         {movement.transactionNumber}
+        {deleted && <DeletedChip reason={movement.deletedReason} />}
       </TableCell>
       <TableCell>
         <Typography variant="body2">{label}</Typography>
@@ -286,17 +300,19 @@ function StepRow({
       <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
         {after}
       </TableCell>
-      {onDelete && (
+      {showActionCell && (
         <TableCell align="right" sx={{ width: 48 }}>
-          <Tooltip title="Delete (administrators only)">
-            <IconButton
-              size="small"
-              aria-label={`Delete ${movement.transactionNumber}`}
-              onClick={() => onDelete(movement)}
-            >
-              <DeleteOutlinedIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+          {onDelete && !deleted && (
+            <Tooltip title="Delete (administrators only)">
+              <IconButton
+                size="small"
+                aria-label={`Delete ${movement.transactionNumber}`}
+                onClick={() => onDelete(movement)}
+              >
+                <DeleteOutlinedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
         </TableCell>
       )}
     </TableRow>

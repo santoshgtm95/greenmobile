@@ -166,6 +166,8 @@ export interface Lookup {
   description: string | null;
   isActive: SqliteBool;
   productCount: number;
+  /** Products still for sale; what a list without "show inactive" contains. */
+  activeProductCount: number;
 }
 
 export interface StaffUser {
@@ -514,7 +516,7 @@ export type ShopAdvancePayment = Pick<
   ShopAdvance,
   | 'id' | 'advanceNumber' | 'advanceDate' | 'fromType' | 'fromBankName' | 'fromAccountNumber'
   | 'fromAccountName' | 'toType' | 'toBankName' | 'toAccountNumber' | 'toAccountName'
-  | 'amount' | 'bankCharges' | 'notes' | 'parentId'
+  | 'amount' | 'bankCharges' | 'notes' | 'parentId' | 'isDeleted' | 'deletedReason'
 >;
 
 export interface ShopAdvanceDetailResult {
