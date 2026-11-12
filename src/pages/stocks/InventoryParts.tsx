@@ -5,12 +5,9 @@ import {
   Button,
   Chip,
   Divider,
-  IconButton,
-  InputAdornment,
   MenuItem,
   Paper,
   Stack,
-  Tab,
   Table,
   TableBody,
   TableCell,
@@ -18,25 +15,15 @@ import {
   TableHead,
   TablePagination,
   TableRow,
-  Tabs,
   TextField,
-  Tooltip,
   Typography,
 } from '@mui/material';
-import SearchIcon from '@mui/icons-material/Search';
-import TuneIcon from '@mui/icons-material/Tune';
-import SmartphoneIcon from '@mui/icons-material/Smartphone';
 import NorthEastIcon from '@mui/icons-material/NorthEast';
 import SouthWestIcon from '@mui/icons-material/SouthWest';
-import { useNavigate, useParams } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '../lib/api';
-import { useAuth } from '../hooks/useAuth';
-import { useMoneyFormatter, useSettings } from '../hooks/useSettings';
-import { useDebounced } from '../hooks/useDebounced';
-import StockDialog from '../components/StockDialog';
-import SerialsDialog from '../components/SerialsDialog';
-import ExportMenu from '../components/ExportMenu';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../../lib/api';
+import { useMoneyFormatter, useSettings } from '../../hooks/useSettings';
+import { useDebounced } from '../../hooks/useDebounced';
 import { PosApiError } from '@shared/errors';
 import {
   INVENTORY_TRANSACTION_LABELS,
@@ -44,94 +31,19 @@ import {
   type InventoryTransactionType,
 } from '@shared/domain';
 import { formatInstant } from '@shared/datetime';
-import type { LowStockItem, Product } from '@shared/api';
+import type { LowStockItem } from '@shared/api';
 
 /**
- * Inventory (spec §5: stock, stock adjustment, inventory history, low stock).
- *
- * The Products screen is about what the shop sells — names, SKUs, prices. This
- * screen is about what is actually on the shelf, and it is where the movement
- * ledger lives: every change to a stock level, what caused it, who did it and
- * what the level was before and after (spec §66). Nothing in the application can
- * move stock without leaving a row here, which is what makes a discrepancy
- * something you can investigate rather than argue about.
+ * The inventory side of Stocks (spec §5, §66): headline figures, the movement
+ * ledger and the reorder list. Nothing in the application can move stock without
+ * leaving a ledger row, which is what makes a discrepancy something you can
+ * investigate rather than argue about.
  */
-const TABS = [
-  { value: 'levels', label: 'Stock levels' },
-  { value: 'movements', label: 'Movement history' },
-  { value: 'low', label: 'Low stock' },
-] as const;
-
-type TabValue = (typeof TABS)[number]['value'];
-
-export default function InventoryPage() {
-  // The tab is in the route rather than in component state, so /inventory/movements
-  // is a real address — reachable from a link, from the back button, and from the
-  // screenshot harness.
-  const navigate = useNavigate();
-  const { tab } = useParams<{ tab?: string }>();
-  const active: TabValue = TABS.some((entry) => entry.value === tab)
-    ? (tab as TabValue)
-    : 'levels';
-
-  const summary = useQuery({
-    queryKey: ['inventory', 'summary'],
-    queryFn: () => api.inventory.summary(),
-  });
-
-  const lowStock = useQuery({
-    queryKey: ['inventory', 'lowStock'],
-    queryFn: () => api.inventory.lowStock(),
-  });
-
-  return (
-    <Stack spacing={2}>
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-        <Typography variant="h5" sx={{ flexGrow: 1 }}>
-          Inventory
-        </Typography>
-        {/* The stock-on-hand sheet, which is what a stock-take is done against. */}
-        <ExportMenu target={{ dataset: 'INVENTORY_LIST' }} label="Export stock sheet" />
-      </Stack>
-
-      {summary.isError && (
-        <Alert severity="error">
-          {summary.error instanceof PosApiError
-            ? summary.error.message
-            : 'Unable to read the stock figures.'}
-        </Alert>
-      )}
-
-      <StockFigures data={summary.data} lowStock={lowStock.data} />
-
-      <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
-        <Tabs value={active} onChange={(_e, next) => navigate(`/inventory/${next as TabValue}`)}>
-          {TABS.map((entry) => (
-            <Tab
-              key={entry.value}
-              value={entry.value}
-              label={
-                entry.value === 'low' && (lowStock.data?.length ?? 0) > 0
-                  ? `${entry.label} (${lowStock.data?.length})`
-                  : entry.label
-              }
-            />
-          ))}
-        </Tabs>
-      </Paper>
-
-      {active === 'levels' && <StockLevels />}
-      {active === 'movements' && <MovementLedger />}
-      {active === 'low' && <LowStock items={lowStock.data ?? []} loading={lowStock.isLoading} />}
-    </Stack>
-  );
-}
-
 // -----------------------------------------------------------------------------
 // Headline figures
 // -----------------------------------------------------------------------------
 
-function StockFigures({
+export function StockFigures({
   data,
   lowStock,
 }: {
@@ -216,260 +128,6 @@ function StockFigures({
   );
 }
 
-// -----------------------------------------------------------------------------
-// Stock levels
-// -----------------------------------------------------------------------------
-
-/** What is on the shelf, and what it is worth. Quantities, not prices. */
-function StockLevels() {
-  const { can } = useAuth();
-  const money = useMoneyFormatter();
-  const { data: settings } = useSettings();
-  const queryClient = useQueryClient();
-
-  const [search, setSearch] = useState('');
-  const [lowStockOnly, setLowStockOnly] = useState(false);
-  const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(25);
-  const [adjusting, setAdjusting] = useState<Product | null>(null);
-  const [serialsFor, setSerialsFor] = useState<Product | null>(null);
-
-  const debouncedSearch = useDebounced(search, 250);
-
-  const query = useMemo(
-    () => ({
-      search: debouncedSearch || undefined,
-      lowStockOnly,
-      includeInactive: false,
-      page,
-      pageSize,
-    }),
-    [debouncedSearch, lowStockOnly, page, pageSize],
-  );
-
-  const products = useQuery({
-    queryKey: ['products', query],
-    queryFn: () => api.products.list(query),
-  });
-
-  /** Refetch the figures too — an adjustment changes them. */
-  const refreshAll = () => {
-    void queryClient.invalidateQueries({ queryKey: ['products'] });
-    void queryClient.invalidateQueries({ queryKey: ['inventory'] });
-  };
-
-  const threshold = settings?.lowStockThreshold ?? 5;
-  const rows = products.data?.rows ?? [];
-
-  return (
-    <>
-      <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ p: 2 }}>
-          <TextField
-            placeholder="Search name, SKU, barcode or IMEI"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(0);
-            }}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon fontSize="small" />
-                  </InputAdornment>
-                ),
-              },
-            }}
-            sx={{ flexGrow: 1 }}
-          />
-          <TextField
-            select
-            label="Show"
-            value={lowStockOnly ? 'LOW' : 'ALL'}
-            onChange={(e) => {
-              setLowStockOnly(e.target.value === 'LOW');
-              setPage(0);
-            }}
-            sx={{ width: 200 }}
-          >
-            <MenuItem value="ALL">All products</MenuItem>
-            <MenuItem value="LOW">At or below minimum</MenuItem>
-          </TextField>
-        </Stack>
-
-        <Divider />
-
-        {products.isError && (
-          <Alert severity="error" sx={{ m: 2 }}>
-            {products.error instanceof PosApiError
-              ? products.error.message
-              : 'Unable to load stock levels.'}
-          </Alert>
-        )}
-
-        <TableContainer sx={{ maxHeight: 560 }}>
-          <Table size="small" stickyHeader>
-            <TableHead>
-              <TableRow>
-                <TableCell>SKU</TableCell>
-                <TableCell>Product</TableCell>
-                <TableCell>Category</TableCell>
-                <TableCell align="right">In stock</TableCell>
-                <TableCell align="right">Minimum</TableCell>
-                <TableCell align="right">Cost each</TableCell>
-                <TableCell align="right">Stock value</TableCell>
-                <TableCell>State</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {rows.map((product) => {
-                const reorderPoint = product.minimumStock > 0 ? product.minimumStock : threshold;
-                const state =
-                  product.stockQuantity <= 0
-                    ? 'out'
-                    : product.stockQuantity <= reorderPoint
-                      ? 'low'
-                      : 'ok';
-
-                return (
-                  <TableRow key={product.id} hover>
-                    <TableCell sx={{ fontFamily: 'monospace', fontSize: 12.5 }}>
-                      {product.sku}
-                    </TableCell>
-                    <TableCell>
-                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                        <span>{product.name}</span>
-                        {product.isSerialized === 1 && (
-                          <Tooltip title={`${product.availableSerials} available by IMEI`}>
-                            <Chip
-                              size="small"
-                              variant="outlined"
-                              icon={<SmartphoneIcon sx={{ fontSize: 14 }} />}
-                              label={product.availableSerials}
-                            />
-                          </Tooltip>
-                        )}
-                      </Stack>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="caption" color="text.secondary">
-                        {product.categoryName ?? '—'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell
-                      align="right"
-                      sx={{
-                        fontVariantNumeric: 'tabular-nums',
-                        fontWeight: 700,
-                        color:
-                          state === 'out' ? 'error.main' : state === 'low' ? 'warning.dark' : undefined,
-                      }}
-                    >
-                      {product.stockQuantity}
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      <Tooltip
-                        title={
-                          product.minimumStock > 0
-                            ? 'This product’s own minimum'
-                            : `Shop default (${threshold})`
-                        }
-                      >
-                        <span style={{ opacity: product.minimumStock > 0 ? 1 : 0.55 }}>
-                          {reorderPoint}
-                        </span>
-                      </Tooltip>
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {money(product.purchasePrice)}
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {money(Math.max(0, product.stockQuantity) * product.purchasePrice)}
-                    </TableCell>
-                    <TableCell>
-                      {state === 'out' ? (
-                        <Chip size="small" color="error" label="Out of stock" />
-                      ) : state === 'low' ? (
-                        <Chip size="small" color="warning" label="Low" />
-                      ) : (
-                        <Chip size="small" variant="outlined" label="OK" />
-                      )}
-                    </TableCell>
-                    <TableCell align="right">
-                      {can('inventory.adjust') && (
-                        <Stack direction="row" spacing={0.5} sx={{ justifyContent: 'flex-end' }}>
-                          {product.isSerialized === 1 ? (
-                            <Tooltip title="IMEIs and serial numbers">
-                              <IconButton size="small" onClick={() => setSerialsFor(product)}>
-                                <SmartphoneIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                          ) : (
-                            <Tooltip title="Adjust stock">
-                              <IconButton size="small" onClick={() => setAdjusting(product)}>
-                                <TuneIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                          )}
-                        </Stack>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-
-              {rows.length === 0 && !products.isLoading && (
-                <TableRow>
-                  <TableCell colSpan={9}>
-                    <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
-                      {lowStockOnly
-                        ? 'Every product is above its minimum.'
-                        : 'No products match this search.'}
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-
-        <TablePagination
-          component="div"
-          count={products.data?.total ?? 0}
-          page={page}
-          onPageChange={(_e, next) => setPage(next)}
-          rowsPerPage={pageSize}
-          onRowsPerPageChange={(e) => {
-            setPageSize(Number(e.target.value));
-            setPage(0);
-          }}
-          rowsPerPageOptions={[25, 50, 100]}
-        />
-      </Paper>
-
-      {adjusting && (
-        <StockDialog
-          product={adjusting}
-          onClose={() => setAdjusting(null)}
-          onSaved={() => {
-            setAdjusting(null);
-            refreshAll();
-          }}
-        />
-      )}
-
-      {serialsFor && (
-        <SerialsDialog
-          product={serialsFor}
-          onClose={() => setSerialsFor(null)}
-          onChanged={refreshAll}
-        />
-      )}
-    </>
-  );
-}
 
 // -----------------------------------------------------------------------------
 // Movement ledger
@@ -482,11 +140,13 @@ function StockLevels() {
  * what lets someone walk back through the ledger and find the point at which the
  * recorded stock and the shelf stopped agreeing.
  */
-function MovementLedger() {
+/** `lockedProductId` pins the ledger to one product and hides the product picker. */
+export function MovementLedger({ lockedProductId }: { lockedProductId?: string }) {
   const money = useMoneyFormatter();
 
   const [productSearch, setProductSearch] = useState('');
-  const [productId, setProductId] = useState('');
+  const [pickedProductId, setProductId] = useState('');
+  const productId = lockedProductId ?? pickedProductId;
   const [type, setType] = useState<InventoryTransactionType | ''>('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -498,6 +158,7 @@ function MovementLedger() {
   // A picker rather than a free-text product filter: the ledger is filtered by
   // productId, so the name has to be resolved to one.
   const productOptions = useQuery({
+    enabled: !lockedProductId,
     queryKey: ['products', 'ledgerPicker', debouncedProductSearch],
     queryFn: () =>
       api.products.list({
@@ -536,6 +197,7 @@ function MovementLedger() {
         spacing={2}
         sx={{ p: 2, alignItems: { lg: 'center' } }}
       >
+        {!lockedProductId && (
         <TextField
           select
           label="Product"
@@ -572,6 +234,7 @@ function MovementLedger() {
             </MenuItem>
           ))}
         </TextField>
+        )}
 
         <TextField
           select
@@ -618,7 +281,7 @@ function MovementLedger() {
 
         <Box sx={{ flexGrow: 1 }} />
 
-        {(productId || type || from || to) && (
+        {(pickedProductId || type || from || to) && (
           <Button
             size="small"
             color="inherit"
@@ -773,7 +436,7 @@ function MovementLedger() {
 // -----------------------------------------------------------------------------
 
 /** What to reorder, worst first (spec §5, §67). */
-function LowStock({ items, loading }: { items: LowStockItem[]; loading: boolean }) {
+export function LowStock({ items, loading }: { items: LowStockItem[]; loading: boolean }) {
   const { data: settings } = useSettings();
   const threshold = settings?.lowStockThreshold ?? 5;
 

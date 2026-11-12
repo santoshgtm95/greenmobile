@@ -1,7 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import AppLayout from '../layouts/AppLayout';
 import SettingsPage from '../pages/SettingsPage';
-import ProductsPage from '../pages/ProductsPage';
+import StocksPage from '../pages/StocksPage';
 import PosPage from '../pages/PosPage';
 import SalesPage from '../pages/SalesPage';
 import CustomersPage from '../pages/CustomersPage';
@@ -13,7 +13,6 @@ import InternalTransfersPage from '../pages/InternalTransfersPage';
 import ServicesPage from '../pages/ServicesPage';
 import DashboardPage from '../pages/DashboardPage';
 import ReportsPage from '../pages/ReportsPage';
-import InventoryPage from '../pages/InventoryPage';
 import UsersPage from '../pages/UsersPage';
 import { useAuth } from '../hooks/useAuth';
 import type { Permission } from '@shared/domain';
@@ -53,28 +52,20 @@ export default function AppRouter() {
             </Guard>
           }
         />
+        {/* Products and inventory together; the tab lives in the address, so /stocks/movements is linkable. */}
         <Route
-          path="/products"
+          path="/stocks"
           element={
             <Guard permission="products.view">
-              <ProductsPage />
-            </Guard>
-          }
-        />
-        {/* The tab lives in the address, so /inventory/movements is linkable. */}
-        <Route
-          path="/inventory"
-          element={
-            <Guard permission="inventory.view">
-              <InventoryPage />
+              <StocksPage />
             </Guard>
           }
         />
         <Route
-          path="/inventory/:tab"
+          path="/stocks/:tab"
           element={
-            <Guard permission="inventory.view">
-              <InventoryPage />
+            <Guard permission="products.view">
+              <StocksPage />
             </Guard>
           }
         />

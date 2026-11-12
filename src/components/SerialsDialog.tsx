@@ -51,7 +51,6 @@ export default function SerialsDialog({
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const money = useMoneyFormatter();
   const queryClient = useQueryClient();
   const [bulk, setBulk] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -61,17 +60,19 @@ export default function SerialsDialog({
     queryFn: () => api.serials.list({ productId: product.id }),
   });
 
-  // One IMEI per line, so a scanner can simply be fired at the box.
+  // One phone per line, so a scanner can simply be fired at the box; a dual-SIM
+  // phone puts its second IMEI on the same line after a space or comma.
   const parsed = bulk
     .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
+    .map((line) => line.split(/[\s,]+/).filter(Boolean))
+    .filter((codes) => codes.length > 0);
+  const tooMany = parsed.some((codes) => codes.length > 2);
 
   const add = useMutation({
     mutationFn: () =>
       api.serials.add({
         productId: product.id,
-        serials: parsed.map((code) => ({ imei1: code })),
+        serials: parsed.map(([imei1, imei2]) => ({ imei1, imei2 })),
       }),
     onSuccess: () => {
       setBulk('');
@@ -109,11 +110,14 @@ export default function SerialsDialog({
             minRows={3}
             value={bulk}
             onChange={(e) => setBulk(e.target.value)}
-            placeholder={'354121080000001\n354121080000002'}
+            placeholder={'354121080000001 354121080000019\n354121080000027'}
+            error={tooMany}
             helperText={
-              parsed.length > 0
-                ? `${parsed.length} number(s) ready — each becomes one unit of stock`
-                : 'One per line. Scan straight into this box if you have a scanner.'
+              tooMany
+                ? 'A phone has at most two IMEIs — put each phone on its own line.'
+                : parsed.length > 0
+                ? `${parsed.length} phone(s) ready — each becomes one unit of stock`
+                : 'One phone per line; put a second IMEI on the same line after a space. Scanning works too.'
             }
           />
 
@@ -124,7 +128,7 @@ export default function SerialsDialog({
                 setError(null);
                 add.mutate();
               }}
-              disabled={add.isPending || parsed.length === 0}
+              disabled={add.isPending || parsed.length === 0 || tooMany}
             >
               {add.isPending ? 'Adding…' : `Add ${parsed.length || ''} to stock`}
             </Button>
@@ -144,65 +148,90 @@ export default function SerialsDialog({
             </Typography>
           </Stack>
 
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>IMEI / Serial</TableCell>
-                <TableCell align="right">Cost</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Warranty ends</TableCell>
-                <TableCell align="right" />
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {rows.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5} align="center" sx={{ py: 3, color: 'text.secondary' }}>
-                    No serial numbers yet.
-                  </TableCell>
-                </TableRow>
-              )}
-              {rows.map((serial) => (
-                <TableRow key={serial.id} hover>
-                  <TableCell sx={{ fontFamily: 'monospace' }}>
-                    {serial.imei1 ?? serial.serialNumber ?? '—'}
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                    {money(serial.purchasePrice)}
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      size="small"
-                      color={STATUS_COLOR[serial.status]}
-                      variant={serial.status === 'AVAILABLE' ? 'filled' : 'outlined'}
-                      label={SERIAL_STATUS_LABELS[serial.status]}
-                    />
-                  </TableCell>
-                  <TableCell sx={{ color: 'text.secondary' }}>
-                    {serial.warrantyEndDate ? formatInstant(serial.warrantyEndDate) : '—'}
-                  </TableCell>
-                  <TableCell align="right">
-                    {serial.status === 'AVAILABLE' && (
-                      <Tooltip title="Mark faulty — removes it from sellable stock">
-                        <IconButton
-                          size="small"
-                          onClick={() => markDefective.mutate(serial.id)}
-                          disabled={markDefective.isPending}
-                        >
-                          <ReportProblemIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <SerialTable
+            productId={product.id}
+            onMarkDefective={(id) => markDefective.mutate(id)}
+            busy={markDefective.isPending}
+          />
         </Stack>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Close</Button>
       </DialogActions>
     </Dialog>
+  );
+}
+
+/** Every IMEI / serial unit of one product, with both IMEIs of a dual-SIM phone. */
+export function SerialTable({
+  productId,
+  onMarkDefective,
+  busy,
+}: {
+  productId: string;
+  /** Shows the "mark faulty" button on available units when given. */
+  onMarkDefective?: (serialId: string) => void;
+  busy?: boolean;
+}) {
+  const money = useMoneyFormatter();
+  const serials = useQuery({
+    queryKey: ['serials', productId],
+    queryFn: () => api.serials.list({ productId }),
+  });
+  const rows = serials.data ?? [];
+
+  return (
+    <Table size="small">
+      <TableHead>
+        <TableRow>
+          <TableCell>IMEI 1</TableCell>
+          <TableCell>IMEI 2</TableCell>
+          <TableCell align="right">Cost</TableCell>
+          <TableCell>Status</TableCell>
+          <TableCell>Warranty ends</TableCell>
+          {onMarkDefective && <TableCell align="right" />}
+        </TableRow>
+      </TableHead>
+      <TableBody>
+        {rows.length === 0 && (
+          <TableRow>
+            <TableCell colSpan={6} align="center" sx={{ py: 3, color: 'text.secondary' }}>
+              {serials.isLoading ? 'Loading…' : 'No IMEI numbers yet.'}
+            </TableCell>
+          </TableRow>
+        )}
+        {rows.map((serial) => (
+          <TableRow key={serial.id} hover>
+            <TableCell sx={{ fontFamily: 'monospace' }}>{serial.imei1 ?? serial.serialNumber ?? '—'}</TableCell>
+            <TableCell sx={{ fontFamily: 'monospace' }}>{serial.imei2 ?? '—'}</TableCell>
+            <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+              {money(serial.purchasePrice)}
+            </TableCell>
+            <TableCell>
+              <Chip
+                size="small"
+                color={STATUS_COLOR[serial.status]}
+                variant={serial.status === 'AVAILABLE' ? 'filled' : 'outlined'}
+                label={SERIAL_STATUS_LABELS[serial.status]}
+              />
+            </TableCell>
+            <TableCell sx={{ color: 'text.secondary' }}>
+              {serial.warrantyEndDate ? formatInstant(serial.warrantyEndDate) : '—'}
+            </TableCell>
+            {onMarkDefective && (
+              <TableCell align="right">
+                {serial.status === 'AVAILABLE' && (
+                  <Tooltip title="Mark faulty — removes it from sellable stock">
+                    <IconButton size="small" onClick={() => onMarkDefective(serial.id)} disabled={busy}>
+                      <ReportProblemIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
+              </TableCell>
+            )}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }

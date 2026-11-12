@@ -161,8 +161,7 @@ green-mobile/
 │   ├── lib/                    # api.ts (frontend wrapper around window.api)
 │   ├── pages/                  # Top-level route pages
 │   │   ├── PosPage.tsx         # Fast barcode/search POS checkout terminal
-│   │   ├── ProductsPage.tsx    # Catalog & master data management
-│   │   ├── InventoryPage.tsx   # Stock levels, ledger, IMEI serials, adjustments
+│   │   ├── StocksPage.tsx      # Products + inventory: list, Category→Brand→Product tree, ledger
 │   │   ├── SalesPage.tsx       # Historical transactions, filtering, refunds
 │   │   ├── ServicesPage.tsx    # Mobile repair order tracking & workflow
 │   │   ├── BankingPage.tsx     # Bank accounts, transfers, cash drawer counts

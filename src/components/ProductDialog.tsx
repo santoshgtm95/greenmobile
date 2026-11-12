@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type KeyboardEvent } from 'react';
 import {
   Alert,
   Box,
@@ -9,13 +9,17 @@ import {
   DialogTitle,
   Divider,
   FormControlLabel,
+  IconButton,
   InputAdornment,
   MenuItem,
+  Paper,
   Stack,
   Switch,
   TextField,
   Typography,
 } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import MoneyField from './MoneyField';
@@ -25,6 +29,7 @@ import { PRODUCT_UNITS } from '@shared/domain';
 import { generateEan13Candidate } from '@shared/barcode';
 import type { Lookup, Product } from '@shared/api';
 import ShopAccountSelect from './ShopAccountSelect';
+import { SerialTable } from './SerialsDialog';
 import CashInHandBox from './CashInHandBox';
 import { useMoneyFormatter } from '../hooks/useSettings';
 import { multiplyMoney } from '@shared/money';
@@ -66,11 +71,31 @@ export default function ProductDialog({
     paidBy: 'CASH' as 'CASH' | 'BANK',
     purchaseShopAccountId: '',
   });
+  // One row per phone; a dual-SIM phone has two IMEIs.
+  const [phones, setPhones] = useState([{ imei1: '', imei2: '' }]);
+  const serials = phones
+    .map((p) => [p.imei1.trim(), p.imei2.trim()].filter(Boolean))
+    .filter((codes) => codes.length > 0)
+    .map(([imei1, imei2]) => ({ imei1, imei2 }));
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const money = useMoneyFormatter();
-  const paysForStock = !isEdit && !form.isSerialized && form.initialStock > 0;
-  const stockCost = paysForStock ? multiplyMoney(form.purchasePrice, form.initialStock) : 0;
+  const openingUnits = form.isSerialized ? serials.length : form.initialStock;
+  const paysForStock = !isEdit && openingUnits > 0;
+  const stockCost = paysForStock ? multiplyMoney(form.purchasePrice, openingUnits) : 0;
+
+  const setPhone = (index: number, key: 'imei1' | 'imei2', value: string) =>
+    setPhones((rows) => rows.map((row, i) => (i === index ? { ...row, [key]: value } : row)));
+
+  // Enter (or a scanner's trailing Enter) moves to the next IMEI box, adding a phone at the end.
+  const nextImei = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    const inputs = [...document.querySelectorAll<HTMLInputElement>('[data-imei] input')];
+    const next = inputs[inputs.indexOf(event.target as HTMLInputElement) + 1];
+    if (next) next.focus();
+    else setPhones((rows) => [...rows, { imei1: '', imei2: '' }]);
+  };
 
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -93,7 +118,8 @@ export default function ProductDialog({
         sellingPrice: form.sellingPrice,
         taxRate: form.taxRate,
         taxRateOverride: form.taxRateOverride,
-        minimumStock: form.minimumStock,
+        // Phones are counted by IMEI, so they fall back to the shop's low-stock level.
+        minimumStock: form.isSerialized ? 0 : form.minimumStock,
         unit: form.unit,
         isSerialized: form.isSerialized,
         warrantyMonths: form.warrantyMonths,
@@ -105,7 +131,7 @@ export default function ProductDialog({
       return api.products.create({
         ...common,
         initialStock: form.isSerialized ? 0 : form.initialStock,
-        serials: undefined,
+        serials: form.isSerialized && serials.length > 0 ? serials : undefined,
         purchaseShopAccountId:
           paysForStock && form.paidBy === 'BANK' ? form.purchaseShopAccountId : undefined,
       });
@@ -284,13 +310,15 @@ export default function ProductDialog({
                 helperText="Recorded as an opening stock movement"
               />
             )}
-            <TextField
-              label="Minimum stock"
-              type="number"
-              value={form.minimumStock}
-              onChange={(e) => set('minimumStock', Math.max(0, Number(e.target.value) || 0))}
-              helperText="Warn at or below this level"
-            />
+            {!form.isSerialized && (
+              <TextField
+                label="Minimum stock"
+                type="number"
+                value={form.minimumStock}
+                onChange={(e) => set('minimumStock', Math.max(0, Number(e.target.value) || 0))}
+                helperText="Warn at or below this level"
+              />
+            )}
             <TextField select label="Unit" value={form.unit} onChange={(e) => set('unit', e.target.value)}>
               {PRODUCT_UNITS.map((u) => (
                 <MenuItem key={u} value={u}>
@@ -362,12 +390,72 @@ export default function ProductDialog({
             />
           </Stack>
 
-          {form.isSerialized && (
-            <Alert severity="info">
-              {isEdit
-                ? 'Add IMEI or serial numbers from the product list — each one is a unit of stock.'
-                : 'Save the product first, then add its IMEI or serial numbers. Each one counts as a unit of stock.'}
-            </Alert>
+          {form.isSerialized && isEdit && (
+            <>
+              <Paper variant="outlined" sx={{ overflow: 'auto', maxHeight: 280 }}>
+                <SerialTable productId={product.id} />
+              </Paper>
+              <Alert severity="info">
+                Add more phones with the "IMEI / serial numbers" button in the product list — each phone is a unit of stock.
+              </Alert>
+            </>
+          )}
+
+          {form.isSerialized && !isEdit && (
+            <Stack spacing={1.5}>
+              <Typography variant="body2" color="text.secondary">
+                Enter the IMEI of each phone you have. Each phone is one unit of stock; add IMEI 2 for
+                dual-SIM phones. Press Enter or scan to move to the next box.
+              </Typography>
+              {phones.map((phone, index) => (
+                <Stack key={index} direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ width: 56, flexShrink: 0 }}>
+                    Phone {index + 1}
+                  </Typography>
+                  <TextField
+                    data-imei
+                    size="small"
+                    label="IMEI 1"
+                    value={phone.imei1}
+                    autoFocus={index > 0 && index === phones.length - 1}
+                    onChange={(e) => setPhone(index, 'imei1', e.target.value)}
+                    onKeyDown={nextImei}
+                    slotProps={{ htmlInput: { style: { fontFamily: 'monospace' } } }}
+                    sx={{ flex: 1 }}
+                  />
+                  <TextField
+                    data-imei
+                    size="small"
+                    label="IMEI 2 (optional)"
+                    value={phone.imei2}
+                    onChange={(e) => setPhone(index, 'imei2', e.target.value)}
+                    onKeyDown={nextImei}
+                    slotProps={{ htmlInput: { style: { fontFamily: 'monospace' } } }}
+                    sx={{ flex: 1 }}
+                  />
+                  <IconButton
+                    size="small"
+                    aria-label={`Remove phone ${index + 1}`}
+                    disabled={phones.length === 1}
+                    onClick={() => setPhones((rows) => rows.filter((_, i) => i !== index))}
+                  >
+                    <DeleteOutlineIcon fontSize="small" />
+                  </IconButton>
+                </Stack>
+              ))}
+              <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+                <Button
+                  size="small"
+                  startIcon={<AddIcon />}
+                  onClick={() => setPhones((rows) => [...rows, { imei1: '', imei2: '' }])}
+                >
+                  Add another phone
+                </Button>
+                <Typography variant="body2" color="text.secondary">
+                  Opening stock: <strong>{serials.length}</strong>
+                </Typography>
+              </Stack>
+            </Stack>
           )}
 
           {isEdit && (
