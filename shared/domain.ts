@@ -439,6 +439,14 @@ export const AUDIT_ACTIONS = [
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
+/** How a purchase invoice is paid: cash on delivery, or by bank. */
+export const PURCHASE_PAYMENT_METHODS = ["COD", "BANK"] as const;
+export type PurchasePaymentMethod = (typeof PURCHASE_PAYMENT_METHODS)[number];
+export const PURCHASE_PAYMENT_LABELS: Record<PurchasePaymentMethod, string> = {
+  COD: "COD",
+  BANK: "Bank",
+};
+
 // -----------------------------------------------------------------------------
 // Misc
 // -----------------------------------------------------------------------------

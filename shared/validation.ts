@@ -19,6 +19,7 @@ import {
   BANK_FEE_DIRECTIONS,
   DATA_MODULES,
   BANK_TRANSACTION_TYPES,
+  PURCHASE_PAYMENT_METHODS,
 } from './domain';
 import { DATE_PRESETS, LOCAL_DATE_TIME_PATTERN } from './datetime';
 import { SETTING_KEYS, isStorableLogo, settingValueLimit, type SettingKey } from './settings';
@@ -545,6 +546,112 @@ export const zExpenseListQuery = z.object({
   page: z.number().int().min(0).max(100_000).default(0),
   pageSize: z.number().int().min(1).max(200).default(50),
 });
+
+// -----------------------------------------------------------------------------
+// Purchase invoices and suppliers
+// -----------------------------------------------------------------------------
+
+const zLocalDateTime = z.string().trim().regex(LOCAL_DATE_TIME_PATTERN, 'Use the date and time picker');
+
+export const zSaveSupplier = z.object({
+  id: zId.optional(),
+  name: zName,
+  address: zOptionalText,
+  phone: zPhone,
+  isActive: z.boolean().default(true),
+});
+
+/** A product not in Stocks yet; created when it is delivered. Purchase price = unit cost, stock = quantity. */
+export const zNewPurchaseProduct = z.object({
+  name: zName,
+  sku: productFields.sku,
+  barcode: productFields.barcode,
+  categoryId: zId.optional(),
+  /** Typed brand: an unknown name is registered as a new brand. */
+  brandName: zShortText,
+  sellingPrice: zMinor,
+  description: zOptionalText,
+});
+export type NewPurchaseProduct = z.output<typeof zNewPurchaseProduct>;
+
+const purchaseInvoiceFields = {
+  /** Blank: generated (PI-YYYYMM-0001). */
+  invoiceNo: zShortText,
+  supplierId: zId,
+  invoiceAt: zLocalDateTime,
+  paymentMethod: z.enum(PURCHASE_PAYMENT_METHODS),
+  remark: zOptionalText,
+  items: z
+    .array(
+      z
+        .object({
+          productId: zId.optional(),
+          newProduct: zNewPurchaseProduct.optional(),
+          quantity: zQuantity,
+          /** Becomes the product's purchase price on delivery. */
+          unitCost: zMinor,
+          /** Becomes the product's selling price on delivery. */
+          sellingPrice: zMinor.optional(),
+        })
+        .refine((i) => Boolean(i.productId) !== Boolean(i.newProduct), 'Choose a product or enter a new one'),
+    )
+    .min(1, 'Add at least one product'),
+};
+
+export const zCreatePurchaseInvoice = z.object(purchaseInvoiceFields);
+export const zUpdatePurchaseInvoice = z.object({ id: zId, ...purchaseInvoiceFields });
+
+export const zPurchaseInvoiceListQuery = zPaging.extend({
+  supplierId: zId.optional(),
+  /** WAITING: something still to arrive. UNPAID: money still owed. */
+  status: z.enum(['WAITING', 'UNPAID']).optional(),
+});
+
+export const zReceivePurchaseItems = z.object({
+  invoiceId: zId,
+  items: z
+    .array(
+      z.object({
+        itemId: zId,
+        quantity: zQuantity,
+        /** Serialized products: one IMEI / serial per unit. */
+        serials: z.array(zSerial).optional(),
+      }),
+    )
+    .min(1, 'Choose at least one product'),
+});
+
+export const zReturnPurchaseItem = z.object({
+  itemId: zId,
+  quantity: zQuantity,
+  serials: z.array(zSerial).optional(),
+  /** REFUND: money back, no longer owed. REPLACE: awaited again. */
+  outcome: z.enum(['REFUND', 'REPLACE']),
+  /** False: sent back on arrival, never put into stock. */
+  arrived: z.boolean().default(true),
+  reason: z.string().trim().min(1, 'Give a reason').max(300),
+  /** Money the supplier gave back now. */
+  refundAmount: zMinor.default(0),
+  /** Where that money went; none = cash in hand. */
+  shopAccountId: zId.optional(),
+});
+
+export const zPaySupplier = z.object({
+  invoiceId: zId,
+  amount: zMinor.refine((v) => v > 0, 'Amount must be more than zero'),
+  /** None = paid from cash in hand. */
+  shopAccountId: zId.optional(),
+  paidAt: zLocalDateTime,
+  notes: zOptionalText,
+});
+
+export type SaveSupplierInput = z.output<typeof zSaveSupplier>;
+export type CreatePurchaseInvoiceInput = z.output<typeof zCreatePurchaseInvoice>;
+export type UpdatePurchaseInvoiceInput = z.output<typeof zUpdatePurchaseInvoice>;
+export type PurchaseInvoiceListQuery = z.output<typeof zPurchaseInvoiceListQuery>;
+export type ReceivePurchaseItemsInput = z.output<typeof zReceivePurchaseItems>;
+export type ReturnPurchaseItemInput = z.output<typeof zReturnPurchaseItem>;
+export type PaySupplierInput = z.output<typeof zPaySupplier>;
 
 export const zDayRange = z.object({
   from: zBusinessDay,

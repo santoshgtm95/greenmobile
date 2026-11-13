@@ -34,6 +34,8 @@ const EXPECTED_TABLES = [
   'Payment',
   'Product',
   'ProductSerial',
+  'PurchaseInvoice',
+  'PurchaseInvoiceItem',
   'Sale',
   'SaleItem',
   'SaleReturn',
@@ -46,6 +48,8 @@ const EXPECTED_TABLES = [
   'ShopAdvance',
   'ShopAdvanceSettlement',
   'ShopBankAccount',
+  'Supplier',
+  'SupplierPayment',
   'User',
 ];
 

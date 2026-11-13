@@ -347,11 +347,12 @@ export function deleteProduct(
         `SELECT
            (SELECT COUNT(*) FROM "SaleItem" WHERE productId = ?) AS sales,
            (SELECT COUNT(*) FROM "ServiceItem" WHERE productId = ?) AS services,
-           (SELECT COUNT(*) FROM "InventoryTransaction" WHERE productId = ?) AS movements`,
+           (SELECT COUNT(*) FROM "InventoryTransaction" WHERE productId = ?) AS movements,
+           (SELECT COUNT(*) FROM "PurchaseInvoiceItem" WHERE productId = ?) AS purchases`,
       )
-      .get(id, id, id) as { sales: number; services: number; movements: number };
+      .get(id, id, id, id) as { sales: number; services: number; movements: number; purchases: number };
 
-    const hasHistory = usage.sales > 0 || usage.services > 0 || usage.movements > 0;
+    const hasHistory = usage.sales > 0 || usage.services > 0 || usage.movements > 0 || usage.purchases > 0;
 
     if (hasHistory) {
       db.prepare(`UPDATE "Product" SET isActive = 0, updatedAt = ?, updatedBy = ? WHERE id = ?`).run(
@@ -478,13 +479,15 @@ function assertSerialCodesFree(
   }
 }
 
-function addSerialsInternal(
+export function addSerialsInternal(
   productId: string,
   serials: AddSerialsInput['serials'],
   defaultCost: number,
   actor: SessionUser,
   db: Db,
   allowNegativeStock: boolean,
+  /** The purchase invoice line they arrived on. */
+  referenceId: string | null = null,
 ): number {
   assertSerialCodesFree(serials, db);
 
@@ -523,6 +526,7 @@ function addSerialsInternal(
         unitCost: serial.purchasePrice ?? defaultCost,
         productSerialId: serialId,
         referenceType: 'PURCHASE',
+        referenceId,
       },
       { allowNegativeStock },
       db,

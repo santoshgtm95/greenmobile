@@ -115,6 +115,22 @@ export const CHANNELS = {
     deleteShopAdvance: 'banking:deleteShopAdvance',
     deleteShopAdvanceSettlement: 'banking:deleteShopAdvanceSettlement',
   },
+  suppliers: {
+    list: 'suppliers:list',
+    save: 'suppliers:save',
+  },
+  purchases: {
+    list: 'purchases:list',
+    get: 'purchases:get',
+    create: 'purchases:create',
+    update: 'purchases:update',
+    delete: 'purchases:delete',
+    receive: 'purchases:receive',
+    returnItem: 'purchases:returnItem',
+    pay: 'purchases:pay',
+    deleteItem: 'purchases:deleteItem',
+    deletePayment: 'purchases:deletePayment',
+  },
   backup: {
     overview: 'backup:overview',
     create: 'backup:create',

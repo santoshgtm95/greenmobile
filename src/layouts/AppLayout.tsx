@@ -22,6 +22,7 @@ import DashboardIcon from "@mui/icons-material/Dashboard";
 import PointOfSaleIcon from "@mui/icons-material/PointOfSale";
 import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import Inventory2Icon from "@mui/icons-material/Inventory2";
+import LocalShippingIcon from "@mui/icons-material/LocalShipping";
 import PeopleIcon from "@mui/icons-material/People";
 import BuildIcon from "@mui/icons-material/Build";
 import PaymentsIcon from "@mui/icons-material/Payments";
@@ -93,6 +94,12 @@ const NAV_ITEMS: NavItem[] = [
     label: "Stocks",
     to: "/stocks",
     icon: <Inventory2Icon />,
+    permission: "products.view",
+  },
+  {
+    label: "Purchase Invoice",
+    to: "/purchases",
+    icon: <LocalShippingIcon />,
     permission: "products.view",
   },
   {

@@ -5,6 +5,7 @@ import StocksPage from '../pages/StocksPage';
 import PosPage from '../pages/PosPage';
 import SalesPage from '../pages/SalesPage';
 import CustomersPage from '../pages/CustomersPage';
+import PurchasesPage from '../pages/PurchasesPage';
 import ExpensesPage from '../pages/ExpensesPage';
 import BankingPage from '../pages/BankingPage';
 import AdvancesPage from '../pages/AdvancesPage';
@@ -66,6 +67,14 @@ export default function AppRouter() {
           element={
             <Guard permission="products.view">
               <StocksPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="/purchases"
+          element={
+            <Guard permission="products.view">
+              <PurchasesPage />
             </Guard>
           }
         />

@@ -18,6 +18,7 @@ import type {
   SerialStatus,
   ServiceItemType,
   ServiceStatus,
+  PurchasePaymentMethod,
   UserRole, ShopAdvanceSourceType, ShopAdvanceFromType, ShopAdvanceDestinationType, ShopAdvanceStatus,
 } from './domain';
 import type { SettingKey, ShopSettings } from './settings';
@@ -38,6 +39,14 @@ import type {
   DeleteExpenseInput,
   ExpenseListQuery,
   UpdateExpenseInput,
+  SaveSupplierInput,
+  CreatePurchaseInvoiceInput,
+  UpdatePurchaseInvoiceInput,
+  PurchaseInvoiceListQuery,
+  ReceivePurchaseItemsInput,
+  ReturnPurchaseItemInput,
+  PaySupplierInput,
+  NewPurchaseProduct,
   BankTransactionListQuery,
   BankAdvanceListQueryInput,
   CreateBankTransactionInput,
@@ -930,6 +939,84 @@ export interface Page<T> {
 }
 
 // -----------------------------------------------------------------------------
+// Purchase invoices
+// -----------------------------------------------------------------------------
+
+export interface Supplier {
+  id: string;
+  name: string;
+  address: string | null;
+  phone: string | null;
+  isActive: SqliteBool;
+  invoiceCount: number;
+  /** Minor units: owed for goods kept or still awaited. */
+  total: number;
+  paid: number;
+  remaining: number;
+}
+
+export interface PurchaseInvoice {
+  id: string;
+  invoiceNo: string;
+  supplierId: string;
+  supplierName: string;
+  invoiceDate: string;
+  invoiceDay: string;
+  paymentMethod: PurchasePaymentMethod;
+  remark: string | null;
+  isDeleted: SqliteBool;
+  createdByName: string | null;
+  itemCount: number;
+  quantity: number;
+  receivedQty: number;
+  refundedQty: number;
+  /** Still awaited, including units sent back to be replaced. */
+  pendingQty: number;
+  total: number;
+  paid: number;
+  remaining: number;
+}
+
+export interface PurchaseInvoiceItem {
+  id: string;
+  /** Null until a new product is delivered. */
+  productId: string | null;
+  /** A product that joins Stocks on its first delivery. */
+  newProduct: (NewPurchaseProduct & { brandId?: string }) | null;
+  productName: string;
+  sku: string;
+  barcode: string | null;
+  categoryId: string | null;
+  brandName: string | null;
+  description: string | null;
+  isSerialized: SqliteBool;
+  quantity: number;
+  unitCost: number;
+  /** Becomes the product's selling price on delivery. */
+  sellingPrice: number;
+  receivedQty: number;
+  refundedQty: number;
+  replacedQty: number;
+  pendingQty: number;
+}
+
+export interface SupplierPayment {
+  id: string;
+  /** Positive: paid to the supplier. Negative: refunded by them. */
+  amount: number;
+  shopAccountId: string | null;
+  accountLabel: string | null;
+  paidAt: string;
+  notes: string | null;
+  createdByName: string | null;
+}
+
+export interface PurchaseInvoiceDetail extends PurchaseInvoice {
+  items: PurchaseInvoiceItem[];
+  payments: SupplierPayment[];
+}
+
+// -----------------------------------------------------------------------------
 // The bridge
 // -----------------------------------------------------------------------------
 
@@ -1025,6 +1112,30 @@ export interface PosApi {
   expenseCategories: {
     list(input: LookupQueryInput): Promise<ExpenseCategory[]>;
     save(input: SaveLookupInput): Promise<ExpenseCategory>;
+  };
+  suppliers: {
+    /** With money owed and paid across their invoices. */
+    list(input: LookupQueryInput): Promise<Supplier[]>;
+    save(input: SaveSupplierInput): Promise<Supplier>;
+  };
+  purchases: {
+    list(query: PurchaseInvoiceListQuery): Promise<
+      Page<PurchaseInvoice> & { totals: { total: number; paid: number; remaining: number } }
+    >;
+    get(input: { id: string }): Promise<PurchaseInvoiceDetail>;
+    create(input: CreatePurchaseInvoiceInput): Promise<PurchaseInvoiceDetail>;
+    /** Product lines can only change until something has arrived. */
+    update(input: UpdatePurchaseInvoiceInput): Promise<PurchaseInvoiceDetail>;
+    delete(input: { id: string; reason: string }): Promise<void>;
+    /** Arrived products go into stock. */
+    receive(input: ReceivePurchaseItemsInput): Promise<PurchaseInvoiceDetail>;
+    /** Damaged units go back for a refund or a replacement. */
+    returnItem(input: ReturnPurchaseItemInput): Promise<PurchaseInvoiceDetail>;
+    pay(input: PaySupplierInput): Promise<PurchaseInvoiceDetail>;
+    /** Only a line nothing has happened to yet. */
+    deleteItem(input: { id: string; reason: string }): Promise<PurchaseInvoiceDetail>;
+    /** The money goes back where it came from. */
+    deletePayment(input: { id: string; reason: string }): Promise<PurchaseInvoiceDetail>;
   };
   banking: {
     /** Per-account figures for the period, plus all-time balances and cash in hand. */

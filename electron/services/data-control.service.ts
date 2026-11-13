@@ -38,6 +38,8 @@ const PURGE: Record<DataModule, readonly string[]> = {
     `UPDATE "ServicePayment" SET moneyLinked = 0`,
   ],
   PRODUCTS: [
+    // Lines and supplier payments go with their invoice; suppliers stay.
+    `DELETE FROM "PurchaseInvoice"`,
     `DELETE FROM "InventoryTransaction"`,
     `DELETE FROM "ProductSerial"`,
     `DELETE FROM "Product"`,

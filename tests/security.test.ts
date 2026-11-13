@@ -835,6 +835,7 @@ describe('database security', () => {
       'SALE_SELECT',
       'CUSTOMER_SELECT',
       'EXPENSE_SELECT',
+      'INVOICE_FIGURES',
       'SERVICE_SELECT',
       'BANK_TRANSACTION_SELECT',
       'BANK_ADVANCE_SELECT',

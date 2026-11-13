@@ -17,6 +17,7 @@ import { registerCatalogIpc } from "./ipc/catalog.ipc";
 import { registerSalesIpc } from "./ipc/sales.ipc";
 import { registerPrintIpc } from "./ipc/print.ipc";
 import { registerExpensesIpc } from "./ipc/expenses.ipc";
+import { registerPurchasesIpc } from "./ipc/purchases.ipc";
 import { registerBankingIpc } from "./ipc/banking.ipc";
 import { registerServicesIpc } from "./ipc/services.ipc";
 import { registerReportsIpc } from "./ipc/reports.ipc";
@@ -109,6 +110,7 @@ async function bootstrap(): Promise<void> {
   registerSalesIpc();
   registerPrintIpc();
   registerExpensesIpc();
+  registerPurchasesIpc();
   registerBankingIpc();
   registerServicesIpc();
   registerReportsIpc();

@@ -79,6 +79,8 @@ model User {
   shopAdvances       ShopAdvance[]
   shopAdvanceSettlements ShopAdvanceSettlement[]
   shopAccountEntries ShopAccountEntry[]
+  purchaseInvoices   PurchaseInvoice[]
+  supplierPayments   SupplierPayment[]
   auditLogs          AuditLog[]
 
   @@index([role])
@@ -155,6 +157,7 @@ model Product {
   serviceItems       ServiceItem[]
   inventoryMovements InventoryTransaction[]
   returnItems        SaleReturnItem[]
+  purchaseItems      PurchaseInvoiceItem[]
 
   @@index([name])
   @@index([categoryId])
@@ -634,6 +637,7 @@ model ShopBankAccount {
   advancesOut  ShopAdvance[]      @relation("ShopAdvanceSource")
   advancesIn   ShopAdvanceSettlement[] @relation("ShopAdvanceSettlementTarget")
   entries      ShopAccountEntry[]
+  supplierPayments SupplierPayment[]
 
   @@index([bankAccountId])
   @@index([isActive])
@@ -920,4 +924,88 @@ model ShopAccountEntry {
 
   @@index([shopAccountId])
   @@index([entryDay])
+}
+
+/// A company the shop orders products from.
+model Supplier {
+  id        String  @id
+  name      String  @unique
+  address   String?
+  phone     String?
+  isActive  Boolean @default(true)
+  createdAt String
+  updatedAt String
+
+  invoices PurchaseInvoice[]
+}
+
+/// Products ordered from a supplier. invoiceNo is the supplier's own number.
+model PurchaseInvoice {
+  id            String  @id
+  invoiceNo     String
+  supplierId    String
+  invoiceDate   String
+  invoiceDay    String
+  /// COD | BANK
+  paymentMethod String
+  remark        String?
+  isDeleted     Boolean @default(false)
+  createdBy     String
+  createdAt     String
+  updatedAt     String
+
+  supplier Supplier              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  creator  User                  @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  items    PurchaseInvoiceItem[]
+  payments SupplierPayment[]
+
+  @@index([supplierId])
+  @@index([invoiceDay])
+}
+
+/// Still awaited = quantity - receivedQty - refundedQty (includes units sent back to be replaced).
+model PurchaseInvoiceItem {
+  id          String  @id
+  invoiceId   String
+  /// Null until a new product (details in newProduct, JSON) is delivered.
+  productId   String?
+  newProduct  String?
+  quantity    Int
+  /// Minor units.
+  unitCost    Int
+  /// Becomes the product's selling price on delivery; null leaves it as is.
+  sellingPrice Int?
+  /// In stock from this line.
+  receivedQty Int    @default(0)
+  /// Sent back for money; no longer owed.
+  refundedQty Int    @default(0)
+  /// Sent back to be replaced, all time.
+  replacedQty Int    @default(0)
+  sortOrder   Int    @default(0)
+
+  invoice PurchaseInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product Product?        @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([invoiceId])
+  @@index([productId])
+}
+
+/// Money paid to the supplier (positive) or refunded by them (negative).
+model SupplierPayment {
+  id            String  @id
+  invoiceId     String
+  amount        Int
+  /// Null: cash in hand.
+  shopAccountId String?
+  paidAt        String
+  paidDay       String
+  notes         String?
+  createdBy     String
+  createdAt     String
+
+  invoice     PurchaseInvoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  shopAccount ShopBankAccount? @relation(fields: [shopAccountId], references: [id], onDelete: Restrict)
+  creator     User             @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@index([invoiceId])
 }
