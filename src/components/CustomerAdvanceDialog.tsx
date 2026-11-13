@@ -6,7 +6,6 @@ import {
   Chip,
   DialogActions,
   DialogContent,
-  MenuItem,
   Stack,
   TextField,
   ToggleButton,
@@ -21,6 +20,7 @@ import { api } from "../lib/api";
 import MoneyField from "./MoneyField";
 import { MovementDialog } from "./MovementParts";
 import AccountFields from "./AccountFields";
+import ShopAccountSelect from "./ShopAccountSelect";
 import { useMoneyFormatter } from "../hooks/useSettings";
 import { PosApiError } from "@shared/errors";
 import { nowLocalDateTime } from "@shared/datetime";
@@ -336,40 +336,14 @@ export default function CustomerAdvanceDialog({
                 />
               </Stack>
             ) : (
-              <TextField
-                select
-                fullWidth
+              <ShopAccountSelect
                 label="Select Shop Bank Account"
                 value={toShopAccountId}
-                onChange={(e) => setToShopAccountId(e.target.value)}
+                onChange={setToShopAccountId}
                 error={Boolean(fieldErrors.toAccountId)}
                 helperText={fieldErrors.toAccountId}
-              >
-                {shopAccounts.map((account) => (
-                  <MenuItem key={account.id} value={account.id}>
-                    <Stack
-                      direction="row"
-                      spacing={1}
-                      sx={{
-                        alignItems: "center",
-                        width: "100%",
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      <span>
-                        <strong>{account.bankName}</strong> (
-                        {account.accountNumber}) · {account.accountName}
-                      </span>
-                      <Chip
-                        size="small"
-                        label={money(account.balance)}
-                        color={account.balance > 0 ? "success" : "default"}
-                        variant="outlined"
-                      />
-                    </Stack>
-                  </MenuItem>
-                ))}
-              </TextField>
+                sx={{ width: "100%" }}
+              />
             )}
           </Box>
 

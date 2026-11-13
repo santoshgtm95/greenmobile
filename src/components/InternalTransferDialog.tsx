@@ -2,10 +2,8 @@ import { useState } from 'react';
 import {
   Alert,
   Button,
-  Chip,
   DialogActions,
   DialogContent,
-  MenuItem,
   Stack,
   TextField,
   Typography,
@@ -14,6 +12,7 @@ import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import MoneyField from './MoneyField';
+import ShopAccountSelect from './ShopAccountSelect';
 import { MovementDialog } from './MovementParts';
 import { useSettings } from '../hooks/useSettings';
 import { PosApiError } from '@shared/errors';
@@ -122,42 +121,17 @@ export default function InternalTransferDialog({
             <Typography variant="overline" color="text.secondary">
               From
             </Typography>
-            <TextField
-              select
+            <ShopAccountSelect
               label="Account"
-              required
               value={fromShopAccountId}
-              onChange={(e) => {
-                setFromShopAccountId(e.target.value);
+              onChange={(id) => {
+                setFromShopAccountId(id);
                 setFieldErrors({});
               }}
+              exclude={toShopAccountId}
               error={Boolean(fieldErrors.fromShopAccountId)}
               helperText={fieldErrors.fromShopAccountId ?? 'Money leaves this account'}
-            >
-              <MenuItem value="">
-                <em>Select account</em>
-              </MenuItem>
-              {shopAccounts.map((acc) => (
-                <MenuItem key={acc.id} value={acc.id} disabled={acc.id === toShopAccountId}>
-                  <Stack direction="row" spacing={1} sx={{ alignItems: 'center', width: '100%' }}>
-                    <Stack sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography variant="body2" noWrap>
-                        <strong>{acc.bankName}</strong> ({acc.bankKey}) · {acc.accountNumber}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" noWrap>
-                        {acc.accountName}
-                      </Typography>
-                    </Stack>
-                    <Chip
-                      label={formatMoney(acc.balance, currency)}
-                      size="small"
-                      variant="outlined"
-                      color={acc.balance >= 0 ? 'default' : 'error'}
-                    />
-                  </Stack>
-                </MenuItem>
-              ))}
-            </TextField>
+            />
             {fromAccount && (
               <Typography
                 variant="caption"
@@ -174,42 +148,17 @@ export default function InternalTransferDialog({
             <Typography variant="overline" color="text.secondary">
               To
             </Typography>
-            <TextField
-              select
+            <ShopAccountSelect
               label="Account"
-              required
               value={toShopAccountId}
-              onChange={(e) => {
-                setToShopAccountId(e.target.value);
+              onChange={(id) => {
+                setToShopAccountId(id);
                 setFieldErrors({});
               }}
+              exclude={fromShopAccountId}
               error={Boolean(fieldErrors.toShopAccountId)}
               helperText={fieldErrors.toShopAccountId ?? 'Money arrives in this account'}
-            >
-              <MenuItem value="">
-                <em>Select account</em>
-              </MenuItem>
-              {shopAccounts.map((acc) => (
-                <MenuItem key={acc.id} value={acc.id} disabled={acc.id === fromShopAccountId}>
-                  <Stack direction="row" spacing={1} sx={{ alignItems: 'center', width: '100%' }}>
-                    <Stack sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography variant="body2" noWrap>
-                        <strong>{acc.bankName}</strong> ({acc.bankKey}) · {acc.accountNumber}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" noWrap>
-                        {acc.accountName}
-                      </Typography>
-                    </Stack>
-                    <Chip
-                      label={formatMoney(acc.balance, currency)}
-                      size="small"
-                      variant="outlined"
-                      color={acc.balance >= 0 ? 'default' : 'error'}
-                    />
-                  </Stack>
-                </MenuItem>
-              ))}
-            </TextField>
+            />
             {toAccount && (
               <Typography variant="caption" color="text.secondary">
                 Current balance: <strong>{formatMoney(toAccount.balance, currency)}</strong>

@@ -57,6 +57,7 @@ import { historyTableSx } from "../components/historyTableSx";
 import DeleteReasonDialog from "../components/DeleteReasonDialog";
 import BankingTabs from "../components/BankingTabs";
 import AccountSide from "../components/AccountSide";
+import ShopAccountSelect from "../components/ShopAccountSelect";
 import { DeletedChip, deletedRowSx } from "../components/DeletedMark";
 import { PosApiError } from "@shared/errors";
 import {
@@ -163,10 +164,6 @@ export default function BankingPage() {
     queryFn: () => api.banking.listAccounts({ includeInactive: false }),
   });
 
-  const shopAccounts = useQuery({
-    queryKey: ["shopBankAccounts", "active"],
-    queryFn: () => api.banking.listShopAccounts({ includeInactive: false }),
-  });
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["bankTransactions"] });
@@ -567,24 +564,17 @@ export default function BankingPage() {
             ))}
           </TextField>
 
-          <TextField
-            select
-            label="Shop account"
+          <ShopAccountSelect
+            required={false}
+            placeholder="All shop accounts"
+            helperText=""
             value={shopAccountId}
-            onChange={(e) => {
-              setShopAccountId(e.target.value);
+            onChange={(id) => {
+              setShopAccountId(id);
               setPage(0);
             }}
             sx={{ width: 240 }}
-          >
-            <MenuItem value="">All shop accounts</MenuItem>
-            {(shopAccounts.data ?? []).map((account) => (
-              <MenuItem key={account.id} value={account.id}>
-                {account.bankName} · {account.accountNumber}
-                {account.accountName ? ` (${account.accountName})` : ""}
-              </MenuItem>
-            ))}
-          </TextField>
+          />
 
           <FormControlLabel
             control={
