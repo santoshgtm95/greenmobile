@@ -169,16 +169,8 @@ export default function AdvanceDetailDialog({
                 </TableRow>
               </TableHead>
               <TableBody>
-                <StepRow
-                  movement={advance}
-                  label="Deposited"
-                  amount={money(advance.amount)}
-                  tone="success.main"
-                  after={money(advance.amount)}
-                  money={money}
-                  onDelete={onDelete}
-                />
-                {steps.map(({ withdrawal, after }) => (
+                {/* Newest first; "Left after" was worked out oldest-first above. */}
+                {[...steps].reverse().map(({ withdrawal, after }) => (
                   <StepRow
                     key={withdrawal.id}
                     movement={withdrawal}
@@ -192,6 +184,15 @@ export default function AdvanceDetailDialog({
                     showActionCell={canDelete}
                   />
                 ))}
+                <StepRow
+                  movement={advance}
+                  label="Deposited"
+                  amount={money(advance.amount)}
+                  tone="success.main"
+                  after={money(advance.amount)}
+                  money={money}
+                  onDelete={onDelete}
+                />
               </TableBody>
             </Table>
 

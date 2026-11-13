@@ -208,7 +208,7 @@ export default function AdvancesPage() {
             <TableHead>
               <TableRow>
                 <TableCell sx={{ whiteSpace: 'nowrap' }}>Number</TableCell>
-                <TableCell>Deposited on</TableCell>
+                <TableCell>Date and time</TableCell>
                 <TableCell>Customer</TableCell>
                 <TableCell>Held in</TableCell>
                 <TableCell align="right">Deposited</TableCell>
@@ -247,11 +247,11 @@ export default function AdvancesPage() {
                     {row.isDeleted === 1 && <DeletedChip reason={row.deletedReason} />}
                   </TableCell>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                    {formatInstant(row.transactionDate)}
-                    {row.lastWithdrawalDate && (
-                      <Typography variant="caption" color="warning.main" sx={{ display: 'block' }}>
-                        Withdrawn {formatInstant(row.lastWithdrawalDate)}
-                      </Typography>
+                    {/* Latest activity, matching the server's sort order. */}
+                    {formatInstant(
+                      row.lastWithdrawalDate && row.lastWithdrawalDate > row.transactionDate
+                        ? row.lastWithdrawalDate
+                        : row.transactionDate,
                     )}
                   </TableCell>
                   <TableCell>
