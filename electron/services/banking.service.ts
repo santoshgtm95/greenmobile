@@ -1939,6 +1939,91 @@ export function listFeeHistory(query: FeeHistoryQuery, db: Db = getDatabase()): 
   };
 }
 
+export interface DailyPositionRow {
+  day: string;
+  /** End-of-day balances. */
+  bank: number;
+  cash: number;
+  /** Received that day, and still held for customers at the end of it. */
+  customerAdvanceIn: number;
+  customerAdvanceHeld: number;
+  /** Paid out that day, and still to collect at the end of it. */
+  shopAdvanceOut: number;
+  shopAdvanceOutstanding: number;
+  feeReceived: number;
+  feePaid: number;
+  bankCharges: number;
+}
+
+/**
+ * One row per day, newest first. Bank balance is worked back from today's
+ * balance (the same figure as the "In the banks" card) by undoing every later
+ * movement, so it uses exactly the movements bankingOverview's balance does.
+ */
+export function dailyPositionHistory(range: DayRangeInput, db: Db = getDatabase()): DailyPositionRow[] {
+  const bankNow = bankingOverview({ from: range.to, to: range.to }, db).bankBalance;
+  // At most a year of rows: every row is a handful of sub-queries.
+  const earliest = new Date(Date.parse(range.to) - 365 * 86_400_000).toISOString().slice(0, 10);
+  const from = range.from < earliest ? earliest : range.from;
+  const rows = db
+    .prepare(
+      `WITH RECURSIVE days(day) AS (
+         SELECT ? UNION ALL SELECT date(day, '+1 day') FROM days WHERE day < ?
+       ),
+       moves(day, amount) AS (
+         SELECT transactionDay, amount - otherFees FROM "BankTransaction"
+          WHERE type = 'RECEIVE' AND toAccountId IS NOT NULL AND isDeleted = 0
+         UNION ALL
+         SELECT transactionDay, -(amount + otherFees - CASE WHEN advanceRole = 'WITHDRAWAL' THEN feeAmount ELSE 0 END)
+           FROM "BankTransaction" WHERE type = 'TRANSFER' AND fromAccountId IS NOT NULL AND isDeleted = 0
+         UNION ALL
+         SELECT transferDay, -bankCharges FROM "InternalTransfer" WHERE isDeleted = 0
+         UNION ALL
+         SELECT settlementDay, actualAmount FROM "ShopAdvanceSettlement" WHERE toShopAccountId IS NOT NULL AND isDeleted = 0
+         UNION ALL
+         SELECT advanceDay, -(amount + bankCharges) FROM "ShopAdvance" WHERE fromShopAccountId IS NOT NULL AND isDeleted = 0
+         UNION ALL
+         SELECT entryDay, amount FROM "ShopAccountEntry"
+       )
+       SELECT d.day,
+              (SELECT COALESCE(SUM(m.amount), 0) FROM moves m WHERE m.day > d.day) AS bankAfter,
+              COALESCE((SELECT c.amount FROM "CashCount" c WHERE c.countedDay <= d.day
+                         ORDER BY c.countedAt DESC, c.createdAt DESC, c.rowid DESC LIMIT 1), 0) AS cash,
+              (SELECT COALESCE(SUM(amount), 0) FROM "BankTransaction"
+                WHERE advanceRole = 'DEPOSIT' AND isDeleted = 0 AND transactionDay = d.day) AS customerAdvanceIn,
+              (SELECT COALESCE(SUM(MAX(0, dep.amount - COALESCE((SELECT SUM(w.amount) FROM "BankTransaction" w
+                         WHERE w.advanceDepositId = dep.id AND w.advanceRole = 'WITHDRAWAL'
+                           AND w.isDeleted = 0 AND w.transactionDay <= d.day), 0))), 0)
+                 FROM "BankTransaction" dep
+                WHERE dep.advanceRole = 'DEPOSIT' AND dep.isDeleted = 0 AND dep.transactionDay <= d.day) AS customerAdvanceHeld,
+              (SELECT COALESCE(SUM(amount), 0) FROM "ShopAdvance"
+                WHERE isDeleted = 0 AND advanceDay = d.day) AS shopAdvanceOut,
+              (SELECT COALESCE(SUM(MAX(0, sa.amount
+                         + COALESCE((SELECT SUM(p.amount) FROM "ShopAdvance" p
+                                      WHERE p.parentId = sa.id AND p.isDeleted = 0 AND p.advanceDay <= d.day), 0)
+                         - COALESCE((SELECT SUM(s.amount) FROM "ShopAdvanceSettlement" s
+                                      WHERE s.shopAdvanceId = sa.id AND s.isDeleted = 0 AND s.settlementDay <= d.day), 0))), 0)
+                 FROM "ShopAdvance" sa
+                WHERE sa.parentId IS NULL AND sa.isDeleted = 0 AND sa.advanceDay <= d.day) AS shopAdvanceOutstanding,
+              (SELECT COALESCE(SUM(feeAmount), 0) FROM "BankTransaction"
+                WHERE isDeleted = 0 AND feeDirection = 'RECEIVE' AND transactionDay = d.day)
+                + (SELECT COALESCE(SUM(feeAmount), 0) FROM "ShopAdvanceSettlement"
+                    WHERE isDeleted = 0 AND feeDirection = 'RECEIVE' AND settlementDay = d.day) AS feeReceived,
+              (SELECT COALESCE(SUM(feeAmount), 0) FROM "BankTransaction"
+                WHERE isDeleted = 0 AND feeDirection = 'PAY' AND transactionDay = d.day)
+                + (SELECT COALESCE(SUM(feeAmount), 0) FROM "ShopAdvanceSettlement"
+                    WHERE isDeleted = 0 AND feeDirection = 'PAY' AND settlementDay = d.day) AS feePaid,
+              (SELECT COALESCE(SUM(otherFees), 0) FROM "BankTransaction" WHERE isDeleted = 0 AND transactionDay = d.day)
+                + (SELECT COALESCE(SUM(bankCharges), 0) FROM "ShopAdvance" WHERE isDeleted = 0 AND advanceDay = d.day)
+                + (SELECT COALESCE(SUM(bankCharges), 0) FROM "InternalTransfer" WHERE isDeleted = 0 AND transferDay = d.day)
+                AS bankCharges
+         FROM days d
+        ORDER BY d.day DESC`,
+    )
+    .all(from, range.to) as Array<Omit<DailyPositionRow, 'bank'> & { bankAfter: number }>;
+  return rows.map(({ bankAfter, ...row }) => ({ ...row, bank: bankNow - bankAfter }));
+}
+
 const CASH_HISTORY_SELECT = `
   SELECT c.id, c.countedAt, c.countedDay, COALESCE(c.source, 'Cash count') AS source, c.notes,
          c.amount AS balance,

@@ -51,6 +51,7 @@ import CashTransactionDialog from "../components/CashTransactionDialog";
 import CashCountDialog from "../components/CashCountDialog";
 import CashHistoryDialog from "../components/CashHistoryDialog";
 import FeeHistoryDialog from "../components/FeeHistoryDialog";
+import NetPositionHistoryDialog from "../components/NetPositionHistoryDialog";
 import BankBalanceDialog from "../components/BankBalanceDialog";
 import SummaryCard from "../components/SummaryCard";
 import { historyTableSx } from "../components/historyTableSx";
@@ -119,6 +120,7 @@ export default function BankingPage() {
   const [cashHistoryOpen, setCashHistoryOpen] = useState(false);
   const [feeHistory, setFeeHistory] = useState<"RECEIVE" | "PAY" | null>(null);
   const [bankBalanceOpen, setBankBalanceOpen] = useState(false);
+  const [netHistoryOpen, setNetHistoryOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -162,6 +164,16 @@ export default function BankingPage() {
   const accounts = useQuery({
     queryKey: ["bankAccounts", "active"],
     queryFn: () => api.banking.listAccounts({ includeInactive: false }),
+  });
+
+  // Only their all-time totals are used (heldTotal / outstandingTotal), not the rows.
+  const customerAdvances = useQuery({
+    queryKey: ["bankAdvances", "netPosition"],
+    queryFn: () => api.banking.listAdvances({ page: 0, pageSize: 1 }),
+  });
+  const shopAdvances = useQuery({
+    queryKey: ["shopAdvances", "netPosition"],
+    queryFn: () => api.banking.listShopAdvances({ page: 0, pageSize: 1 }),
   });
 
 
@@ -384,6 +396,24 @@ export default function BankingPage() {
                 </Tooltip>
               )}
             </Stack>
+          }
+        />
+        <SummaryCard
+          label="Net position"
+          value={signed(
+            (overview.data?.bankBalance ?? 0) +
+              (cash?.amount ?? 0) +
+              (shopAdvances.data?.outstandingTotal ?? 0) -
+              (customerAdvances.data?.heldTotal ?? 0),
+          )}
+          caption="Banks + cash + shop advances to collect − held for customers"
+          icon={<AccountBalanceWalletIcon fontSize="small" />}
+          action={
+            <Tooltip title="Day-by-day history">
+              <IconButton size="small" aria-label="Net position history" onClick={() => setNetHistoryOpen(true)}>
+                <HistoryIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           }
         />
       </Box>
@@ -890,6 +920,7 @@ export default function BankingPage() {
       {cashHistoryOpen && (
         <CashHistoryDialog onClose={() => setCashHistoryOpen(false)} />
       )}
+      {netHistoryOpen && <NetPositionHistoryDialog onClose={() => setNetHistoryOpen(false)} />}
       {feeHistory && (
         <FeeHistoryDialog
           direction={feeHistory}

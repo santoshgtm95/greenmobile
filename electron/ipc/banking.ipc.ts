@@ -59,6 +59,7 @@ import {
   listInternalTransfers,
   listCashHistory,
   listFeeHistory,
+  dailyPositionHistory,
   listShopAdvances,
   listShopBankAccounts,
   openBankAdvance,
@@ -207,6 +208,13 @@ export function registerBankingIpc(): void {
     { access: 'permission', permission: 'banking.view' },
     zFeeHistoryQuery,
     (query) => listFeeHistory(query),
+  );
+
+  handle(
+    CHANNELS.banking.dailyPositions,
+    { access: 'permission', permission: 'banking.view' },
+    zDayRange,
+    (range) => dailyPositionHistory(range),
   );
 
   handle(

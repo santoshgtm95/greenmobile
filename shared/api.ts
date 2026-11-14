@@ -602,6 +602,19 @@ export interface FeeHistoryEntry {
   recordedByName: string | null;
 }
 
+export interface DailyPosition {
+  day: string;
+  bank: number;
+  cash: number;
+  customerAdvanceIn: number;
+  customerAdvanceHeld: number;
+  shopAdvanceOut: number;
+  shopAdvanceOutstanding: number;
+  feeReceived: number;
+  feePaid: number;
+  bankCharges: number;
+}
+
 export interface FeeHistoryResult {
   rows: FeeHistoryEntry[];
   total: number;
@@ -1184,6 +1197,8 @@ export interface PosApi {
     cashHistory(query: CashHistoryQueryInput): Promise<CashHistoryResult>;
     /** Every fee received or paid, newest first — the rows behind the Fees cards. */
     feeHistory(query: FeeHistoryQueryInput): Promise<FeeHistoryResult>;
+    /** End-of-day balances, advances and fees, one row per day, newest first (at most a year). */
+    dailyPositions(range: DayRangeInput): Promise<DailyPosition[]>;
     /** Updates bank/wallet account balances to match statements or mobile apps. */
     saveBankBalances(input: SaveBankBalancesInput): Promise<{ updated: true; count: number }>;
     /** Internal transfer between shop bank accounts. */

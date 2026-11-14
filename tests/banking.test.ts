@@ -27,6 +27,7 @@ import {
   getBankAdvance,
   listBankAccounts,
   listBankAdvances,
+  dailyPositionHistory,
   listFeeHistory,
   listBankTransactions,
   openBankAdvance,
@@ -2697,6 +2698,23 @@ describe('audit trail', () => {
       expect(paid.rows.map((r) => [r.kind, r.party, r.feeAmount])).toEqual([['Shop advance repayment', 'Ko Tun', 777]]);
       expect(paid.feeTotal).toBe(totals.feePaid);
       expect(listFeeHistory({ direction: 'RECEIVE', kind: 'Cash Out', page: 0, pageSize: 50 }, ctx.db).feeTotal).toBe(1_234);
+
+      // Net position history: today's row matches the cards, yesterday had none of today's activity.
+      const [today, yesterday] = dailyPositionHistory({ from: addDays(businessDay(), -1), to: businessDay() }, ctx.db);
+      expect(today).toMatchObject({
+        day: businessDay(),
+        bank: bankingOverview(ALL_TIME, ctx.db).bankBalance,
+        cash: cashInHand(ctx.db).amount,
+        customerAdvanceIn: 300_000,
+        customerAdvanceHeld: listBankAdvances({ page: 0, pageSize: 1 }, ctx.db).heldTotal,
+        shopAdvanceOut: 200_000,
+        shopAdvanceOutstanding: 100_000,
+        feeReceived: totals.feeReceived,
+        feePaid: totals.feePaid,
+        bankCharges: totals.bankCharges,
+      });
+      expect(today!.customerAdvanceHeld).toBe(200_000);
+      expect(yesterday).toMatchObject({ customerAdvanceHeld: 0, shopAdvanceOutstanding: 0, feeReceived: 0, feePaid: 0 });
 
       expect(resolveFee(100_000, 0, 1_000, true)).toEqual({ feeAmount: 1_000, feeBasisPoints: 101 });
       expect(() => resolveFee(100, 0, 101)).toThrow();
