@@ -302,7 +302,7 @@ export default function StocksPage() {
                 <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
                   <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ alignItems: { md: 'center' } }}>
                     <TextField
-                      placeholder="Search name, SKU, barcode or IMEI"
+                      placeholder="Search name, SKU/Code, barcode or IMEI"
                       value={search}
                       onChange={(e) => {
                         setSearch(e.target.value);
@@ -366,7 +366,7 @@ export default function StocksPage() {
                     <Table size="small" stickyHeader>
                       <TableHead>
                         <TableRow>
-                          <TableCell>SKU</TableCell>
+                          <TableCell>SKU/Code</TableCell>
                           <TableCell>Product</TableCell>
                           <TableCell>Category</TableCell>
                           <TableCell>Brand</TableCell>

@@ -36,6 +36,8 @@ import { DeletedChip, deletedRowSx } from '../components/DeletedMark';
 import AdvanceDetailDialog from '../components/AdvanceDetailDialog';
 import CustomerAdvanceDialog from '../components/CustomerAdvanceDialog';
 import AdvanceWithdrawDialog from '../components/AdvanceWithdrawDialog';
+import CustomerAdvancePayableDialog from '../components/CustomerAdvancePayableDialog';
+import PendingActionsOutlinedIcon from '@mui/icons-material/PendingActionsOutlined';
 import { PosApiError } from '@shared/errors';
 import { formatInstant, businessDay } from '@shared/datetime';
 import { BANK_ADVANCE_STATUS_LABELS, type BankAdvanceStatus } from '@shared/domain';
@@ -70,6 +72,7 @@ export default function AdvancesPage() {
   const [viewing, setViewing] = useState<string | null>(null);
   const [withdrawing, setWithdrawing] = useState<BankAdvance | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [payableOpen, setPayableOpen] = useState(false);
 
   const debouncedSearch = useDebounced(search, 250);
 
@@ -122,6 +125,9 @@ export default function AdvancesPage() {
         <Typography variant="h5" sx={{ flexGrow: 1 }}>
           Banking
         </Typography>
+        <Button variant="outlined" startIcon={<PendingActionsOutlinedIcon />} onClick={() => setPayableOpen(true)}>
+          Payable
+        </Button>
         {canManage && (
           <Button variant="contained" startIcon={<AddIcon />} onClick={() => setOpening(true)}>
             New Advance
@@ -341,6 +347,8 @@ export default function AdvancesPage() {
           rowsPerPageOptions={[25, 50, 100]}
         />
       </Paper>
+
+      {payableOpen && <CustomerAdvancePayableDialog onClose={() => setPayableOpen(false)} />}
 
       {opening && (
         <CustomerAdvanceDialog

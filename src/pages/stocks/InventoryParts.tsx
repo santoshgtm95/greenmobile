@@ -460,7 +460,7 @@ export function LowStock({ items, loading }: { items: LowStockItem[]; loading: b
           <Table size="small" stickyHeader>
             <TableHead>
               <TableRow>
-                <TableCell>SKU</TableCell>
+                <TableCell>SKU/Code</TableCell>
                 <TableCell>Product</TableCell>
                 <TableCell>Category</TableCell>
                 <TableCell align="right">In stock</TableCell>

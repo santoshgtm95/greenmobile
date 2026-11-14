@@ -171,7 +171,7 @@ export default function ProductDialog({
 
           <Stack direction="row" spacing={2}>
             <TextField
-              label="SKU"
+              label="SKU/Code"
               required
               value={form.sku}
               onChange={(e) => set('sku', e.target.value)}

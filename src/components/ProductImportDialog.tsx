@@ -255,7 +255,7 @@ export default function ProductImportDialog({
                       <TableRow>
                         <TableCell align="right">Row</TableCell>
                         <TableCell>Action</TableCell>
-                        <TableCell>SKU</TableCell>
+                        <TableCell>SKU/Code</TableCell>
                         <TableCell>Product</TableCell>
                         <TableCell>Category</TableCell>
                         <TableCell>Brand</TableCell>

@@ -62,7 +62,7 @@ export default function ServicePartPicker({
           <Stack direction="row" spacing={2}>
             <TextField
               autoFocus
-              placeholder="Search parts by name, SKU or barcode"
+              placeholder="Search parts by name, SKU/Code or barcode"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               slotProps={{

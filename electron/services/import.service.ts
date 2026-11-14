@@ -236,6 +236,7 @@ export function analyseProductImport(parsed: ParsedFile, db: Db = getDatabase())
   );
 
   const seenSkus = new Map<string, number>();
+  const seenProducts = new Map<string, number>();
   const seenBarcodes = new Map<string, number>();
   const newCategories = new Set<string>();
   const newBrands = new Set<string>();
@@ -245,7 +246,7 @@ export function analyseProductImport(parsed: ParsedFile, db: Db = getDatabase())
     const warnings: string[] = [];
     const v = raw.values;
 
-    const sku = (v.sku ?? '').trim();
+    let sku = (v.sku ?? '').trim();
     const name = (v.name ?? '').trim();
     const barcode = (v.barcode ?? '').trim() || null;
     const category = (v.category ?? '').trim() || null;
@@ -254,18 +255,28 @@ export function analyseProductImport(parsed: ParsedFile, db: Db = getDatabase())
     if (!name) errorList.push('Product name is missing.');
     if (name.length > 200) errorList.push('Product name is longer than 200 characters.');
     if (!sku) errorList.push('SKU is missing.');
-    if (sku.length > 60) errorList.push('SKU is longer than 60 characters.');
 
-    // Duplicates *within the file* — the second occurrence is the problem.
-    const skuKey = sku.toLowerCase();
+    // Duplicates *within the file*: same SKU + product + category is a repeat (error);
+    // same SKU for a different product/category becomes a separate product with a suffixed SKU.
     if (sku) {
-      const firstLine = seenSkus.get(skuKey);
-      if (firstLine !== undefined) {
-        errorList.push(`SKU "${sku}" is already used on row ${firstLine} of this file.`);
+      const productKey = [sku, name, category ?? ''].join('\u0000').toLowerCase();
+      const sameLine = seenProducts.get(productKey);
+      const firstLine = seenSkus.get(sku.toLowerCase());
+      if (sameLine !== undefined) {
+        errorList.push(`SKU "${sku}" with the same product and category is already on row ${sameLine} of this file.`);
       } else {
-        seenSkus.set(skuKey, raw.line);
+        seenProducts.set(productKey, raw.line);
+        if (firstLine !== undefined) {
+          let n = 2;
+          while (seenSkus.has(`${sku}-${n}`.toLowerCase()) || bySku.has(`${sku}-${n}`.toLowerCase())) n += 1;
+          warnings.push(`SKU "${sku}" is already used on row ${firstLine} for another product, so this one gets SKU "${sku}-${n}".`);
+          sku = `${sku}-${n}`;
+        }
+        seenSkus.set(sku.toLowerCase(), raw.line);
       }
     }
+    if (sku.length > 60) errorList.push('SKU is longer than 60 characters.');
+    const skuKey = sku.toLowerCase();
 
     const existing = sku ? bySku.get(skuKey) : undefined;
 

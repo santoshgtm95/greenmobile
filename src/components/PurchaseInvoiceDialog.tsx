@@ -253,7 +253,7 @@ export default function PurchaseInvoiceDialog({
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ minWidth: 220 }}>Product</TableCell>
-                  <TableCell sx={{ minWidth: 120 }}>SKU / Code</TableCell>
+                  <TableCell sx={{ minWidth: 120 }}>SKU/Code</TableCell>
                   <TableCell sx={{ minWidth: 160 }}>Barcode</TableCell>
                   <TableCell sx={{ minWidth: 150 }}>Category</TableCell>
                   <TableCell sx={{ minWidth: 140 }}>Brand</TableCell>

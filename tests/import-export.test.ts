@@ -251,14 +251,28 @@ describe('validating the preview', () => {
     expect(result.rows[0].errors.join(' ')).toMatch(/SKU is missing/i);
   });
 
-  it('refuses the second row that repeats a SKU, and names the first', async () => {
+  it('refuses the second row that repeats SKU, product and category, and names the first', async () => {
     const result = await preview([
       ['CBL-1', '', 'Cable', '', '', 80, 150, 10, 2],
-      ['CBL-1', '', 'Cable again', '', '', 80, 150, 10, 2],
+      ['cbl-1', '', 'cable', '', '', 80, 150, 10, 2],
     ]);
     expect(result.rows[0].action).toBe('CREATE');
     expect(result.rows[1].action).toBe('SKIP');
-    expect(result.rows[1].errors.join(' ')).toMatch(/already used on row 2/);
+    expect(result.rows[1].errors.join(' ')).toMatch(/already on row 2/);
+  });
+
+  it('gives a repeated SKU for a different product a suffixed SKU', async () => {
+    const result = await preview([
+      ['CBL-1', '', 'Cable', '', '', 80, 150, 10, 2],
+      ['CBL-1', '', 'Charger', '', '', 80, 150, 10, 2],
+      ['CBL-1', '', 'Case', '', '', 80, 150, 10, 2],
+    ]);
+    expect(result.rows.map((r) => [r.action, r.sku])).toEqual([
+      ['CREATE', 'CBL-1'],
+      ['CREATE', 'CBL-1-2'],
+      ['CREATE', 'CBL-1-3'],
+    ]);
+    expect(result.rows[1].warnings.join(' ')).toMatch(/row 2/);
   });
 
   it('refuses a barcode repeated inside the file', async () => {

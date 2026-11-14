@@ -46,7 +46,7 @@ export default function ProductDetail({
   const product = detail.data;
   const reorderPoint = reorderPointOf(product, settings?.lowStockThreshold ?? 5);
   const facts: Array<[string, ReactNode]> = [
-    ['SKU', <Box component="span" sx={{ fontFamily: 'monospace' }}>{product.sku}</Box>],
+    ['SKU/Code', <Box component="span" sx={{ fontFamily: 'monospace' }}>{product.sku}</Box>],
     ['Barcode', <Box component="span" sx={{ fontFamily: 'monospace' }}>{product.barcode ?? '—'}</Box>],
     ['Category', product.categoryName ?? '—'],
     ['Brand', product.brandName ?? '—'],

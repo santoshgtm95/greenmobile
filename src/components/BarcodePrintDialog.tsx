@@ -349,7 +349,7 @@ export default function BarcodePrintDialog({
                   {currentProduct.name}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  SKU: <strong>{currentProduct.sku}</strong>
+                  SKU/Code: <strong>{currentProduct.sku}</strong>
                   {currentProduct.brandName ? ` · Brand: ${currentProduct.brandName}` : ''}
                   {currentProduct.categoryName ? ` · Category: ${currentProduct.categoryName}` : ''}
                 </Typography>
