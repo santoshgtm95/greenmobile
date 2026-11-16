@@ -2797,6 +2797,8 @@ export interface ShopAdvanceRow {
   remaining: number;
   settlementCount: number;
   lastSettlementDate: string | null;
+  /** Latest of the advance, its live extra payments and its live repayments. */
+  lastActivityDate: string;
   status: ShopAdvanceStatus;
   isDeleted: number;
   deletedReason: string | null;
@@ -2865,7 +2867,12 @@ const SHOP_ADVANCE_SELECT = `
              (SELECT COUNT(*) FROM "ShopAdvanceSettlement" s
                 WHERE s.shopAdvanceId = sa.id AND s.isDeleted = 0) AS settlementCount,
              (SELECT MAX(s.settlementDate) FROM "ShopAdvanceSettlement" s
-                WHERE s.shopAdvanceId = sa.id AND s.isDeleted = 0) AS lastSettlementDate
+                WHERE s.shopAdvanceId = sa.id AND s.isDeleted = 0) AS lastSettlementDate,
+             MAX(sa.advanceDate,
+                 COALESCE((SELECT MAX(p.advanceDate) FROM "ShopAdvance" p
+                            WHERE p.parentId = sa.id AND p.isDeleted = 0), sa.advanceDate),
+                 COALESCE((SELECT MAX(s.settlementDate) FROM "ShopAdvanceSettlement" s
+                            WHERE s.shopAdvanceId = sa.id AND s.isDeleted = 0), sa.advanceDate)) AS lastActivityDate
         FROM (${SHOP_ADVANCE_BASE_SELECT}) sa
     ) a
 `;
@@ -2908,7 +2915,7 @@ export function getShopAdvance(
               amount, bankCharges, notes, parentId, isDeleted, deletedReason
          FROM "ShopAdvance"
         WHERE id = ? OR parentId = ?
-        ORDER BY advanceDate ASC, createdAt ASC`,
+        ORDER BY advanceDate DESC, createdAt DESC`,
     )
     .all(id, id) as ShopAdvancePaymentRow[];
 
@@ -2916,7 +2923,7 @@ export function getShopAdvance(
     .prepare(
       `${SHOP_ADVANCE_SETTLEMENT_SELECT}
        WHERE sas.shopAdvanceId = ?
-       ORDER BY sas.settlementDate ASC, sas.createdAt ASC`,
+       ORDER BY sas.settlementDate DESC, sas.createdAt DESC`,
     )
     .all(id) as ShopAdvanceSettlementRow[];
 
@@ -2992,7 +2999,7 @@ export function listShopAdvances(
     .prepare(
       `SELECT * FROM (${SHOP_ADVANCE_SELECT}) a
        ${whereSql}
-       ORDER BY a.advanceDate DESC, a.createdAt DESC
+       ORDER BY a.lastActivityDate DESC, a.createdAt DESC
        LIMIT ? OFFSET ?`,
     )
     .all(...params, query.pageSize ?? 50, (query.page ?? 0) * (query.pageSize ?? 50)) as ShopAdvanceRow[];

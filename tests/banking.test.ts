@@ -2833,8 +2833,9 @@ describe('audit trail', () => {
       expect(getShopBankAccount(shopAcct.id, ctx.db).balance).toBe(350_000);
 
       const detail = getShopAdvance(adv.id, ctx.db);
-      expect(detail.payments.map((p) => p.amount)).toEqual([100_000, 150_000]);
-      const later = detail.payments[1]!;
+      // Newest first.
+      expect(detail.payments.map((p) => p.amount)).toEqual([150_000, 100_000]);
+      const later = detail.payments[0]!;
 
       // The list shows one advance, not the later payment.
       const list = listShopAdvances({ status: 'ALL' }, ctx.db);

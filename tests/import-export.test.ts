@@ -245,10 +245,19 @@ describe('validating the preview', () => {
     expect(rowFor(result, 'CBL-1').errors.join(' ')).toMatch(/name is missing/i);
   });
 
-  it('refuses a row with no SKU', async () => {
-    const result = await preview([['', '', 'Nameless', '', '', 80, 150, 10, 2]]);
-    expect(result.rows[0].action).toBe('SKIP');
-    expect(result.rows[0].errors.join(' ')).toMatch(/SKU is missing/i);
+  it('generates a unique code for a row with no SKU, skipping codes already taken', async () => {
+    existingProduct('P-00001');
+    const result = await preview([
+      ['', '', 'Nameless', '', '', 80, 150, 10, 2],
+      ['P-00002', '', 'Cable', '', '', 80, 150, 10, 2],
+      ['', '', 'Other', '', '', 80, 150, 10, 2],
+    ]);
+    expect(result.rows.map((r) => [r.sku, r.action])).toEqual([
+      ['P-00003', 'CREATE'],
+      ['P-00002', 'CREATE'],
+      ['P-00004', 'CREATE'],
+    ]);
+    expect(result.rows[0].warnings.join(' ')).toMatch(/generated: "P-00003"/);
   });
 
   it('refuses the second row that repeats SKU, product and category, and names the first', async () => {
@@ -426,7 +435,7 @@ describe('validating the preview', () => {
   it('lets good rows through while refusing bad ones', async () => {
     const result = await preview([
       ['GOOD-1', '', 'Fine', '', '', 80, 150, 10, 2],
-      ['', '', 'No SKU', '', '', 80, 150, 10, 2],
+      ['BAD-1', '', '', '', '', 80, 150, 10, 2],
       ['GOOD-2', '', 'Also fine', '', '', 80, 150, 10, 2],
     ]);
     expect(result.summary).toMatchObject({ total: 3, create: 2, skip: 1 });
@@ -556,7 +565,7 @@ describe('committing the import', () => {
   it('imports the good rows and reports the skipped ones', async () => {
     const result = await preview([
       ['GOOD-1', '', 'Fine', '', '', 80, 150, 3, 0],
-      ['', '', 'No SKU', '', '', 80, 150, 3, 0],
+      ['BAD-1', '', '', '', '', 80, 150, 3, 0],
     ]);
     const outcome = commitProductImport(result.importId, actor, ctx.db);
     expect(outcome).toMatchObject({ created: 1, skipped: 1 });

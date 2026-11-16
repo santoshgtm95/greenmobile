@@ -133,11 +133,11 @@ export async function parseProductFile(filePath: string): Promise<ParsedFile> {
 
   const missingColumns = IMPORT_FIELDS.filter((field) => !matchedColumns[field]);
 
-  // Name and SKU are the two the importer cannot invent.
-  if (!matchedColumns.name || !matchedColumns.sku) {
+  // Name is the one the importer cannot invent; a missing SKU is generated.
+  if (!matchedColumns.name) {
     throw errors.importFailed(
       'The first row of the file must name the columns. ' +
-        `At least "${IMPORT_FIELD_LABELS.sku}" and "${IMPORT_FIELD_LABELS.name}" are needed.`,
+        `At least "${IMPORT_FIELD_LABELS.name}" is needed.`,
     );
   }
 
@@ -241,6 +241,19 @@ export function analyseProductImport(parsed: ParsedFile, db: Db = getDatabase())
   const newCategories = new Set<string>();
   const newBrands = new Set<string>();
 
+  // Blank SKUs get P-00001, P-00002, … skipping any code in the database or this file.
+  // Deterministic, so the commit-time re-analysis hands out the same codes as the preview.
+  const fileSkus = new Set(parsed.rows.map((r) => (r.values.sku ?? '').trim().toLowerCase()));
+  let autoNumber = 0;
+  const nextAutoSku = (): string => {
+    let candidate: string;
+    do {
+      autoNumber += 1;
+      candidate = `P-${String(autoNumber).padStart(5, '0')}`;
+    } while (bySku.has(candidate.toLowerCase()) || fileSkus.has(candidate.toLowerCase()));
+    return candidate;
+  };
+
   const rows: ImportRow[] = parsed.rows.map((raw) => {
     const errorList: string[] = [];
     const warnings: string[] = [];
@@ -254,7 +267,10 @@ export function analyseProductImport(parsed: ParsedFile, db: Db = getDatabase())
 
     if (!name) errorList.push('Product name is missing.');
     if (name.length > 200) errorList.push('Product name is longer than 200 characters.');
-    if (!sku) errorList.push('SKU is missing.');
+    if (!sku && name) {
+      sku = nextAutoSku();
+      warnings.push(`No SKU/Code, so one was generated: "${sku}".`);
+    }
 
     // Duplicates *within the file*: same SKU + product + category is a repeat (error);
     // same SKU for a different product/category becomes a separate product with a suffixed SKU.
@@ -705,7 +721,7 @@ export async function writeImportTemplate(targetPath: string): Promise<string> {
   notes.getColumn(1).font = { bold: true };
   const lines: Array<[string, string]> = [
     ['Sheet', 'Fill in the "Products" sheet. Only the first sheet is read.'],
-    ['SKU', 'Required. Your own code for the product. An existing SKU updates that product.'],
+    ['SKU', 'Optional. Your own code for the product. An existing SKU updates that product. Left blank, a code (P-00001, …) is generated.'],
     ['Product Name', 'Required.'],
     ['Barcode', 'Optional. Must not already belong to a different product.'],
     ['Category / Brand', 'Optional. Created automatically if they do not exist yet.'],

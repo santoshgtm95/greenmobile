@@ -262,7 +262,7 @@ export default function ShopAdvancesPage() {
                     {row.isDeleted === 1 && <DeletedChip reason={row.deletedReason} />}
                   </TableCell>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                    {formatInstant(row.advanceDate)}
+                    {formatInstant(row.lastActivityDate)}
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>

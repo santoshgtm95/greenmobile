@@ -284,11 +284,18 @@ export default function ShopAdvanceDetailDialog({
                               {p.fromType === 'OLD' ? 'Old record' : p.fromType === 'CASH' ? 'Cash in Hand' : `${p.fromBankName} (${p.fromAccountNumber})`}
                             </TableCell>
                             <TableCell>
-                              {p.fromType === 'OLD'
-                                ? '—'
-                                : p.toType === 'CASH'
-                                ? 'Cash'
-                                : `${p.toBankName ? `${p.toBankName} · ` : ''}${p.toAccountNumber}`}
+                              {p.fromType === 'OLD' ? (
+                                '—'
+                              ) : p.toType === 'CASH' ? (
+                                'Cash'
+                              ) : (
+                                <>
+                                  {p.toBankName ? `${p.toBankName} · ` : ''}No. {p.toAccountNumber || '—'}
+                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                    {p.toAccountName || '—'}
+                                  </Typography>
+                                </>
+                              )}
                             </TableCell>
                             <TableCell align="right" sx={{ fontWeight: 700 }}>
                               {money(p.amount)}

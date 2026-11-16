@@ -472,6 +472,7 @@ export interface ShopAdvance {
   remaining: number;
   settlementCount: number;
   lastSettlementDate: string | null;
+  lastActivityDate: string;
   status: ShopAdvanceStatus;
   isDeleted: SqliteBool;
   deletedReason: string | null;
