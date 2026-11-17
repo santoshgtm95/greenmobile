@@ -356,6 +356,7 @@ export const zProductListQuery = z.object({
   categoryId: zId.optional(),
   brandId: zId.optional(),
   lowStockOnly: z.boolean().default(false),
+  inStockOnly: z.boolean().optional(),
   includeInactive: z.boolean().default(false),
   page: z.number().int().min(0).max(100_000).default(0),
   pageSize: z.number().int().min(1).max(200).default(50),
@@ -473,6 +474,10 @@ export const zCreateSale = z.object({
   payments: z.array(zSalePayment).max(10).default([]),
   notes: zOptionalText,
 });
+
+export const zReceiveSalePayment = z
+  .object({ saleId: zId })
+  .and(zSalePayment);
 
 export const zSaleListQuery = z.object({
   search: zShortText,
@@ -1216,6 +1221,7 @@ export type CreateSaleInput = z.output<typeof zCreateSale>;
 
 export type SaleListQuery = z.output<typeof zSaleListQuery>;
 export type CancelSaleInput = z.output<typeof zCancelSale>;
+export type ReceiveSalePaymentInput = z.output<typeof zReceiveSalePayment>;
 export type RefundSaleInput = z.output<typeof zRefundSale>;
 
 export type CreateExpenseFormValues = z.input<typeof zCreateExpense>;

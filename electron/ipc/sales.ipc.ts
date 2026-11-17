@@ -18,6 +18,7 @@ import {
   zCancelSale,
   zRefundSale,
   zSaleId,
+  zReceiveSalePayment,
 } from '../../shared/validation';
 import {
   listCustomers,
@@ -34,6 +35,7 @@ import {
   cancelSale,
   refundSale,
   priceSale,
+  receiveSalePayment,
 } from '../services/sale.service';
 import { requireUser } from '../session';
 
@@ -117,6 +119,13 @@ export function registerSalesIpc(): void {
     { access: 'permission', permission: 'sales.cancel' },
     zCancelSale,
     ({ saleId, reason }) => cancelSale(saleId, reason, requireUser()),
+  );
+
+  handle(
+    CHANNELS.sales.receivePayment,
+    { access: 'permission', permission: 'pos.sell' },
+    zReceiveSalePayment,
+    (input) => receiveSalePayment(input, requireUser()),
   );
 
   handle(CHANNELS.sales.refund, { access: 'permission', permission: 'sales.refund' }, zRefundSale, (input) =>

@@ -832,6 +832,8 @@ describe('database security', () => {
       'orderSql',
       'limitSql',
       'PRODUCT_SELECT',
+      'SHOP_ADVANCE_BASE_SELECT',
+      'SHOP_ADVANCE_SELECT',
       'SALE_SELECT',
       'CUSTOMER_SELECT',
       'EXPENSE_SELECT',

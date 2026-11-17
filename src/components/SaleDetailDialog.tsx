@@ -27,6 +27,7 @@ import { api } from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
 import { useMoneyFormatter } from '../hooks/useSettings';
 import RefundDialog from './RefundDialog';
+import PaymentDialog from './PaymentDialog';
 import { PosApiError } from '@shared/errors';
 import { SALE_STATUS_LABELS, PAYMENT_METHOD_LABELS, type PaymentMethod } from '@shared/domain';
 import { formatInstant } from '@shared/datetime';
@@ -49,6 +50,7 @@ export default function SaleDetailDialog({
   const [cancelling, setCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [refunding, setRefunding] = useState(false);
+  const [receiving, setReceiving] = useState(false);
 
   const sale = useQuery({
     queryKey: ['sale', saleId],
@@ -105,6 +107,35 @@ export default function SaleDetailDialog({
   const canRefund =
     header && can('sales.refund') && header.status !== 'CANCELLED' && header.status !== 'REFUNDED';
   const canCancel = header && can('sales.cancel') && header.status === 'COMPLETED';
+  const balance = header ? header.grandTotal - header.amountPaid : 0;
+  const canReceive = header && can('pos.sell') && header.status === 'COMPLETED' && balance > 0;
+
+  const receive = useMutation({
+    mutationFn: async (payments: Parameters<typeof api.sales.create>[0]['payments']) => {
+      // Cash last, so any amount over the balance comes off the cash (it is change).
+      const ordered = [...payments].sort(
+        (a, b) => Number(a.paymentMethod === 'CASH') - Number(b.paymentMethod === 'CASH'),
+      );
+      let remaining = balance;
+      // shortcut: one call per payment line, not one transaction; fine for 1–2 lines, batch it if splits grow.
+      for (const payment of ordered) {
+        const amount = Math.min(payment.amount, remaining);
+        if (amount <= 0) break;
+        await api.sales.receivePayment({ saleId, ...payment, amount });
+        remaining -= amount;
+      }
+    },
+    onSuccess: () => {
+      setReceiving(false);
+      void sale.refetch();
+      onChanged('Payment received.');
+    },
+    onError: (err) => {
+      setReceiving(false);
+      void sale.refetch();
+      setError(err instanceof PosApiError ? err.message : 'Unable to take the payment.');
+    },
+  });
 
   return (
     <Dialog open fullWidth maxWidth="md" onClose={onClose}>
@@ -235,6 +266,9 @@ export default function SaleDetailDialog({
                   <Divider sx={{ my: 0.5 }} />
                   <Row label="Grand total" value={money(header.grandTotal)} bold />
                   <Row label="Received" value={money(header.amountPaid)} />
+                  {balance > 0 && header.status === 'COMPLETED' && (
+                    <Row label="Balance due" value={money(balance)} bold />
+                  )}
                   {header.changeAmount > 0 && (
                     <Row label="Change" value={money(header.changeAmount)} />
                   )}
@@ -339,8 +373,26 @@ export default function SaleDetailDialog({
           </Button>
         )}
         <Box sx={{ flexGrow: 1 }} />
+        {canReceive && (
+          <Button variant="contained" onClick={() => setReceiving(true)}>
+            Receive payment
+          </Button>
+        )}
         <Button onClick={onClose}>Close</Button>
       </DialogActions>
+
+      {receiving && (
+        <PaymentDialog
+          grandTotal={balance}
+          totalLabel="Balance due"
+          submitting={receive.isPending}
+          onClose={() => setReceiving(false)}
+          onConfirm={(payments) => {
+            setError(null);
+            receive.mutate(payments as Parameters<typeof api.sales.create>[0]['payments']);
+          }}
+        />
+      )}
 
       {refunding && data && (
         <RefundDialog

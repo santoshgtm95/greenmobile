@@ -14,7 +14,14 @@ import { completeFirstRunSetup } from '../electron/services/auth.service';
 import { getSessionUser, setSessionUser, type SessionUser } from '../electron/session';
 import { createProduct, adjustStock, addSerials, getProduct } from '../electron/services/product.service';
 import { createCustomer } from '../electron/services/customer.service';
-import { createSale, cancelSale, refundSale, priceSale, getSale } from '../electron/services/sale.service';
+import {
+  createSale,
+  cancelSale,
+  refundSale,
+  priceSale,
+  getSale,
+  receiveSalePayment,
+} from '../electron/services/sale.service';
 import { setSettings } from '../electron/services/settings.service';
 import { listSerials, findSerialByCode } from '../electron/services/inventory.service';
 import { AppError } from '../shared/errors';
@@ -204,6 +211,35 @@ describe('spec §80 — profit maths', () => {
     );
     expect(sale.paymentStatus).toBe('PARTIAL');
     expect(sale.amountPaid).toBe(40_000);
+  });
+
+  it('takes later payments on an unpaid sale until it is PAID', () => {
+    const product = makeSimpleProduct();
+    const { sale } = createSale(
+      {
+        customerId: undefined,
+        items: [{ productId: product.id, quantity: 1, productSerialId: undefined }],
+        discountAmount: 0,
+        payments: [],
+        notes: undefined,
+      },
+      actor,
+      ctx.db,
+    );
+    expect(sale.paymentStatus).toBe('UNPAID');
+
+    const pay = (amount: number) =>
+      receiveSalePayment(
+        { saleId: sale.id, amount, paymentMethod: 'CASH', referenceNumber: undefined, notes: undefined },
+        actor,
+        ctx.db,
+      ).sale;
+
+    expect(pay(30_000)).toMatchObject({ paymentStatus: 'PARTIAL', amountPaid: 30_000 });
+    expect(() => pay(80_000)).toThrow(AppError); // more than the 70,000 still owed
+    expect(pay(70_000)).toMatchObject({ paymentStatus: 'PAID', amountPaid: 100_000 });
+    expect(() => pay(1)).toThrow(AppError);
+    expect(getSale(sale.id, ctx.db).payments).toHaveLength(2);
   });
 
   it('refuses a non-cash overpayment', () => {

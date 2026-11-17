@@ -83,6 +83,7 @@ export default function PosPage() {
         categoryId: selection.categoryId,
         brandId: selection.brandId,
         lowStockOnly: false,
+        inStockOnly: true,
         includeInactive: false,
         page: 0,
         pageSize: 100,
@@ -170,6 +171,10 @@ export default function PosPage() {
 
       const product = await api.products.findByCode({ code });
       if (product) {
+        if (!product.isActive || product.stockQuantity <= 0) {
+          setError(`${product.name} is ${product.isActive ? 'out of stock' : 'inactive'}.`);
+          return;
+        }
         addProduct(product);
         setSearch('');
         return;
@@ -495,7 +500,7 @@ export default function PosPage() {
                     <Typography
                       sx={{ minWidth: 96, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}
                     >
-                      {money(lineQuote?.totalAmount ?? line.product.sellingPrice * line.quantity)}
+                      {money((lineQuote?.unitPrice ?? line.product.sellingPrice) * line.quantity)}
                     </Typography>
 
                     <IconButton size="small" onClick={() => setQuantity(line.key, 0)}>

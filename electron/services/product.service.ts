@@ -107,6 +107,7 @@ export function listProducts(
     );
     params.push(threshold);
   }
+  if (query.inStockOnly) where.push('p.stockQuantity > 0');
 
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 

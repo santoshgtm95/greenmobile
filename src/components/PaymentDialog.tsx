@@ -53,11 +53,13 @@ function quickCashOptions(total: number): number[] {
  */
 export default function PaymentDialog({
   grandTotal,
+  totalLabel = 'Grand Total',
   submitting,
   onClose,
   onConfirm,
 }: {
   grandTotal: number;
+  totalLabel?: string;
   submitting: boolean;
   onClose: () => void;
   onConfirm: (
@@ -110,7 +112,7 @@ export default function PaymentDialog({
             }}
           >
             <Typography variant="body2" color="text.secondary">
-              Grand Total
+              {totalLabel}
             </Typography>
             <Typography variant="h3" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
               {money(grandTotal)}

@@ -183,6 +183,7 @@ export const CHANNELS = {
     get: 'sales:get',
     cancel: 'sales:cancel',
     refund: 'sales:refund',
+    receivePayment: 'sales:receivePayment',
   },
 } as const satisfies Record<string, Record<string, string>>;
 

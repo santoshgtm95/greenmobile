@@ -34,6 +34,7 @@ import type {
   AddSerialsInput,
   AdjustStockInput,
   CancelSaleInput,
+  ReceiveSalePaymentInput,
   CreateExpenseInput,
   DayRangeInput,
   DeleteExpenseInput,
@@ -1327,6 +1328,8 @@ export interface PosApi {
     list(query: SaleListQuery): Promise<Page<Sale>>;
     get(input: { saleId: string }): Promise<SaleDetail>;
     cancel(input: CancelSaleInput): Promise<SaleDetail>;
+    /** Pays some or all of the balance on a PARTIAL or UNPAID sale. */
+    receivePayment(input: ReceiveSalePaymentInput): Promise<SaleDetail>;
     refund(input: RefundSaleInput): Promise<{
       sale: SaleDetail;
       returnNumber: string;

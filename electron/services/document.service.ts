@@ -95,9 +95,8 @@ export function renderA4Invoice({ sale, settings, reprint }: DocumentContext): s
         </td>
         <td class="c num">${item.quantity}</td>
         <td class="r num">${money(item.unitPrice, settings)}</td>
-        <td class="r num">${item.discountAmount > 0 ? '-' + money(item.discountAmount, settings) : '—'}</td>
         <td class="r num">${item.taxAmount > 0 ? money(item.taxAmount, settings) : '—'}</td>
-        <td class="r num b">${money(item.totalAmount, settings)}</td>
+        <td class="r num b">${money(item.unitPrice * item.quantity, settings)}</td>
       </tr>`,
     )
     .join('');
@@ -223,7 +222,6 @@ export function renderA4Invoice({ sale, settings, reprint }: DocumentContext): s
         <th>Description</th>
         <th style="width:14mm" class="c">Qty</th>
         <th style="width:26mm" class="r">Unit price</th>
-        <th style="width:24mm" class="r">Discount</th>
         <th style="width:22mm" class="r">Tax</th>
         <th style="width:28mm" class="r">Amount</th>
       </tr>
@@ -304,10 +302,8 @@ export function renderThermalReceipt({ sale, settings, reprint }: DocumentContex
       </tr>
       ${item.serials ? `<tr><td colspan="2" class="serial">IMEI ${esc(item.serials)}</td></tr>` : ''}
       <tr>
-        <td class="qty">${item.quantity} × ${money(item.unitPrice, settings)}${
-          item.discountAmount > 0 ? ` <span class="disc">-${money(item.discountAmount, settings)}</span>` : ''
-        }</td>
-        <td class="r num b">${money(item.totalAmount, settings)}</td>
+        <td class="qty">${item.quantity} × ${money(item.unitPrice, settings)}</td>
+        <td class="r num b">${money(item.unitPrice * item.quantity, settings)}</td>
       </tr>`,
     )
     .join('');

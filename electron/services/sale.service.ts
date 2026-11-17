@@ -37,7 +37,12 @@ import { warrantyWindow } from './product.service';
 import { WALK_IN_CUSTOMER_NAME } from './customer.service';
 import type { SessionUser } from '../session';
 import type { PaymentMethod, PaymentStatus, SaleStatus } from '../../shared/domain';
-import type { CreateSaleInput, RefundSaleInput, SaleListQuery } from '../../shared/validation';
+import type {
+  CreateSaleInput,
+  ReceiveSalePaymentInput,
+  RefundSaleInput,
+  SaleListQuery,
+} from '../../shared/validation';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -481,6 +486,76 @@ export function createSale(
     );
 
     return getSale(saleId, db);
+  }, db);
+}
+
+/** Takes a later payment against a PARTIAL or UNPAID sale. */
+export function receiveSalePayment(
+  input: ReceiveSalePaymentInput,
+  actor: SessionUser,
+  db: Db = getDatabase(),
+): SaleDetail {
+  return transaction(() => {
+    const sale = db
+      .prepare(`SELECT invoiceNumber, grandTotal, amountPaid, status FROM "Sale" WHERE id = ?`)
+      .get(input.saleId) as
+      | { invoiceNumber: string; grandTotal: number; amountPaid: number; status: string }
+      | undefined;
+    if (!sale) throw errors.notFound('sale');
+    if (sale.status !== 'COMPLETED') throw errors.validation('Only a completed sale can take a payment.');
+
+    const balance = subtractMoney(sale.grandTotal, sale.amountPaid);
+    if (balance <= 0) throw errors.validation('This sale is already paid in full.');
+    if (input.amount <= 0) throw errors.validation('Enter an amount above zero.');
+    if (input.amount > balance) throw errors.validation('The amount is more than the balance due.');
+
+    const now = nowInstant();
+    const shopAccountId = input.paymentMethod === 'CASH' ? null : (input.shopAccountId ?? null);
+    db.prepare(
+      `INSERT INTO "Payment" (id, saleId, amount, paymentMethod, shopAccountId, moneyLinked,
+         referenceNumber, paymentDate, paymentDay, notes, createdBy, createdAt)
+       VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      newId(),
+      input.saleId,
+      input.amount,
+      input.paymentMethod,
+      shopAccountId,
+      input.referenceNumber ?? null,
+      now,
+      businessDay(),
+      input.notes ?? null,
+      actor.id,
+      now,
+    );
+    moveMoney(
+      { shopAccountId, amount: input.amount, source: 'Sale', reference: sale.invoiceNumber },
+      actor,
+      db,
+    );
+
+    const amountPaid = addMoney(sale.amountPaid, input.amount);
+    const paymentStatus: PaymentStatus = amountPaid >= sale.grandTotal ? 'PAID' : 'PARTIAL';
+    db.prepare(`UPDATE "Sale" SET amountPaid = ?, paymentStatus = ?, updatedAt = ? WHERE id = ?`).run(
+      amountPaid,
+      paymentStatus,
+      now,
+      input.saleId,
+    );
+
+    recordAudit(
+      {
+        userId: actor.id,
+        action: 'UPDATE',
+        entityName: 'Sale',
+        entityId: input.saleId,
+        summary: `Payment of ${input.amount} received on ${sale.invoiceNumber} — now ${paymentStatus}`,
+        newValues: { amount: input.amount, paymentMethod: input.paymentMethod, amountPaid, paymentStatus },
+      },
+      db,
+    );
+
+    return getSale(input.saleId, db);
   }, db);
 }
 
