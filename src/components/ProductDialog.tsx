@@ -12,6 +12,7 @@ import {
   IconButton,
   InputAdornment,
   MenuItem,
+  Autocomplete,
   Paper,
   Stack,
   Switch,
@@ -27,7 +28,7 @@ import { PosApiError } from '@shared/errors';
 import { formatRate, parseRate } from '@shared/money';
 import { PRODUCT_UNITS } from '@shared/domain';
 import { generateEan13Candidate } from '@shared/barcode';
-import type { Lookup, Product } from '@shared/api';
+import type { Lookup, Product, ProductCategory } from '@shared/api';
 import ShopAccountSelect from './ShopAccountSelect';
 import { SerialTable } from './SerialsDialog';
 import CashInHandBox from './CashInHandBox';
@@ -43,7 +44,7 @@ export default function ProductDialog({
   onSaved,
 }: {
   product: Product | null;
-  categories: Lookup[];
+  categories: ProductCategory[];
   brands: Lookup[];
   onClose: () => void;
   onSaved: () => void;
@@ -208,19 +209,23 @@ export default function ProductDialog({
           </Stack>
 
           <Stack direction="row" spacing={2}>
-            <TextField
-              select
-              label="Category"
-              value={form.categoryId}
-              onChange={(e) => set('categoryId', e.target.value)}
-            >
-              <MenuItem value="">None</MenuItem>
-              {categories.map((c) => (
-                <MenuItem key={c.id} value={c.id}>
-                  {c.name}
-                </MenuItem>
-              ))}
-            </TextField>
+            <Autocomplete
+              // Products go in a sub category; a product already on a top-level one keeps it.
+              options={categories.filter((c) => c.depth > 0 || c.id === form.categoryId)}
+              value={categories.find((c) => c.id === form.categoryId) ?? null}
+              onChange={(_e, c) => set('categoryId', c?.id ?? '')}
+              groupBy={(c) => c.path.split(' › ')[0]}
+              getOptionLabel={(c) => c.path}
+              renderOption={({ key, ...props }, c) => (
+                <li key={key} {...props}>
+                  {c.path.split(' › ').slice(1).join(' › ') || c.name}
+                </li>
+              )}
+              isOptionEqualToValue={(a, b) => a.id === b.id}
+              noOptionsText="No matching sub category"
+              fullWidth
+              renderInput={(params) => <TextField {...params} label="Category" placeholder="Type to search" />}
+            />
             <TextField
               select
               label="Brand"

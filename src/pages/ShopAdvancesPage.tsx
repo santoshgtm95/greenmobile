@@ -108,9 +108,7 @@ export default function ShopAdvancesPage() {
   return (
     <Stack spacing={2}>
       <Stack direction="row" spacing={2} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-        <Typography variant="h5" sx={{ flexGrow: 1 }}>
-          Banking
-        </Typography>
+        <Box sx={{ flexGrow: 1 }} />
         <Button
           variant="outlined"
           startIcon={<PendingActionsOutlinedIcon />}

@@ -93,8 +93,7 @@ export interface ImportPreview {
     create: number;
     update: number;
     skip: number;
-    /** Categories and brands that will be created by the import. */
-    newCategories: string[];
+    /** Brands that will be created by the import. Categories never are. */
     newBrands: string[];
   };
 }
@@ -103,7 +102,6 @@ export interface ImportResult {
   created: number;
   updated: number;
   skipped: number;
-  categoriesCreated: number;
   brandsCreated: number;
   /** Total units of opening stock the import brought in. */
   stockAdded: number;

@@ -392,6 +392,9 @@ export const zSaveLookup = z.object({
   isActive: z.boolean().default(true),
 });
 
+/** Ignored on edit: a category keeps the parent it was created under. */
+export const zSaveCategory = zSaveLookup.extend({ parentId: zId.optional() });
+
 export const zLookupQuery = z.object({
   includeInactive: z.boolean().default(false),
 });
@@ -1203,6 +1206,7 @@ export type MarkSerialDefectiveInput = z.output<typeof zMarkSerialDefective>;
 export type SaveLookupFormValues = z.input<typeof zSaveLookup>;
 export type SaveLookupInput = z.output<typeof zSaveLookup>;
 export type LookupQueryInput = z.output<typeof zLookupQuery>;
+export type SaveCategoryInput = z.output<typeof zSaveCategory>;
 export type InventoryQueryInput = z.output<typeof zInventoryQuery>;
 
 export type CreateCustomerFormValues = z.input<typeof zCreateCustomer>;

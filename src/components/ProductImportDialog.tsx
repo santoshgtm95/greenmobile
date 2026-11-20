@@ -213,24 +213,10 @@ export default function ProductImportDialog({
                 </Alert>
               )}
 
-              {(preview.summary.newCategories.length > 0 ||
-                preview.summary.newBrands.length > 0) && (
+              {preview.summary.newBrands.length > 0 && (
                 <Alert severity="info">
-                  This import will also create{' '}
-                  {preview.summary.newCategories.length > 0 && (
-                    <>
-                      the categories <strong>{preview.summary.newCategories.join(', ')}</strong>
-                    </>
-                  )}
-                  {preview.summary.newCategories.length > 0 &&
-                    preview.summary.newBrands.length > 0 &&
-                    ' and '}
-                  {preview.summary.newBrands.length > 0 && (
-                    <>
-                      the brands <strong>{preview.summary.newBrands.join(', ')}</strong>
-                    </>
-                  )}
-                  .
+                  This import will also create the brands{' '}
+                  <strong>{preview.summary.newBrands.join(', ')}</strong>.
                 </Alert>
               )}
 

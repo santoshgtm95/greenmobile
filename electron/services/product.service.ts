@@ -52,7 +52,8 @@ export interface ProductRow {
 
 const PRODUCT_SELECT = `
   SELECT p.id, p.sku, p.barcode, p.name, p.description,
-         p.categoryId, c.name AS categoryName,
+         p.categoryId,
+         COALESCE(c2.name || ' › ', '') || COALESCE(c1.name || ' › ', '') || c.name AS categoryName,
          p.brandId, b.name AS brandName,
          p.purchasePrice, p.sellingPrice, p.taxRate, p.taxRateOverride,
          p.stockQuantity, p.minimumStock, p.unit, p.isSerialized, p.warrantyMonths,
@@ -61,6 +62,8 @@ const PRODUCT_SELECT = `
            WHERE s.productId = p.id AND s.status = 'AVAILABLE') AS availableSerials
     FROM "Product" p
     LEFT JOIN "Category" c ON c.id = p.categoryId
+    LEFT JOIN "Category" c1 ON c1.id = c.parentId
+    LEFT JOIN "Category" c2 ON c2.id = c1.parentId
     LEFT JOIN "Brand" b ON b.id = p.brandId
 `;
 
@@ -93,8 +96,11 @@ export function listProducts(
   }
 
   if (query.categoryId) {
-    where.push('p.categoryId = ?');
-    params.push(query.categoryId);
+    // A category takes in its sub categories (two levels at most).
+    where.push(`p.categoryId IN (
+      SELECT id FROM "Category" WHERE id = ? OR parentId = ?
+         OR parentId IN (SELECT id FROM "Category" WHERE parentId = ?))`);
+    params.push(query.categoryId, query.categoryId, query.categoryId);
   }
   if (query.brandId) {
     where.push('p.brandId = ?');
@@ -665,8 +671,54 @@ function listLookup(table: 'Category' | 'Brand', includeInactive: boolean, db: D
     .all() as LookupRow[];
 }
 
-export const listCategories = (includeInactive = false, db: Db = getDatabase()) =>
-  listLookup('Category', includeInactive, db);
+export interface CategoryRow extends LookupRow {
+  parentId: string | null;
+  /** "Phones › Cases › Silicone"; the same text as a product's categoryName. */
+  path: string;
+  /** 0 for a category, 1 and 2 for its sub categories. */
+  depth: number;
+}
+
+/** The deepest a sub category may sit: Category → Sub → Sub. */
+export const MAX_CATEGORY_DEPTH = 2;
+
+/**
+ * Every category in tree order (each followed by its sub categories). Counts
+ * include the sub categories; an inactive category hides its whole branch.
+ */
+export function listCategories(includeInactive = false, db: Db = getDatabase()): CategoryRow[] {
+  const rows = db
+    .prepare(
+      `SELECT t.id, t.name, t.description, t.isActive, t.parentId,
+              (SELECT COUNT(*) FROM "Product" p WHERE p.categoryId = t.id) AS productCount,
+              (SELECT COUNT(*) FROM "Product" p WHERE p.categoryId = t.id AND p.isActive = 1) AS activeProductCount
+         FROM "Category" t
+        ORDER BY t.name ASC`,
+    )
+    .all() as Array<LookupRow & { parentId: string | null }>;
+
+  const children = new Map<string | null, typeof rows>();
+  for (const row of rows) children.set(row.parentId, [...(children.get(row.parentId) ?? []), row]);
+
+  const out: CategoryRow[] = [];
+  const walk = (parentId: string | null, prefix: string, depth: number): [number, number] => {
+    let total = 0;
+    let active = 0;
+    for (const row of children.get(parentId) ?? []) {
+      if (!includeInactive && !row.isActive) continue;
+      const node: CategoryRow = { ...row, path: prefix + row.name, depth };
+      out.push(node);
+      const [subTotal, subActive] = walk(row.id, `${node.path} › `, depth + 1);
+      node.productCount += subTotal;
+      node.activeProductCount += subActive;
+      total += node.productCount;
+      active += node.activeProductCount;
+    }
+    return [total, active];
+  };
+  walk(null, '', 0);
+  return out;
+}
 
 export const listBrands = (includeInactive = false, db: Db = getDatabase()) =>
   listLookup('Brand', includeInactive, db);
@@ -720,11 +772,116 @@ function upsertLookup(
   return row;
 }
 
+/**
+ * Adds or edits a category. `parentId` makes it a sub category; it is fixed
+ * once created, since moving a branch could push it past the depth limit.
+ */
 export const saveCategory = (
-  input: { id?: string; name: string; description?: string; isActive?: boolean },
+  input: { id?: string; name: string; description?: string; isActive?: boolean; parentId?: string },
   actor: SessionUser,
   db: Db = getDatabase(),
-) => transaction(() => upsertLookup('Category', input, actor, db), db);
+): CategoryRow =>
+  transaction(() => {
+    const now = nowInstant();
+    const current = input.id
+      ? (db.prepare(`SELECT parentId FROM "Category" WHERE id = ?`).get(input.id) as
+          | { parentId: string | null }
+          | undefined)
+      : undefined;
+    if (input.id && !current) throw errors.notFound('category');
+    const parentId = current ? current.parentId : (input.parentId ?? null);
+
+    if (!current && parentId) {
+      const parent = db
+        .prepare(
+          `SELECT (p.parentId IS NOT NULL) + (gp.parentId IS NOT NULL) AS depth
+             FROM "Category" p LEFT JOIN "Category" gp ON gp.id = p.parentId
+            WHERE p.id = ?`,
+        )
+        .get(parentId) as { depth: number } | undefined;
+      if (!parent) throw errors.notFound('parent category');
+      if (parent.depth >= MAX_CATEGORY_DEPTH) {
+        throw errors.validation('A sub category can only have one more level of sub category below it.');
+      }
+    }
+
+    const clash = db
+      .prepare(`SELECT id FROM "Category" WHERE name = ? COLLATE NOCASE AND parentId IS ? AND id IS NOT ?`)
+      .get(input.name, parentId, input.id ?? null);
+    if (clash) {
+      throw errors.validation('A category with that name already exists here.', { name: 'Already in use' });
+    }
+
+    const id = input.id ?? newId();
+    const isActive = input.isActive === false ? 0 : 1;
+    if (input.id) {
+      db.prepare(`UPDATE "Category" SET name = ?, description = ?, isActive = ?, updatedAt = ? WHERE id = ?`).run(
+        input.name,
+        input.description ?? null,
+        isActive,
+        now,
+        id,
+      );
+    } else {
+      db.prepare(
+        `INSERT INTO "Category" (id, name, description, isActive, parentId, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).run(id, input.name, input.description ?? null, isActive, parentId, now, now);
+    }
+
+    recordAudit(
+      {
+        userId: actor.id,
+        action: 'UPDATE',
+        entityName: 'Category',
+        entityId: id,
+        summary: `Saved category "${input.name}"`,
+        newValues: { ...input, id, parentId },
+      },
+      db,
+    );
+    return listCategories(true, db).find((c) => c.id === id)!;
+  }, db);
+
+/**
+ * Deletes a category with its sub categories. Their products are kept and
+ * simply left without a category.
+ */
+export const deleteCategory = (
+  id: string,
+  actor: SessionUser,
+  db: Db = getDatabase(),
+): { deleted: number; productsCleared: number } =>
+  transaction(() => {
+    const branch = listCategories(true, db);
+    const root = branch.find((c) => c.id === id);
+    if (!root) throw errors.notFound('category');
+    // Deepest first: a parent cannot go while its children point at it.
+    const doomed = branch
+      .filter((c) => c.id === id || c.path.startsWith(`${root.path} › `))
+      .sort((a, b) => b.depth - a.depth);
+    const ids = doomed.map((c) => c.id);
+    const marks = ids.map(() => '?').join(', ');
+
+    const productsCleared = db
+      .prepare(`UPDATE "Product" SET categoryId = NULL, updatedAt = ?, updatedBy = ? WHERE categoryId IN (${marks})`)
+      .run(nowInstant(), actor.id, ...ids).changes;
+    const remove = db.prepare(`DELETE FROM "Category" WHERE id = ?`);
+    for (const categoryId of ids) remove.run(categoryId);
+
+    recordAudit(
+      {
+        userId: actor.id,
+        action: 'DELETE',
+        entityName: 'Category',
+        entityId: id,
+        summary: `Deleted category "${root.path}" with ${ids.length - 1} sub categories; ${productsCleared} products left without a category`,
+        oldValues: doomed,
+      },
+      db,
+    );
+    return { deleted: ids.length, productsCleared };
+  }, db);
 
 export const saveBrand = (
   input: { id?: string; name: string; description?: string; isActive?: boolean },

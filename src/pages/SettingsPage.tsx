@@ -51,8 +51,6 @@ export default function SettingsPage() {
 
   return (
     <Stack spacing={2}>
-      <Typography variant="h5">Settings</Typography>
-
       <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
         <Tabs
           value={active}

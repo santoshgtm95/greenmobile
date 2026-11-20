@@ -35,6 +35,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import SmartphoneIcon from '@mui/icons-material/Smartphone';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import QrCodeIcon from '@mui/icons-material/QrCode';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
@@ -45,6 +46,7 @@ import ProductDialog from '../components/ProductDialog';
 import StockDialog from '../components/StockDialog';
 import SerialsDialog from '../components/SerialsDialog';
 import ProductImportDialog from '../components/ProductImportDialog';
+import ProductCategoriesDialog from '../components/ProductCategoriesDialog';
 import BarcodePrintDialog from '../components/BarcodePrintDialog';
 import ExportMenu from '../components/ExportMenu';
 import { historyTableSx } from '../components/historyTableSx';
@@ -58,7 +60,7 @@ import type { Product } from '@shared/api';
 /**
  * Stocks — products and inventory in one place (spec §5, §39, §66).
  *
- * Products tab: the list on the left, a Category → Brand → Product tree on the
+ * Products tab: the list on the left, a Category → Sub Category → Product tree on the
  * right that decides what the list shows. The tab is in the route, so
  * /stocks/movements is a real address.
  */
@@ -97,6 +99,7 @@ export default function StocksPage() {
   const [serialsFor, setSerialsFor] = useState<Product | null>(null);
   const [barcodeFor, setBarcodeFor] = useState<Product | null>(null);
   const [importing, setImporting] = useState(false);
+  const [managingCategories, setManagingCategories] = useState(false);
 
   // Debounced so typing a barcode does not fire a query per keystroke (spec §78).
   const debouncedSearch = useDebounced(search, 250);
@@ -105,13 +108,12 @@ export default function StocksPage() {
     () => ({
       search: debouncedSearch || undefined,
       categoryId: selection.categoryId,
-      brandId: selection.brandId,
       lowStockOnly,
       includeInactive,
       page,
       pageSize,
     }),
-    [debouncedSearch, selection.categoryId, selection.brandId, lowStockOnly, includeInactive, page, pageSize],
+    [debouncedSearch, selection.categoryId, lowStockOnly, includeInactive, page, pageSize],
   );
 
   const products = useQuery({
@@ -220,13 +222,16 @@ export default function StocksPage() {
   return (
     <Stack spacing={2}>
       <Stack direction="row" spacing={2} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}>
-        <Typography variant="h5" sx={{ flexGrow: 1 }}>
-          Stocks
-        </Typography>
+        <Box sx={{ flexGrow: 1 }} />
         {/* Exports the whole filtered set, not the page on screen (spec §56). */}
         <ExportMenu target={{ dataset: 'PRODUCT_LIST', query }} label="Export products" />
         {/* The stock-on-hand sheet, which is what a stock-take is done against. */}
         <ExportMenu target={{ dataset: 'INVENTORY_LIST' }} label="Export stock sheet" />
+        {can('products.manage') && (
+          <Button startIcon={<AccountTreeIcon />} onClick={() => setManagingCategories(true)}>
+            Categories
+          </Button>
+        )}
         {can('products.import') && (
           <Button startIcon={<UploadFileIcon />} onClick={() => setImporting(true)}>
             Import Excel
@@ -286,11 +291,6 @@ export default function StocksPage() {
                   onClick={() => select({ categoryId: selection.categoryId, categoryName: selection.categoryName })}
                 >
                   {selection.categoryName}
-                </Link>
-              )}
-              {selection.brandName && (
-                <Link component="button" underline="hover" onClick={() => select({ ...selection, productId: undefined })}>
-                  {selection.brandName}
                 </Link>
               )}
             </Breadcrumbs>
@@ -538,12 +538,14 @@ export default function StocksPage() {
               (result.stockAdded ? `, ${result.stockAdded} units of stock added` : '') +
               '.',
           );
-          // Categories and brands may have been created along the way.
+          // Brands may have been created along the way.
           refreshAll();
           void queryClient.invalidateQueries({ queryKey: ['categories'] });
           void queryClient.invalidateQueries({ queryKey: ['brands'] });
         }}
       />
+
+      {managingCategories && <ProductCategoriesDialog onClose={() => setManagingCategories(false)} />}
 
       {barcodeFor && <BarcodePrintDialog product={barcodeFor} onClose={() => setBarcodeFor(null)} />}
     </Stack>

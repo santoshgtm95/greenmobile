@@ -97,9 +97,7 @@ export default function InternalTransfersPage() {
         spacing={2}
         sx={{ alignItems: "center", flexWrap: "wrap" }}
       >
-        <Typography variant="h5" sx={{ flexGrow: 1 }}>
-          Banking
-        </Typography>
+        <Box sx={{ flexGrow: 1 }} />
         {canManage && (
           <Button
             variant="contained"

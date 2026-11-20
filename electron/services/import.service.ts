@@ -35,6 +35,7 @@ import {
 import { applyStockMovement } from './inventory.service';
 import { getShopSettings } from './settings.service';
 import { recordAudit } from './audit.service';
+import { listCategories } from './product.service';
 import type { SessionUser } from '../session';
 
 /** One spreadsheet row, already mapped onto our field names, still as text. */
@@ -196,6 +197,23 @@ interface ExistingProduct {
   purchasePrice: number;
 }
 
+/** "Phones > Cases" and "phones › cases" are the same category. */
+const categoryKey = (text: string) => text.toLowerCase().split(/\s*[›>]\s*/).join('›');
+
+/**
+ * Finds a registered, active category by its path ("Phones › Cases"), or by a
+ * bare name when only one category has it. Imports never create categories.
+ */
+function categoryResolver(db: Db): (text: string) => { id: string; path: string } | undefined {
+  const byKey = new Map<string, { id: string; path: string } | null>();
+  for (const c of listCategories(false, db)) {
+    byKey.set(categoryKey(c.path), c);
+    const nameKey = categoryKey(c.name);
+    if (nameKey !== categoryKey(c.path)) byKey.set(`name:${nameKey}`, byKey.has(`name:${nameKey}`) ? null : c);
+  }
+  return (text) => byKey.get(categoryKey(text)) ?? byKey.get(`name:${categoryKey(text)}`) ?? undefined;
+}
+
 /** Parses a whole number from a cell, tolerating "10", "10.0" and "1,000". */
 function parseCount(text: string | undefined): number | null {
   if (text === undefined || text === '') return null;
@@ -224,11 +242,7 @@ export function analyseProductImport(parsed: ParsedFile, db: Db = getDatabase())
     if (row.barcode) barcodeOwner.set(row.barcode, row.sku.toLowerCase());
   }
 
-  const existingCategories = new Set(
-    (db.prepare(`SELECT name FROM "Category"`).all() as Array<{ name: string }>).map((c) =>
-      c.name.toLowerCase(),
-    ),
-  );
+  const findCategory = categoryResolver(db);
   const existingBrands = new Set(
     (db.prepare(`SELECT name FROM "Brand"`).all() as Array<{ name: string }>).map((b) =>
       b.name.toLowerCase(),
@@ -238,7 +252,6 @@ export function analyseProductImport(parsed: ParsedFile, db: Db = getDatabase())
   const seenSkus = new Map<string, number>();
   const seenProducts = new Map<string, number>();
   const seenBarcodes = new Map<string, number>();
-  const newCategories = new Set<string>();
   const newBrands = new Set<string>();
 
   // Blank SKUs get P-00001, P-00002, … skipping any code in the database or this file.
@@ -262,9 +275,14 @@ export function analyseProductImport(parsed: ParsedFile, db: Db = getDatabase())
     let sku = (v.sku ?? '').trim();
     const name = (v.name ?? '').trim();
     const barcode = (v.barcode ?? '').trim() || null;
-    const category = (v.category ?? '').trim() || null;
+    let category = (v.category ?? '').trim() || null;
     const brand = (v.brand ?? '').trim() || null;
 
+    if (category) {
+      const found = findCategory(category);
+      if (found) category = found.path;
+      else errorList.push(`Category "${category}" is not registered. Add it in Products → Categories first.`);
+    }
     if (!name) errorList.push('Product name is missing.');
     if (name.length > 200) errorList.push('Product name is longer than 200 characters.');
     if (!sku && name) {
@@ -366,7 +384,6 @@ export function analyseProductImport(parsed: ParsedFile, db: Db = getDatabase())
     const action = errorList.length > 0 ? 'SKIP' : existing ? 'UPDATE' : 'CREATE';
 
     if (action !== 'SKIP') {
-      if (category && !existingCategories.has(category.toLowerCase())) newCategories.add(category);
       if (brand && !existingBrands.has(brand.toLowerCase())) newBrands.add(brand);
     }
 
@@ -398,7 +415,6 @@ export function analyseProductImport(parsed: ParsedFile, db: Db = getDatabase())
       create: rows.filter((r) => r.action === 'CREATE').length,
       update: rows.filter((r) => r.action === 'UPDATE').length,
       skip: rows.filter((r) => r.action === 'SKIP').length,
-      newCategories: [...newCategories].sort(),
       newBrands: [...newBrands].sort(),
     },
   };
@@ -463,7 +479,7 @@ export async function previewProductImport(
 // -----------------------------------------------------------------------------
 
 function lookupOrCreate(
-  table: 'Category' | 'Brand',
+  table: 'Brand',
   name: string,
   cache: Map<string, string>,
   created: { count: number },
@@ -514,9 +530,8 @@ export function commitProductImport(
   }
 
   const result = transaction(() => {
-    const categoryCache = new Map<string, string>();
+    const findCategory = categoryResolver(db);
     const brandCache = new Map<string, string>();
-    const categoriesCreated = { count: 0 };
     const brandsCreated = { count: 0 };
 
     let created = 0;
@@ -531,9 +546,7 @@ export function commitProductImport(
     );
 
     for (const row of usable) {
-      const categoryId = row.category
-        ? lookupOrCreate('Category', row.category, categoryCache, categoriesCreated, db)
-        : null;
+      const categoryId = row.category ? (findCategory(row.category)?.id ?? null) : null;
       const brandId = row.brand
         ? lookupOrCreate('Brand', row.brand, brandCache, brandsCreated, db)
         : null;
@@ -648,7 +661,6 @@ export function commitProductImport(
       created,
       updated,
       skipped: preview.summary.skip,
-      categoriesCreated: categoriesCreated.count,
       brandsCreated: brandsCreated.count,
       stockAdded,
     };
@@ -679,8 +691,16 @@ export function commitProductImport(
 // Template
 // -----------------------------------------------------------------------------
 
-/** Writes an empty spreadsheet with the right headings and two examples. */
-export async function writeImportTemplate(targetPath: string): Promise<string> {
+/** Rows of the template that get the category dropdown. */
+const TEMPLATE_ROWS = 1000;
+
+/**
+ * Writes an empty spreadsheet with the right headings and two examples. The
+ * Category column is a dropdown of the registered categories, so a typed-in
+ * new one is refused by Excel as well as by the import.
+ */
+export async function writeImportTemplate(targetPath: string, db: Db = getDatabase()): Promise<string> {
+  const categories = listCategories(false, db).map((c) => c.path);
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Green Mobile';
   const sheet = workbook.addWorksheet('Products');
@@ -697,7 +717,7 @@ export async function writeImportTemplate(targetPath: string): Promise<string> {
     sku: 'CBL-USBC-1M',
     barcode: '5901234123457',
     name: 'USB-C Cable 1 m',
-    category: 'Cables',
+    category: categories[0] ?? '',
     brand: 'Generic',
     purchasePrice: 80,
     sellingPrice: 150,
@@ -708,13 +728,29 @@ export async function writeImportTemplate(targetPath: string): Promise<string> {
     sku: 'CASE-A54-CLR',
     barcode: '',
     name: 'Galaxy A54 Clear Case',
-    category: 'Cases & Covers',
+    category: categories[1] ?? categories[0] ?? '',
     brand: 'Samsung',
     purchasePrice: 60,
     sellingPrice: 190,
     stock: 12,
     minimumStock: 3,
   });
+
+  if (categories.length > 0) {
+    const list = workbook.addWorksheet('Categories', { state: 'hidden' });
+    for (const path of categories) list.addRow([path]);
+    const column = IMPORT_FIELDS.indexOf('category') + 1;
+    for (let row = 2; row <= TEMPLATE_ROWS + 1; row++) {
+      sheet.getCell(row, column).dataValidation = {
+        type: 'list',
+        allowBlank: true,
+        formulae: [`Categories!$A$1:$A$${categories.length}`],
+        showErrorMessage: true,
+        errorTitle: 'Category',
+        error: 'Pick a registered category from the list. New ones are added in Products → Categories.',
+      };
+    }
+  }
 
   const notes = workbook.addWorksheet('How to use');
   notes.columns = [{ width: 22 }, { width: 90 }];
@@ -724,7 +760,8 @@ export async function writeImportTemplate(targetPath: string): Promise<string> {
     ['SKU', 'Optional. Your own code for the product. An existing SKU updates that product. Left blank, a code (P-00001, …) is generated.'],
     ['Product Name', 'Required.'],
     ['Barcode', 'Optional. Must not already belong to a different product.'],
-    ['Category / Brand', 'Optional. Created automatically if they do not exist yet.'],
+    ['Category', 'Optional. Pick from the dropdown: a category or a sub category ("Phones › Cases"). Only registered categories are accepted.'],
+    ['Brand', 'Optional. Created automatically if it does not exist yet.'],
     ['Prices', 'Plain amounts, e.g. 150 or 150.50. A new product needs a selling price.'],
     ['Stock', 'Whole number. On an existing product this corrects the level and is recorded in the stock ledger.'],
     ['Minimum Stock', 'Whole number. Used for the low-stock warning.'],

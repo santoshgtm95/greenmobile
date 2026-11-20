@@ -17,7 +17,7 @@ import path from 'node:path';
 import { createTestDatabase, type TestDatabase } from './helpers/test-db';
 import { completeFirstRunSetup } from '../electron/services/auth.service';
 import { getSessionUser, setSessionUser, type SessionUser } from '../electron/session';
-import { createProduct, listProducts, listCategories, listBrands } from '../electron/services/product.service';
+import { createProduct, listProducts, listCategories, listBrands, saveCategory, deleteCategory } from '../electron/services/product.service';
 import { createCustomer } from '../electron/services/customer.service';
 import { createSale } from '../electron/services/sale.service';
 import { createExpense, listExpenseCategories } from '../electron/services/expense.service';
@@ -36,7 +36,7 @@ import {
 } from '../electron/services/list-export.service';
 import { inventoryHistory } from '../electron/services/inventory.service';
 import { businessDay } from '../shared/datetime';
-import { IMPORT_FIELD_LABELS, type ImportPreview, type ImportRow } from '../shared/import';
+import { IMPORT_FIELDS, IMPORT_FIELD_LABELS, type ImportPreview, type ImportRow } from '../shared/import';
 import { zImportPreview } from '../shared/validation';
 import type { FirstRunSetupInput } from '../shared/validation';
 import { saveCashCount } from '../electron/services/banking.service';
@@ -416,20 +416,63 @@ describe('validating the preview', () => {
     expect(rowFor(result, 'PHONE-1').warnings.join(' ')).toMatch(/tracked by IMEI/i);
   });
 
-  it('lists the categories and brands the import would create', async () => {
-    const result = await preview([
-      ['CBL-1', '', 'Cable', 'Brand New Category', 'Brand New Brand', 80, 150, 10, 2],
-      // "Cables" is one of the seeded defaults, so it must not be listed.
-      ['CBL-2', '', 'Charger', 'Cables', '', 90, 200, 5, 1],
-    ]);
-    expect(result.summary.newCategories).toEqual(['Brand New Category']);
+  it('lists the brands the import would create', async () => {
+    const result = await preview([['CBL-1', '', 'Cable', 'Cables', 'Brand New Brand', 80, 150, 10, 2]]);
     expect(result.summary.newBrands).toEqual(['Brand New Brand']);
   });
 
-  it('does not count categories from rows that will be skipped', async () => {
-    const result = await preview([['CBL-1', '', '', 'Ghost Category', '', 80, 150, 10, 2]]);
+  it('refuses a category that is not registered', async () => {
+    const result = await preview([['CBL-1', '', 'Cable', 'Ghost Category', '', 80, 150, 10, 2]]);
     expect(result.summary.skip).toBe(1);
-    expect(result.summary.newCategories).toHaveLength(0);
+    expect(result.rows[0].errors.join(' ')).toMatch(/not registered/);
+  });
+
+  it('matches a sub category by its path, or by a name only one category has', async () => {
+    const top = listCategories(false, ctx.db).find((c) => c.name === 'Accessories')!;
+    const cases = saveCategory({ name: 'Cases', parentId: top.id }, actor, ctx.db);
+    const silicone = saveCategory({ name: 'Silicone', parentId: cases.id }, actor, ctx.db);
+    const result = await preview([
+      ['A', '', 'Case A', 'accessories > cases > silicone', '', 80, 150, 1, 0],
+      ['B', '', 'Case B', 'Silicone', '', 80, 150, 1, 0],
+    ]);
+    expect(result.rows.map((r) => [r.action, r.category])).toEqual([
+      ['CREATE', silicone.path],
+      ['CREATE', silicone.path],
+    ]);
+    commitProductImport(result.importId, actor, ctx.db);
+    const products = listProducts(
+      { categoryId: top.id, page: 0, pageSize: 50, lowStockOnly: false, includeInactive: false },
+      ctx.db,
+    );
+    // A top-level category lists the products of its sub categories too.
+    expect(products.rows.map((p) => [p.sku, p.categoryName])).toEqual([
+      ['A', 'Accessories › Cases › Silicone'],
+      ['B', 'Accessories › Cases › Silicone'],
+    ]);
+  });
+
+  it('keeps categories to Category → Sub → Sub, names unique among siblings', () => {
+    const [a, b] = listCategories(false, ctx.db);
+    const subA = saveCategory({ name: 'Cases', parentId: a.id }, actor, ctx.db);
+    // The same name under another parent is fine; twice under one is not.
+    saveCategory({ name: 'Cases', parentId: b.id }, actor, ctx.db);
+    expect(() => saveCategory({ name: 'cases', parentId: a.id }, actor, ctx.db)).toThrow(/already exists/);
+    const leaf = saveCategory({ name: 'Silicone', parentId: subA.id }, actor, ctx.db);
+    expect(leaf).toMatchObject({ depth: 2, path: `${a.name} › Cases › Silicone` });
+    expect(() => saveCategory({ name: 'Too deep', parentId: leaf.id }, actor, ctx.db)).toThrow(/one more level/);
+  });
+
+  it('deletes a category with its sub categories, keeping their products uncategorised', () => {
+    const [top] = listCategories(false, ctx.db);
+    const sub = saveCategory({ name: 'Cases', parentId: top.id }, actor, ctx.db);
+    saveCategory({ name: 'Silicone', parentId: sub.id }, actor, ctx.db);
+    const product = existingProduct('CASE-1');
+    ctx.db.prepare(`UPDATE "Product" SET categoryId = ? WHERE id = ?`).run(sub.id, product.id);
+    const before = listCategories(true, ctx.db).length;
+
+    expect(deleteCategory(top.id, actor, ctx.db)).toEqual({ deleted: 3, productsCleared: 1 });
+    expect(listCategories(true, ctx.db)).toHaveLength(before - 3);
+    expect(listProducts({ page: 0, pageSize: 50, lowStockOnly: false, includeInactive: true }, ctx.db).rows[0].categoryId).toBeNull();
   });
 
   it('lets good rows through while refusing bad ones', async () => {
@@ -471,28 +514,17 @@ describe('committing the import', () => {
     expect(history.rows[0].reason).toMatch(/import/i);
   });
 
-  it('creates the categories and brands it needs', async () => {
+  it('creates the brands it needs, but never a category', async () => {
     const before = listCategories(true, ctx.db).length;
     const result = await preview([
-      ['CBL-1', '', 'Cable', 'Fresh Category', 'Fresh Brand', 80, 150, 10, 2],
-      ['CBL-2', '', 'Charger', 'Fresh Category', 'Fresh Brand', 90, 200, 5, 1],
+      ['CBL-1', '', 'Cable', 'cables', 'Fresh Brand', 80, 150, 10, 2],
+      ['CBL-2', '', 'Charger', 'Cables', 'Fresh Brand', 90, 200, 5, 1],
     ]);
     const outcome = commitProductImport(result.importId, actor, ctx.db);
 
-    // Two rows share a category, so it is created once.
-    expect(outcome.categoriesCreated).toBe(1);
     expect(outcome.brandsCreated).toBe(1);
-    expect(listCategories(true, ctx.db)).toHaveLength(before + 1);
-    expect(listBrands(true, ctx.db).some((b) => b.name === 'Fresh Brand')).toBe(true);
-  });
-
-  it('reuses a category that already exists, whatever its case', async () => {
-    const before = listCategories(true, ctx.db).length;
-    const result = await preview([['CBL-1', '', 'Cable', 'cables', '', 80, 150, 10, 2]]);
-    const outcome = commitProductImport(result.importId, actor, ctx.db);
-
-    expect(outcome.categoriesCreated).toBe(0);
     expect(listCategories(true, ctx.db)).toHaveLength(before);
+    expect(listBrands(true, ctx.db).some((b) => b.name === 'Fresh Brand')).toBe(true);
   });
 
   it('updates an existing product without duplicating it', async () => {
@@ -649,7 +681,7 @@ describe('the preview payload', () => {
 describe('the template', () => {
   it('writes a workbook whose own headings the parser accepts', async () => {
     const target = path.join(ctx.dir, 'template.xlsx');
-    await writeImportTemplate(target);
+    await writeImportTemplate(target, ctx.db);
 
     expect(fs.statSync(target).size).toBeGreaterThan(3000);
     // The template is only useful if filling it in and importing it works.
@@ -663,6 +695,14 @@ describe('the template', () => {
     // And the example rows really do import.
     const outcome = commitProductImport(rememberParse(parsed), actor, ctx.db);
     expect(outcome.created).toBe(2);
+
+    // The Category column offers the registered categories as a dropdown.
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(target);
+    const list = workbook.getWorksheet('Categories')!;
+    expect(list.rowCount).toBe(listCategories(false, ctx.db).length);
+    const column = IMPORT_FIELDS.indexOf('category') + 1;
+    expect(workbook.getWorksheet('Products')!.getCell(2, column).dataValidation).toMatchObject({ type: 'list' });
   });
 });
 

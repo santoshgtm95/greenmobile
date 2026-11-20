@@ -100,9 +100,7 @@ export default function ServicesPage() {
   return (
     <Stack spacing={2}>
       <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-        <Typography variant="h5" sx={{ flexGrow: 1 }}>
-          Service &amp; Repair
-        </Typography>
+        <Box sx={{ flexGrow: 1 }} />
         {can('services.manage') && (
           <Button variant="contained" startIcon={<BuildIcon />} onClick={() => setIntakeOpen(true)}>
             Receive Device

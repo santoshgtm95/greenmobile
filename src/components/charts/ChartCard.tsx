@@ -40,7 +40,8 @@ export default function ChartCard({
         {action}
       </Stack>
 
-      <Box sx={{ height, width: '100%' }}>
+      {/* An empty chart collapses to a short notice instead of a tall blank box. */}
+      <Box sx={{ height: empty ? 96 : height, width: '100%', transition: 'height .3s ease' }}>
         {empty ? (
           <Box
             sx={{

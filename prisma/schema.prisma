@@ -93,14 +93,21 @@ model User {
 
 model Category {
   id          String  @id
-  name        String  @unique
+  /// Unique among siblings only.
+  name        String
   description String?
   isActive    Boolean @default(true)
   createdAt   String
   updatedAt   String
+  /// Null for a top-level category. At most two levels of sub category.
+  parentId    String?
 
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children Category[] @relation("CategoryTree")
   products Product[]
 
+  @@unique([parentId, name])
+  @@index([parentId])
   @@index([isActive])
 }
 

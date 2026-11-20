@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   Alert,
+  Box,
   Button,
   Chip,
   IconButton,
@@ -92,9 +93,7 @@ export default function PurchasesPage() {
   return (
     <Stack spacing={2}>
       <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-        <Typography variant="h5" sx={{ flexGrow: 1 }}>
-          Purchase Invoice
-        </Typography>
+        <Box sx={{ flexGrow: 1 }} />
         {can('products.manage') && (
           <>
             <Button startIcon={<AddIcon />} onClick={() => setEditingSupplier(null)}>

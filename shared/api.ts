@@ -94,6 +94,7 @@ import type {
   RefundSaleInput,
   SaleListQuery,
   SaveLookupInput,
+  SaveCategoryInput,
   UpdateCustomerInput,
   UpdateProductInput,
   UpdateSettingsInput,
@@ -178,6 +179,15 @@ export interface Lookup {
   productCount: number;
   /** Products still for sale; what a list without "show inactive" contains. */
   activeProductCount: number;
+}
+
+/** Category → Sub Category → Sub Category. Counts include sub categories. */
+export interface ProductCategory extends Lookup {
+  parentId: string | null;
+  /** "Phones › Cases › Silicone"; the same text as a product's categoryName. */
+  path: string;
+  /** 0 for a category, 1 and 2 for its sub categories. */
+  depth: number;
 }
 
 export interface StaffUser {
@@ -1076,8 +1086,11 @@ export interface PosApi {
     markDefective(input: MarkSerialDefectiveInput): Promise<void>;
   };
   categories: {
-    list(input: LookupQueryInput): Promise<Lookup[]>;
-    save(input: SaveLookupInput): Promise<Lookup>;
+    /** Tree order: each category followed by its sub categories. */
+    list(input: LookupQueryInput): Promise<ProductCategory[]>;
+    save(input: SaveCategoryInput): Promise<ProductCategory>;
+    /** Takes its sub categories with it; their products are kept, uncategorised. */
+    delete(input: { id: string }): Promise<{ deleted: number; productsCleared: number }>;
   };
   brands: {
     list(input: LookupQueryInput): Promise<Lookup[]>;

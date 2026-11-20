@@ -116,10 +116,7 @@ export default function ExpensesPage() {
   return (
     <Stack spacing={2}>
       <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-        <Typography variant="h5" sx={{ flexGrow: 1 }}>
-          Expenses
-        </Typography>
-        <ExportMenu target={{ dataset: 'EXPENSE_LIST', query }} />
+        <Box sx={{ flexGrow: 1 }} />
         {can('expenses.manage') && (
           <>
             <Button startIcon={<CategoryIcon />} onClick={() => setCategoriesOpen(true)}>
@@ -299,6 +296,8 @@ export default function ExpensesPage() {
               </MenuItem>
             ))}
           </TextField>
+          <Box sx={{ flexGrow: 1 }} />
+          <ExportMenu target={{ dataset: 'EXPENSE_LIST', query }} />
         </Stack>
       </Paper>
 

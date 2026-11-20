@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   Alert,
+  Box,
   Button,
   Chip,
   IconButton,
@@ -120,13 +121,6 @@ export default function SalesPage() {
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-        <Typography variant="h5" sx={{ flexGrow: 1 }}>
-          Sales
-        </Typography>
-        <ExportMenu target={{ dataset: 'SALE_LIST', query }} />
-      </Stack>
-
       {error && (
         <Alert severity="error" onClose={() => setError(null)}>
           {error}
@@ -231,6 +225,8 @@ export default function SalesPage() {
               </MenuItem>
             ))}
           </TextField>
+          <Box sx={{ flexGrow: 1 }} />
+          <ExportMenu target={{ dataset: 'SALE_LIST', query }} />
         </Stack>
 
         <Stack direction="row" spacing={3} sx={{ mt: 2, color: 'text.secondary' }}>

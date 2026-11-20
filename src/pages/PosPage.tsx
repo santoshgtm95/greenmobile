@@ -68,7 +68,7 @@ export default function PosPage() {
   const searchRef = useRef<HTMLInputElement>(null);
   const debouncedSearch = useDebounced(search, 200);
 
-  // Category / brand picked in the tree; narrows the product list like Stocks does.
+  // Category picked in the tree; narrows the product list like Stocks does.
   const [selection, setSelection] = useState<StockSelection>({});
   const categories = useQuery({
     queryKey: ['categories'],
@@ -76,12 +76,11 @@ export default function PosPage() {
   });
 
   const results = useQuery({
-    queryKey: ['pos-search', debouncedSearch, selection.categoryId, selection.brandId],
+    queryKey: ['pos-search', debouncedSearch, selection.categoryId],
     queryFn: () =>
       api.products.list({
         search: debouncedSearch || undefined,
         categoryId: selection.categoryId,
-        brandId: selection.brandId,
         lowStockOnly: false,
         inStockOnly: true,
         includeInactive: false,
@@ -295,7 +294,7 @@ export default function PosPage() {
       )}
 
       <Stack direction="row" spacing={2} sx={{ flexGrow: 1, minHeight: 0 }}>
-        {/* Category → Brand → Product; a product row goes straight into the cart. */}
+        {/* Category → Sub Category → Sub Category → Product; a product row goes straight into the cart. */}
         <Box
           sx={{
             width: 280,
@@ -341,7 +340,6 @@ export default function PosPage() {
                   {selection.categoryName}
                 </Link>
               )}
-              {selection.brandName && <Typography sx={{ fontSize: 14 }}>{selection.brandName}</Typography>}
             </Breadcrumbs>
             {results.data && results.data.total > results.data.rows.length && (
               <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>

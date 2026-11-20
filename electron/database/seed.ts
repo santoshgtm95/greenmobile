@@ -57,10 +57,11 @@ const DEFAULT_EXPENSE_CATEGORIES = [
 export function seedReferenceData(db: Db): void {
   const now = nowInstant();
 
+  // Names are unique per parent only, so ON CONFLICT(name) no longer applies.
   const insertCategory = db.prepare(
     `INSERT INTO "Category" (id, name, description, isActive, createdAt, updatedAt)
-     VALUES (?, ?, NULL, 1, ?, ?)
-     ON CONFLICT(name) DO NOTHING`,
+     SELECT ?, ?, NULL, 1, ?, ?
+      WHERE NOT EXISTS (SELECT 1 FROM "Category" WHERE name = ?)`,
   );
   const insertBrand = db.prepare(
     `INSERT INTO "Brand" (id, name, description, isActive, createdAt, updatedAt)
@@ -78,8 +79,12 @@ export function seedReferenceData(db: Db): void {
      ON CONFLICT(key) DO NOTHING`,
   );
 
+  // Default categories only on a fresh install (no settings yet), so ones the
+  // shop deleted do not come back on the next start.
+  const freshInstall = (db.prepare(`SELECT COUNT(*) AS n FROM "Setting"`).get() as { n: number }).n === 0;
+
   db.transaction(() => {
-    for (const name of DEFAULT_CATEGORIES) insertCategory.run(newId(), name, now, now);
+    if (freshInstall) for (const name of DEFAULT_CATEGORIES) insertCategory.run(newId(), name, now, now, name);
     for (const name of DEFAULT_BRANDS) insertBrand.run(newId(), name, now, now);
     for (const name of DEFAULT_EXPENSE_CATEGORIES) insertExpenseCategory.run(newId(), name, now, now);
     for (const key of SETTING_KEYS) insertSetting.run(newId(), key, DEFAULT_SETTINGS[key], now);

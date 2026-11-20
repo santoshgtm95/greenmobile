@@ -17,18 +17,17 @@ import AddIcon from '@mui/icons-material/Add';
 import RemoveIcon from '@mui/icons-material/Remove';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
-import type { Lookup, Product } from '@shared/api';
+import type { Product, ProductCategory } from '@shared/api';
 
-/** What the left panel shows: everything, a category, a brand within it, or one product. */
+/** What the left panel shows: everything, a category (with its sub categories), or one product. */
 export interface StockSelection {
   categoryId?: string;
+  /** The category's path, "Phones › Cases". */
   categoryName?: string;
-  brandId?: string;
-  brandName?: string;
   productId?: string;
 }
 
-/** Every product in a category; the list channel caps a page at 200. */
+/** Every product in a category and its sub categories; the list channel caps a page at 200. */
 async function listCategory(categoryId: string, includeInactive: boolean): Promise<Product[]> {
   const rows: Product[] = [];
   for (let page = 0; ; page++) {
@@ -39,8 +38,9 @@ async function listCategory(categoryId: string, includeInactive: boolean): Promi
 }
 
 /**
- * Category → Brand → Product. A name selects (the left panel follows); the
- * `+` beside it expands. A category's products load only once it is opened.
+ * Category → Sub Category → Sub Category → Product. A name selects (the left
+ * panel follows); the `+` beside it expands. A top-level category's products
+ * load only once it is opened, and are shared down its branch.
  */
 export default function CategoryTree({
   categories,
@@ -48,7 +48,7 @@ export default function CategoryTree({
   selection,
   onSelect,
 }: {
-  categories: Lookup[];
+  categories: ProductCategory[];
   includeInactive: boolean;
   selection: StockSelection;
   onSelect: (selection: StockSelection) => void;
@@ -69,15 +69,18 @@ export default function CategoryTree({
             No categories yet.
           </Typography>
         )}
-        {categories.map((category) => (
-          <CategoryNode
-            key={category.id}
-            category={category}
-            includeInactive={includeInactive}
-            selection={selection}
-            onSelect={onSelect}
-          />
-        ))}
+        {categories
+          .filter((category) => category.depth === 0)
+          .map((category) => (
+            <CategoryNode
+              key={category.id}
+              category={category}
+              categories={categories}
+              includeInactive={includeInactive}
+              selection={selection}
+              onSelect={onSelect}
+            />
+          ))}
       </List>
     </Paper>
   );
@@ -85,105 +88,63 @@ export default function CategoryTree({
 
 function CategoryNode({
   category,
+  categories,
+  products,
   includeInactive,
   selection,
   onSelect,
 }: {
-  category: Lookup;
+  category: ProductCategory;
+  categories: ProductCategory[];
+  /** The branch's products, loaded by its top-level category. */
+  products?: Product[];
   includeInactive: boolean;
   selection: StockSelection;
   onSelect: (selection: StockSelection) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const products = useQuery({
+  const isTop = category.depth === 0;
+  const loaded = useQuery({
     queryKey: ['products', 'tree', category.id, includeInactive],
     queryFn: () => listCategory(category.id, includeInactive),
-    enabled: open,
+    enabled: open && isTop,
   });
-
-  // Group by brand; products without one share a "No brand" group.
-  const groups = new Map<string, { id: string | null; name: string; products: Product[] }>();
-  for (const product of products.data ?? []) {
-    const key = product.brandId ?? '';
-    const group = groups.get(key) ?? { id: product.brandId, name: product.brandName ?? 'No brand', products: [] };
-    group.products.push(product);
-    groups.set(key, group);
-  }
-  const brands = [...groups.values()].sort((a, b) => a.name.localeCompare(b.name));
-  const base = { categoryId: category.id, categoryName: category.name };
+  const branch = isTop ? loaded.data : products;
+  const children = categories.filter((c) => c.parentId === category.id);
+  const own = (branch ?? []).filter((p) => p.categoryId === category.id);
 
   return (
     <>
       <TreeRow
-        depth={0}
+        depth={category.depth}
         label={category.name}
         count={includeInactive ? category.productCount : category.activeProductCount}
         open={open}
         onToggle={() => setOpen(!open)}
-        selected={selection.categoryId === category.id && !selection.brandId && !selection.productId}
-        onSelect={() => onSelect(base)}
+        selected={selection.categoryId === category.id && !selection.productId}
+        onSelect={() => onSelect({ categoryId: category.id, categoryName: category.path })}
       />
       <Collapse in={open} unmountOnExit>
-        {products.isLoading && (
+        {isTop && loaded.isLoading && (
           <Box sx={{ pl: 6, py: 1 }}>
             <CircularProgress size={16} />
           </Box>
         )}
-        {products.data?.length === 0 && (
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', pl: 6, py: 0.5 }}>
-            No products
-          </Typography>
-        )}
-        {brands.map((brand) => (
-          <BrandNode
-            key={brand.id ?? ''}
-            brand={brand}
-            base={base}
+        {children.map((child) => (
+          <CategoryNode
+            key={child.id}
+            category={child}
+            categories={categories}
+            products={branch}
+            includeInactive={includeInactive}
             selection={selection}
             onSelect={onSelect}
           />
         ))}
-      </Collapse>
-    </>
-  );
-}
-
-function BrandNode({
-  brand,
-  base,
-  selection,
-  onSelect,
-}: {
-  brand: { id: string | null; name: string; products: Product[] };
-  base: StockSelection;
-  selection: StockSelection;
-  onSelect: (selection: StockSelection) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const brandSelection = { ...base, brandId: brand.id ?? undefined, brandName: brand.id ? brand.name : undefined };
-
-  return (
-    <>
-      <TreeRow
-        depth={1}
-        label={brand.name}
-        count={brand.products.length}
-        open={open}
-        onToggle={() => setOpen(!open)}
-        selected={
-          !!brand.id &&
-          selection.categoryId === base.categoryId &&
-          selection.brandId === brand.id &&
-          !selection.productId
-        }
-        // shortcut: the list channel cannot filter "no brand", so that group only expands.
-        onSelect={brand.id ? () => onSelect(brandSelection) : () => setOpen(!open)}
-      />
-      <Collapse in={open} unmountOnExit>
-        {brand.products.map((product) => (
+        {own.map((product) => (
           <TreeRow
             key={product.id}
-            depth={2}
+            depth={category.depth + 1}
             label={product.name}
             hint={
               <Chip
@@ -195,9 +156,18 @@ function BrandNode({
               />
             }
             selected={selection.productId === product.id}
-            onSelect={() => onSelect({ ...brandSelection, productId: product.id })}
+            onSelect={() => onSelect({ categoryId: category.id, categoryName: category.path, productId: product.id })}
           />
         ))}
+        {branch && children.length === 0 && own.length === 0 && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'block', pl: 6 + category.depth * 2, py: 0.5 }}
+          >
+            No products
+          </Typography>
+        )}
       </Collapse>
     </>
   );
@@ -254,7 +224,7 @@ function TreeRow({
       >
         <ListItemText
           primary={label}
-          slotProps={{ primary: { noWrap: true, sx: { fontWeight: depth === 0 ? 600 : 400, fontSize: depth === 2 ? 13 : 14 } } }}
+          slotProps={{ primary: { noWrap: true, sx: { fontWeight: depth === 0 ? 600 : 400, fontSize: onToggle ? 14 : 13 } } }}
         />
         {count !== undefined && (
           <Typography variant="caption" color="text.secondary" sx={{ ml: 1, fontVariantNumeric: 'tabular-nums' }}>

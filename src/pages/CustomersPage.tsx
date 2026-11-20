@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   Alert,
+  Box,
   Button,
   Chip,
   IconButton,
@@ -70,18 +71,6 @@ export default function CustomersPage() {
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-        <Typography variant="h5" sx={{ flexGrow: 1 }}>
-          Customers
-        </Typography>
-        <ExportMenu target={{ dataset: 'CUSTOMER_LIST', query }} />
-        {can('customers.manage') && (
-          <Button variant="contained" startIcon={<PersonAddIcon />} onClick={() => setEditing(null)}>
-            Add Customer
-          </Button>
-        )}
-      </Stack>
-
       {customers.isError && (
         <Alert severity="error">
           {customers.error instanceof PosApiError
@@ -122,6 +111,13 @@ export default function CustomersPage() {
             }
             label="Show inactive"
           />
+          <Box sx={{ flexGrow: 1 }} />
+          <ExportMenu target={{ dataset: 'CUSTOMER_LIST', query }} />
+          {can('customers.manage') && (
+            <Button variant="contained" startIcon={<PersonAddIcon />} onClick={() => setEditing(null)}>
+              Add Customer
+            </Button>
+          )}
         </Stack>
       </Paper>
 

@@ -16,6 +16,7 @@ import {
   zAddSerials,
   zMarkSerialDefective,
   zSaveLookup,
+  zSaveCategory,
   zLookupQuery,
   zInventoryQuery,
   zNoPayload,
@@ -33,6 +34,7 @@ import {
   listCategories,
   listBrands,
   saveCategory,
+  deleteCategory,
   saveBrand,
 } from '../services/product.service';
 import {
@@ -159,8 +161,15 @@ export function registerCatalogIpc(): void {
   handle(
     CHANNELS.categories.save,
     { access: 'permission', permission: 'products.manage' },
-    zSaveLookup,
+    zSaveCategory,
     (input) => saveCategory(input, requireUser()),
+  );
+
+  handle(
+    CHANNELS.categories.delete,
+    { access: 'permission', permission: 'products.delete' },
+    zIdOnly,
+    ({ id }) => deleteCategory(id, requireUser()),
   );
 
   handle(

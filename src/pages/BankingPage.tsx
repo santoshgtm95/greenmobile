@@ -216,9 +216,7 @@ export default function BankingPage() {
         spacing={2}
         sx={{ alignItems: "center", flexWrap: "wrap" }}
       >
-        <Typography variant="h5" sx={{ flexGrow: 1 }}>
-          Banking
-        </Typography>
+        <Box sx={{ flexGrow: 1 }} />
         <ExportMenu target={{ dataset: "BANK_TRANSACTION_LIST", query }} />
         {can("banking.manage") && (
           <>

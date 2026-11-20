@@ -103,9 +103,7 @@ export default function UsersPage() {
   return (
     <Stack spacing={2}>
       <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-        <Typography variant="h5" sx={{ flexGrow: 1 }}>
-          Users
-        </Typography>
+        <Box sx={{ flexGrow: 1 }} />
         <FormControlLabel
           control={
             <Switch

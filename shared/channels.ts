@@ -48,6 +48,7 @@ export const CHANNELS = {
   categories: {
     list: 'categories:list',
     save: 'categories:save',
+    delete: 'categories:delete',
   },
   brands: {
     list: 'brands:list',

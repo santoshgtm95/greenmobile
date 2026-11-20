@@ -104,8 +104,6 @@ export default function ReportsPage() {
 
   return (
     <Stack spacing={2}>
-      <Typography variant="h5">Reports</Typography>
-
       {error && (
         <Alert severity="error" onClose={() => setError(null)}>
           {error}

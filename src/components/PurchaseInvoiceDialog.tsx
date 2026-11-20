@@ -36,7 +36,7 @@ import { PosApiError } from '@shared/errors';
 import { nowLocalDateTime } from '@shared/datetime';
 import { generateEan13Candidate } from '@shared/barcode';
 import { PURCHASE_PAYMENT_METHODS, PURCHASE_PAYMENT_LABELS, type PurchasePaymentMethod } from '@shared/domain';
-import type { Lookup, Product, PurchaseInvoiceDetail } from '@shared/api';
+import type { Lookup, Product, ProductCategory, PurchaseInvoiceDetail } from '@shared/api';
 
 /**
  * One product row. With productId it is a product already in Stocks (only its
@@ -335,7 +335,7 @@ function ProductRow({
   line: Line;
   locked: boolean;
   canRemove: boolean;
-  categories: Lookup[];
+  categories: ProductCategory[];
   brands: Lookup[];
   onChange: (patch: Partial<Line>) => void;
   onRemove: () => void;
@@ -435,10 +435,10 @@ function ProductRow({
         <Autocomplete
           size="small"
           disabled={fixed}
-          options={categories}
+          options={categories.filter((c) => c.depth > 0 || c.id === line.categoryId)}
           value={categories.find((c) => c.id === line.categoryId) ?? null}
           onChange={(_e, c) => onChange({ categoryId: c?.id ?? '' })}
-          getOptionLabel={(c) => c.name}
+          getOptionLabel={(c) => c.path}
           isOptionEqualToValue={(a, b) => a.id === b.id}
           noOptionsText="No matching category"
           renderInput={(params) => <TextField {...params} />}
