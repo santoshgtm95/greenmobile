@@ -193,9 +193,10 @@ export function MovementLedger({ lockedProductId }: { lockedProductId?: string }
   return (
     <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
       <Stack
-        direction={{ xs: 'column', lg: 'row' }}
+        direction='row'
         spacing={2}
-        sx={{ p: 2, alignItems: { lg: 'center' } }}
+        useFlexGap
+        sx={{ p: 2, alignItems: 'center', flexWrap: 'wrap' }}
       >
         {!lockedProductId && (
         <TextField

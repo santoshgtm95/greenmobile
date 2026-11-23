@@ -546,9 +546,10 @@ export default function BankingPage() {
       {/* Filters. */}
       <Paper sx={{ p: 2, border: "1px solid", borderColor: "divider" }}>
         <Stack
-          direction={{ xs: "column", lg: "row" }}
+          direction="row"
           spacing={2}
-          sx={{ alignItems: "center" }}
+          useFlexGap
+          sx={{ alignItems: "center", flexWrap: "wrap" }}
         >
           <TextField
             // Kept short enough not to be clipped at this width; the fuller
@@ -568,7 +569,7 @@ export default function BankingPage() {
                 ),
               },
             }}
-            sx={{ width: 320 }}
+            sx={{ flex: "1 1 260px" }}
           />
           <TextField
             select

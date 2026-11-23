@@ -415,8 +415,10 @@ export default function PosPage() {
                       width: '100%',
                       display: 'flex',
                       alignItems: 'center',
+                      flexWrap: 'wrap',
                       textAlign: 'left',
-                      gap: 2,
+                      columnGap: 2,
+                      rowGap: 0.75,
                       px: 2,
                       py: 1.25,
                       borderBottom: '1px solid',
@@ -430,7 +432,8 @@ export default function PosPage() {
                       '&.Mui-focusVisible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: -2 },
                     })}
                   >
-                    <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                    {/* 200px basis: on narrow screens (tablet) price and stock wrap below instead of crushing the name. */}
+                    <Box sx={{ flex: '1 1 200px', minWidth: 0 }}>
                       <Typography sx={{ fontWeight: 600, fontSize: 14.5, lineHeight: 1.3, wordBreak: 'break-word' }}>
                         {product.name}
                       </Typography>
@@ -438,7 +441,7 @@ export default function PosPage() {
                         {[product.sku, product.brandName, product.categoryName].filter(Boolean).join(' · ')}
                       </Typography>
                     </Box>
-                    <Stack direction="row" spacing={1.5} sx={{ flexShrink: 0, alignItems: 'center' }}>
+                    <Stack direction="row" spacing={1.5} sx={{ flexShrink: 0, alignItems: 'center', ml: 'auto' }}>
                       {inCart > 0 && <Chip size="small" color="primary" label={`×${inCart} in cart`} />}
                       <Typography sx={{ minWidth: 90, textAlign: 'right', fontWeight: 700, fontSize: 16, fontVariantNumeric: 'tabular-nums' }}>
                         {money(product.sellingPrice)}

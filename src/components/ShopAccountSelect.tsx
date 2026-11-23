@@ -1,4 +1,4 @@
-import { Autocomplete, Chip, Stack, TextField, type SxProps, type Theme } from '@mui/material';
+import { Autocomplete, Chip, Stack, TextField, useMediaQuery, type SxProps, type Theme } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useMoneyFormatter } from '../hooks/useSettings';
@@ -38,6 +38,7 @@ export default function ShopAccountSelect({
   sx?: SxProps<Theme>;
 }) {
   const money = useMoneyFormatter();
+  const touch = useMediaQuery('(pointer: coarse)');
   const accounts = useQuery({
     queryKey: ['shopBankAccounts', 'active'],
     queryFn: () => api.banking.listShopAccounts({ includeInactive: false }),
@@ -74,6 +75,11 @@ export default function ShopAccountSelect({
       renderInput={(params) => (
         <TextField
           {...params}
+          // On a tablet the keyboard would cover the list; a tap to pick is enough there.
+          slotProps={{
+            ...params.slotProps,
+            htmlInput: { ...params.slotProps.htmlInput, inputMode: touch ? 'none' : undefined },
+          }}
           required={required}
           label={label}
           placeholder={placeholder}

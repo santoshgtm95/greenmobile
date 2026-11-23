@@ -131,16 +131,17 @@ export default function ReportsPage() {
 
         {/* One filter row scoping the whole report, plus the export actions. */}
         <Stack
-          direction={{ xs: 'column', lg: 'row' }}
+          direction='row'
           spacing={2}
-          sx={{ p: 2, alignItems: 'center' }}
+          useFlexGap
+          sx={{ p: 2, alignItems: 'center', flexWrap: 'wrap' }}
         >
           <TextField
             select
             label="Period"
             value={preset}
             onChange={(e) => setPreset(e.target.value as DatePreset)}
-            sx={{ maxWidth: 190 }}
+            sx={{ width: 190 }}
           >
             {DATE_PRESETS.map((option) => (
               <MenuItem key={option} value={option}>
@@ -157,7 +158,7 @@ export default function ReportsPage() {
                 value={customFrom}
                 onChange={(e) => setCustomFrom(e.target.value)}
                 slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ maxWidth: 170 }}
+                sx={{ width: 170 }}
               />
               <TextField
                 label="To"
@@ -165,14 +166,12 @@ export default function ReportsPage() {
                 value={customTo}
                 onChange={(e) => setCustomTo(e.target.value)}
                 slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ maxWidth: 170 }}
+                sx={{ width: 170 }}
               />
             </>
           )}
 
-          <Box sx={{ flexGrow: 1 }} />
-
-          <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', ml: 'auto' }}>
             <Button
               size="small"
               startIcon={<PrintIcon />}
@@ -222,7 +221,7 @@ export default function ReportsPage() {
           spacing={2}
           sx={{ opacity: report.isFetching ? 0.7 : 1, transition: 'opacity .15s' }}
         >
-          <Stack direction="row" spacing={2} sx={{ alignItems: 'baseline' }}>
+          <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: 'baseline', flexWrap: 'wrap', rowGap: 0.5 }}>
             <Typography variant="h6">{data.title}</Typography>
             <Typography variant="body2" color="text.secondary">
               {data.periodLabel} · amounts in {data.currency}

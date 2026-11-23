@@ -173,7 +173,7 @@ export default function BackupPanel() {
 
       {/* Actions ------------------------------------------------------------ */}
       <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
-        <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+        <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
           <Button
             variant="contained"
             startIcon={<BackupIcon />}

@@ -57,6 +57,7 @@ export default function SettingsPage() {
           onChange={(_e, next) => navigate(`/settings/${next as TabValue}`)}
           variant="scrollable"
           scrollButtons="auto"
+          allowScrollButtonsMobile
         >
           {visible.map((entry) => (
             <Tab key={entry.value} value={entry.value} label={entry.label} />

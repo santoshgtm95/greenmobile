@@ -137,7 +137,7 @@ export default function PurchasesPage() {
           </Stack>
 
           <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+            <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
               <TextField
                 placeholder="Search invoice no, supplier or remark"
                 value={search}
@@ -154,7 +154,7 @@ export default function PurchasesPage() {
                     ),
                   },
                 }}
-                sx={{ maxWidth: 340 }}
+                sx={{ flex: '1 1 260px' }}
               />
               <TextField
                 select
@@ -164,7 +164,7 @@ export default function PurchasesPage() {
                   setSupplierId(e.target.value);
                   setPage(0);
                 }}
-                sx={{ minWidth: 200 }}
+                sx={{ width: 200 }}
               >
                 <MenuItem value="">All suppliers</MenuItem>
                 {(suppliers.data ?? []).map((s) => (
@@ -181,7 +181,7 @@ export default function PurchasesPage() {
                   setStatus(e.target.value as typeof status);
                   setPage(0);
                 }}
-                sx={{ minWidth: 180 }}
+                sx={{ width: 200 }}
               >
                 <MenuItem value="">All invoices</MenuItem>
                 <MenuItem value="WAITING">Waiting for products</MenuItem>

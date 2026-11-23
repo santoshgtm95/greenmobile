@@ -221,8 +221,7 @@ export default function StocksPage() {
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}>
-        <Box sx={{ flexGrow: 1 }} />
+      <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', rowGap: 1 }}>
         {/* Exports the whole filtered set, not the page on screen (spec §56). */}
         <ExportMenu target={{ dataset: 'PRODUCT_LIST', query }} label="Export products" />
         {/* The stock-on-hand sheet, which is what a stock-take is done against. */}
@@ -278,7 +277,7 @@ export default function StocksPage() {
 
       {active === 'products' && (
         // Tree on the left of the list; on a narrow window it goes above the list instead.
-        <Stack direction={{ xs: 'column-reverse', lg: 'row-reverse' }} spacing={2} sx={{ alignItems: { lg: 'flex-start' } }}>
+        <Stack direction={{ xs: 'column-reverse', md: 'row-reverse' }} spacing={2} sx={{ alignItems: { md: 'flex-start' } }}>
           <Stack spacing={2} sx={{ flex: 1, minWidth: 0 }}>
             <Breadcrumbs>
               <Link component="button" underline="hover" onClick={() => select({})}>
@@ -486,7 +485,7 @@ export default function StocksPage() {
             )}
           </Stack>
 
-          <Box sx={{ width: { lg: 320 }, flexShrink: 0, position: { lg: 'sticky' }, top: { lg: 88 } }}>
+          <Box sx={{ width: { md: 240, lg: 320 }, flexShrink: 0, position: { md: 'sticky' }, top: { md: 88 } }}>
             <CategoryTree
               categories={categories.data ?? []}
               includeInactive={includeInactive}

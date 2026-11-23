@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
   Alert,
-  Box,
   Button,
   Chip,
   IconButton,
@@ -30,7 +29,6 @@ import { useDebounced } from '../hooks/useDebounced';
 import { useMoneyFormatter } from '../hooks/useSettings';
 import SaleDetailDialog from '../components/SaleDetailDialog';
 import { PosApiError } from '@shared/errors';
-import ExportMenu from '../components/ExportMenu';
 import {
   SALE_STATUSES,
   SALE_STATUS_LABELS,
@@ -133,7 +131,7 @@ export default function SalesPage() {
       )}
 
       <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
-        <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2} sx={{ alignItems: 'center' }}>
+        <Stack direction='row' spacing={2} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
           <TextField
             placeholder="Invoice, customer or phone"
             value={search}
@@ -150,7 +148,7 @@ export default function SalesPage() {
                 ),
               },
             }}
-            sx={{ maxWidth: 320 }}
+            sx={{ flex: '1 1 260px' }}
           />
           <TextField
             select
@@ -160,7 +158,7 @@ export default function SalesPage() {
               setPreset(e.target.value as DatePreset);
               setPage(0);
             }}
-            sx={{ maxWidth: 180 }}
+            sx={{ width: 170 }}
           >
             {DATE_PRESETS.map((option) => (
               <MenuItem key={option} value={option}>
@@ -177,7 +175,7 @@ export default function SalesPage() {
                 value={customFrom}
                 onChange={(e) => setCustomFrom(e.target.value)}
                 slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ maxWidth: 170 }}
+                sx={{ width: 170 }}
               />
               <TextField
                 label="To"
@@ -185,7 +183,7 @@ export default function SalesPage() {
                 value={customTo}
                 onChange={(e) => setCustomTo(e.target.value)}
                 slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ maxWidth: 170 }}
+                sx={{ width: 170 }}
               />
             </>
           )}
@@ -198,7 +196,7 @@ export default function SalesPage() {
               setStatus(e.target.value as SaleStatus | '');
               setPage(0);
             }}
-            sx={{ maxWidth: 190 }}
+            sx={{ width: 170 }}
           >
             <MenuItem value="">All statuses</MenuItem>
             {SALE_STATUSES.map((option) => (
@@ -216,7 +214,7 @@ export default function SalesPage() {
               setPaymentMethod(e.target.value);
               setPage(0);
             }}
-            sx={{ maxWidth: 180 }}
+            sx={{ width: 170 }}
           >
             <MenuItem value="">Any method</MenuItem>
             {PAYMENT_METHODS.map((method) => (
@@ -225,11 +223,9 @@ export default function SalesPage() {
               </MenuItem>
             ))}
           </TextField>
-          <Box sx={{ flexGrow: 1 }} />
-          <ExportMenu target={{ dataset: 'SALE_LIST', query }} />
         </Stack>
 
-        <Stack direction="row" spacing={3} sx={{ mt: 2, color: 'text.secondary' }}>
+        <Stack direction="row" spacing={3} useFlexGap sx={{ mt: 2, color: 'text.secondary', flexWrap: 'wrap', rowGap: 0.5 }}>
           <Typography variant="body2">
             {range.from === range.to ? range.from : `${range.from} → ${range.to}`}
           </Typography>

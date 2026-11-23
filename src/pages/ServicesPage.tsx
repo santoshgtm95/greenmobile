@@ -154,7 +154,7 @@ export default function ServicesPage() {
       </Box>
 
       <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ alignItems: 'center' }}>
+        <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
           <TextField
             placeholder="Job number, customer, phone, IMEI or model"
             value={search}
@@ -171,7 +171,7 @@ export default function ServicesPage() {
                 ),
               },
             }}
-            sx={{ maxWidth: 400 }}
+            sx={{ flex: '1 1 260px' }}
           />
           <TextField
             select
@@ -181,7 +181,7 @@ export default function ServicesPage() {
               setStatus(e.target.value as ServiceStatus | '');
               setPage(0);
             }}
-            sx={{ maxWidth: 210 }}
+            sx={{ width: 190 }}
           >
             <MenuItem value="">{openOnly ? 'Open jobs' : 'All statuses'}</MenuItem>
             {SERVICE_STATUSES.map((option) => (

@@ -204,7 +204,7 @@ export default function ExpensesPage() {
       </Stack>
 
       <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
-        <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2} sx={{ alignItems: 'center' }}>
+        <Stack direction='row' spacing={2} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
           <TextField
             placeholder="Search description, number or reference"
             value={search}
@@ -221,7 +221,7 @@ export default function ExpensesPage() {
                 ),
               },
             }}
-            sx={{ maxWidth: 340 }}
+            sx={{ flex: '1 1 260px' }}
           />
           <TextField
             select
@@ -231,7 +231,7 @@ export default function ExpensesPage() {
               setPreset(e.target.value as DatePreset);
               setPage(0);
             }}
-            sx={{ maxWidth: 180 }}
+            sx={{ width: 170 }}
           >
             {DATE_PRESETS.map((option) => (
               <MenuItem key={option} value={option}>
@@ -248,7 +248,7 @@ export default function ExpensesPage() {
                 value={customFrom}
                 onChange={(e) => setCustomFrom(e.target.value)}
                 slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ maxWidth: 170 }}
+                sx={{ width: 170 }}
               />
               <TextField
                 label="To"
@@ -256,7 +256,7 @@ export default function ExpensesPage() {
                 value={customTo}
                 onChange={(e) => setCustomTo(e.target.value)}
                 slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ maxWidth: 170 }}
+                sx={{ width: 170 }}
               />
             </>
           )}
@@ -269,7 +269,7 @@ export default function ExpensesPage() {
               setCategoryId(e.target.value);
               setPage(0);
             }}
-            sx={{ maxWidth: 200 }}
+            sx={{ width: 170 }}
           >
             <MenuItem value="">All categories</MenuItem>
             {(categories.data ?? []).map((c) => (
@@ -287,7 +287,7 @@ export default function ExpensesPage() {
               setPaymentMethod(e.target.value);
               setPage(0);
             }}
-            sx={{ maxWidth: 180 }}
+            sx={{ width: 170 }}
           >
             <MenuItem value="">Any method</MenuItem>
             {PAYMENT_METHODS.map((method) => (
@@ -296,7 +296,6 @@ export default function ExpensesPage() {
               </MenuItem>
             ))}
           </TextField>
-          <Box sx={{ flexGrow: 1 }} />
           <ExportMenu target={{ dataset: 'EXPENSE_LIST', query }} />
         </Stack>
       </Paper>

@@ -63,7 +63,7 @@ export default function CategoryTree({
           Click a name to show its products, + to open it
         </Typography>
       </Box>
-      <List dense disablePadding sx={{ maxHeight: { lg: 'calc(100vh - 260px)' }, overflowY: 'auto', py: 0.5 }}>
+      <List dense disablePadding sx={{ maxHeight: { md: 'calc(100vh - 260px)' }, overflowY: 'auto', py: 0.5 }}>
         {categories.length === 0 && (
           <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
             No categories yet.

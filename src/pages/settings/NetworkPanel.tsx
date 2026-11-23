@@ -47,7 +47,7 @@ export default function NetworkPanel() {
               On the tablet or phone, scan this with the camera. On a laptop, type the address into the browser.
             </Typography>
             {status.data.urls.map((url) => (
-              <Stack key={url} direction="row" spacing={2} sx={{ alignItems: 'center' }}>
+              <Stack key={url} direction="row" spacing={2} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
                 <QrCode text={url} />
                 <Typography variant="h6" sx={{ fontFamily: 'monospace' }}>
                   {url}

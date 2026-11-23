@@ -80,7 +80,7 @@ export default function CustomersPage() {
       )}
 
       <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
-        <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
+        <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}>
           <TextField
             placeholder="Search name, phone or customer code"
             value={search}
@@ -97,7 +97,7 @@ export default function CustomersPage() {
                 ),
               },
             }}
-            sx={{ maxWidth: 380 }}
+            sx={{ flex: '1 1 260px', maxWidth: 420 }}
           />
           <FormControlLabel
             control={
@@ -129,7 +129,8 @@ export default function CustomersPage() {
                 <TableCell>Code</TableCell>
                 <TableCell>Name</TableCell>
                 <TableCell>Phone</TableCell>
-                <TableCell>Email</TableCell>
+                {/* Hidden below lg so the table fits a tablet; email is in the customer's detail. */}
+                <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>Email</TableCell>
                 <TableCell align="right">Orders</TableCell>
                 <TableCell align="right">Total spent</TableCell>
                 <TableCell>Last purchase</TableCell>
@@ -172,7 +173,7 @@ export default function CustomersPage() {
                     )}
                   </TableCell>
                   <TableCell>{customer.phone ?? '—'}</TableCell>
-                  <TableCell sx={{ color: 'text.secondary' }}>{customer.email ?? '—'}</TableCell>
+                  <TableCell sx={{ color: 'text.secondary', display: { xs: 'none', lg: 'table-cell' } }}>{customer.email ?? '—'}</TableCell>
                   <TableCell align="right">{customer.totalOrders || '—'}</TableCell>
                   <TableCell
                     align="right"
