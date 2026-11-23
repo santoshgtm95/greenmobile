@@ -2,15 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Box,
-  Breadcrumbs,
   Button,
+  ButtonBase,
   Chip,
   Divider,
   IconButton,
   InputAdornment,
-  Link,
-  List,
-  ListItemButton,
   Paper,
   Snackbar,
   Stack,
@@ -22,6 +19,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
 import RemoveIcon from '@mui/icons-material/Remove';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
+import CardGiftcardIcon from '@mui/icons-material/CardGiftcardOutlined';
 import PersonIcon from '@mui/icons-material/Person';
 import SmartphoneIcon from '@mui/icons-material/Smartphone';
 import PrintIcon from '@mui/icons-material/Print';
@@ -35,13 +33,15 @@ import SerialPickerDialog from '../components/SerialPickerDialog';
 import CustomerPickerDialog from '../components/CustomerPickerDialog';
 import PaymentDialog from '../components/PaymentDialog';
 import MoneyField from '../components/MoneyField';
-import CategoryTree, { type StockSelection } from './stocks/CategoryTree';
+import { alpha } from '@mui/material/styles';
 
 export interface CartLine {
   key: string;
   product: Product;
   quantity: number;
   serial: ProductSerial | null;
+  /** Given free: priced at 0 by the main process. */
+  isGift: boolean;
 }
 
 /**
@@ -68,19 +68,19 @@ export default function PosPage() {
   const searchRef = useRef<HTMLInputElement>(null);
   const debouncedSearch = useDebounced(search, 200);
 
-  // Category picked in the tree; narrows the product list like Stocks does.
-  const [selection, setSelection] = useState<StockSelection>({});
+  // Category picked in the chip bar; narrows the product list like Stocks does.
+  const [categoryId, setCategoryId] = useState<string | undefined>();
   const categories = useQuery({
     queryKey: ['categories'],
     queryFn: () => api.categories.list({ includeInactive: false }),
   });
 
   const results = useQuery({
-    queryKey: ['pos-search', debouncedSearch, selection.categoryId],
+    queryKey: ['pos-search', debouncedSearch, categoryId],
     queryFn: () =>
       api.products.list({
         search: debouncedSearch || undefined,
-        categoryId: selection.categoryId,
+        categoryId,
         lowStockOnly: false,
         inStockOnly: true,
         includeInactive: false,
@@ -98,6 +98,7 @@ export default function PosPage() {
         productId: line.product.id,
         quantity: line.quantity,
         productSerialId: line.serial?.id,
+        isGift: line.isGift || undefined,
       })),
       discountAmount: discount,
       payments: [],
@@ -124,9 +125,11 @@ export default function PosPage() {
       setCart((current) => {
         // A serialized unit is unique; anything else stacks.
         if (!serial) {
-          const existing = current.find((l) => l.product.id === product.id && !l.serial);
+          // A gift line of the same product stays separate; stock counts both.
+          const existing = current.find((l) => l.product.id === product.id && !l.serial && !l.isGift);
+          const inCart = current.reduce((n, l) => (l.product.id === product.id ? n + l.quantity : n), 0);
           if (existing) {
-            if (existing.quantity + 1 > product.stockQuantity && product.stockQuantity >= 0) {
+            if (inCart + 1 > product.stockQuantity && product.stockQuantity >= 0) {
               setError(`Only ${product.stockQuantity} of ${product.name} in stock.`);
               return current;
             }
@@ -134,18 +137,18 @@ export default function PosPage() {
               l === existing ? { ...l, quantity: l.quantity + 1 } : l,
             );
           }
-          if (product.stockQuantity <= 0) {
+          if (inCart + 1 > product.stockQuantity) {
             setError(`${product.name} is out of stock.`);
             return current;
           }
-          return [...current, { key: product.id, product, quantity: 1, serial: null }];
+          return [...current, { key: crypto.randomUUID(), product, quantity: 1, serial: null, isGift: false }];
         }
 
         if (current.some((l) => l.serial?.id === serial.id)) {
           setError('That unit is already in the cart.');
           return current;
         }
-        return [...current, { key: serial.id, product, quantity: 1, serial }];
+        return [...current, { key: serial.id, product, quantity: 1, serial, isGift: false }];
       });
     },
     [],
@@ -252,176 +255,243 @@ export default function PosPage() {
         setCustomerPickerOpen(true);
       } else if (event.key === 'F8' || event.key === 'F9') {
         event.preventDefault();
-        if (cart.length > 0) setPaymentOpen(true);
+        if (cart.length > 0) checkout();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [cart.length]);
+  });
 
   const totals = quote.data;
 
+  // Nothing to collect when every line is a gift, so skip the payment dialog.
+  const checkout = () => {
+    if (!totals || quote.isFetching) return;
+    if (totals.grandTotal === 0) completeSale.mutate([]);
+    else setPaymentOpen(true);
+  };
+
+  // The selected category's ancestry, top level first, and one chip row per level.
+  const allCategories = categories.data ?? [];
+  const selected = allCategories.find((c) => c.id === categoryId);
+  const chain: typeof allCategories = [];
+  for (let c = selected; c; c = allCategories.find((p) => p.id === c!.parentId)) chain.unshift(c);
+  const categoryRows = [
+    allCategories.filter((c) => !c.parentId),
+    ...chain.map((c) => allCategories.filter((child) => child.parentId === c.id)).filter((row) => row.length > 0),
+  ];
+
+  const cartQty = new Map<string, number>();
+  for (const line of cart) cartQty.set(line.product.id, (cartQty.get(line.product.id) ?? 0) + line.quantity);
+  const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
+
   return (
-    <Stack sx={{ height: 'calc(100vh - 128px)' }} spacing={2}>
-      <TextField
-        inputRef={searchRef}
-        autoFocus
-        placeholder="Search a product, or scan a barcode / IMEI  —  F2"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            void onSearchEnter();
-          }
+    <>
+      <Box
+        sx={{
+          // Fill the window under the header (60px) and main padding, so nothing scrolls but the lists.
+          height: { md: 'calc(100vh - 108px)' },
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) 420px', lg: 'minmax(0, 1fr) 500px' },
+          gap: 2,
         }}
-        slotProps={{
-          input: {
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon />
-              </InputAdornment>
-            ),
-            sx: { fontSize: 18, py: 0.5 },
-          },
-        }}
-      />
-
-      {error && (
-        <Alert severity="warning" onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
-
-      <Stack direction="row" spacing={2} sx={{ flexGrow: 1, minHeight: 0 }}>
-        {/* Category → Sub Category → Sub Category → Product; a product row goes straight into the cart. */}
-        <Box
-          sx={{
-            width: 280,
-            flexShrink: 0,
-            minHeight: 0,
-            display: { xs: 'none', md: 'flex' },
-            // One scrollbar: the tree's list fills the panel height and scrolls by itself.
-            '& > .MuiPaper-root': { display: 'flex', flexDirection: 'column', maxHeight: '100%', minWidth: 0, flex: 1 },
-            '& .MuiList-root': { maxHeight: 'none', flex: 1, minHeight: 0 },
-          }}
-        >
-          <CategoryTree
-            categories={categories.data ?? []}
-            includeInactive={false}
-            selection={selection}
-            onSelect={(picked) => {
-              if (!picked.productId) return setSelection(picked);
-              api.products
-                .get({ id: picked.productId })
-                .then((product) => addProduct(product))
-                .catch((err) => setError(err instanceof PosApiError ? err.message : 'Unable to load that product.'));
+      >
+        {/* Left: search, category bar, product grid */}
+        <Stack spacing={1.5} sx={{ minHeight: 0, minWidth: 0 }}>
+          <TextField
+            inputRef={searchRef}
+            autoFocus
+            placeholder="Search a product, or scan a barcode / IMEI  —  F2"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                void onSearchEnter();
+              }
+            }}
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon />
+                  </InputAdornment>
+                ),
+                sx: { fontSize: 17, py: 0.25 },
+              },
             }}
           />
-        </Box>
 
-        {/* Search results */}
-        <Paper sx={{ flex: 1, minWidth: 0, border: '1px solid', borderColor: 'divider', overflow: 'auto' }}>
-          <Stack
-            direction="row"
-            spacing={1}
-            sx={{ px: 1.5, py: 1, borderBottom: '1px solid', borderColor: 'divider', alignItems: 'center' }}
-          >
-            <Breadcrumbs sx={{ flexGrow: 1, minWidth: 0, fontSize: 14 }}>
-              <Link component="button" underline="hover" onClick={() => setSelection({})}>
-                All products
-              </Link>
-              {selection.categoryName && (
-                <Link
-                  component="button"
-                  underline="hover"
-                  onClick={() => setSelection({ categoryId: selection.categoryId, categoryName: selection.categoryName })}
-                >
-                  {selection.categoryName}
-                </Link>
+          {error && (
+            <Alert severity="warning" onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
+
+          {/* Category → Sub Category → Sub Category, one chip row per level. */}
+          {categoryRows.map((row, level) => (
+            <Stack
+              key={level}
+              direction="row"
+              spacing={1}
+              // A vertical wheel scrolls the row sideways.
+              onWheel={(e) => (e.currentTarget.scrollLeft += e.deltaY)}
+              sx={{ overflowX: 'auto', flexShrink: 0, pb: 0.25, scrollbarWidth: 'thin' }}
+            >
+              {level === 0 && (
+                <Chip
+                  label="All products"
+                  color={!categoryId ? 'primary' : 'default'}
+                  variant={!categoryId ? 'filled' : 'outlined'}
+                  onClick={() => setCategoryId(undefined)}
+                />
               )}
-            </Breadcrumbs>
-            {results.data && results.data.total > results.data.rows.length && (
-              <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-                Showing {results.data.rows.length} of {results.data.total} — search to narrow
+              {row.map((category) => {
+                const active = chain.some((c) => c.id === category.id);
+                return (
+                  <Chip
+                    key={category.id}
+                    label={`${category.name}  ${category.activeProductCount}`}
+                    color={active ? 'primary' : 'default'}
+                    variant={active ? 'filled' : 'outlined'}
+                    onClick={() => setCategoryId(active && category.id === categoryId ? category.parentId ?? undefined : category.id)}
+                    sx={{ flexShrink: 0 }}
+                  />
+                );
+              })}
+            </Stack>
+          ))}
+
+          <Paper sx={{ flex: 1, minHeight: { xs: 360, md: 0 }, border: '1px solid', borderColor: 'divider', overflow: 'auto' }}>
+            <Stack
+              direction="row"
+              spacing={1}
+              sx={{
+                px: 2,
+                py: 1,
+                alignItems: 'center',
+                borderBottom: '1px solid',
+                borderColor: 'divider',
+                position: 'sticky',
+                top: 0,
+                zIndex: 1,
+                bgcolor: 'background.paper',
+              }}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 600, flexGrow: 1 }} noWrap>
+                {selected?.path ?? 'All products'}
               </Typography>
-            )}
-          </Stack>
-          <List dense disablePadding>
-            {results.isLoading && (
-              <Box sx={{ p: 3, textAlign: 'center', color: 'text.secondary' }}>Searching…</Box>
-            )}
+              {results.data && (
+                <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                  {results.data.total > results.data.rows.length
+                    ? `First ${results.data.rows.length} of ${results.data.total} — search to narrow`
+                    : `${results.data.total} product(s)`}
+                </Typography>
+              )}
+            </Stack>
+
+            {results.isLoading && <Box sx={{ p: 3, textAlign: 'center', color: 'text.secondary' }}>Searching…</Box>}
             {!results.isLoading && (results.data?.rows.length ?? 0) === 0 && (
               <Box sx={{ p: 4, textAlign: 'center', color: 'text.secondary' }}>
-                {search
-                  ? `Nothing matches "${search}".`
-                  : selection.categoryId
-                    ? 'No products here.'
-                    : 'Search or scan to begin.'}
+                {search ? `Nothing matches "${search}".` : categoryId ? 'No products here.' : 'Search or scan to begin.'}
               </Box>
             )}
-            {(results.data?.rows ?? []).map((product) => {
-              const out = product.stockQuantity <= 0;
-              return (
-                <ListItemButton
-                  key={product.id}
-                  onClick={() => addProduct(product)}
-                  disabled={out && product.isSerialized === 0}
-                  sx={{ borderBottom: '1px solid', borderColor: 'divider' }}
-                >
-                  <Stack sx={{ flexGrow: 1, minWidth: 0 }}>
-                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                      <Typography noWrap sx={{ fontWeight: 600 }}>
+
+            <Box>
+              {(results.data?.rows ?? []).map((product) => {
+                const out = product.stockQuantity <= 0;
+                const inCart = cartQty.get(product.id) ?? 0;
+                return (
+                  <ButtonBase
+                    key={product.id}
+                    onClick={() => addProduct(product)}
+                    disabled={out && product.isSerialized === 0}
+                    title={product.name}
+                    sx={(theme) => ({
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      textAlign: 'left',
+                      gap: 2,
+                      px: 2,
+                      py: 1.25,
+                      borderBottom: '1px solid',
+                      borderColor: 'divider',
+                      // In-cart rows keep an indigo edge so the cashier sees what is already added.
+                      boxShadow: inCart ? `inset 3px 0 0 ${theme.palette.primary.main}` : 'none',
+                      bgcolor: inCart ? alpha(theme.palette.primary.main, 0.04) : 'transparent',
+                      transition: 'background-color 120ms',
+                      '&:hover': { bgcolor: alpha(theme.palette.primary.main, inCart ? 0.07 : 0.035) },
+                      '&.Mui-disabled': { opacity: 0.5 },
+                      '&.Mui-focusVisible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: -2 },
+                    })}
+                  >
+                    <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                      <Typography sx={{ fontWeight: 600, fontSize: 14.5, lineHeight: 1.3, wordBreak: 'break-word' }}>
                         {product.name}
                       </Typography>
-                      {product.isSerialized === 1 && (
+                      <Typography variant="caption" color="text.secondary" component="div" sx={{ wordBreak: 'break-word' }}>
+                        {[product.sku, product.brandName, product.categoryName].filter(Boolean).join(' · ')}
+                      </Typography>
+                    </Box>
+                    <Stack direction="row" spacing={1.5} sx={{ flexShrink: 0, alignItems: 'center' }}>
+                      {inCart > 0 && <Chip size="small" color="primary" label={`×${inCart} in cart`} />}
+                      <Typography sx={{ minWidth: 90, textAlign: 'right', fontWeight: 700, fontSize: 16, fontVariantNumeric: 'tabular-nums' }}>
+                        {money(product.sellingPrice)}
+                      </Typography>
+                      {product.isSerialized === 1 ? (
                         <Chip
                           size="small"
-                          variant="outlined"
                           icon={<SmartphoneIcon sx={{ fontSize: 14 }} />}
-                          label={product.availableSerials}
+                          label={`${product.availableSerials} units`}
+                          color="info"
+                          sx={{ minWidth: 104 }}
+                        />
+                      ) : (
+                        <Chip
+                          size="small"
+                          label={out ? 'Out of stock' : `${product.stockQuantity} ${product.unit || 'in stock'}`}
+                          color={out ? 'error' : product.stockQuantity <= 5 ? 'warning' : 'success'}
+                          sx={{ minWidth: 104 }}
                         />
                       )}
                     </Stack>
-                    <Typography variant="caption" color="text.secondary" noWrap>
-                      {product.sku}
-                      {product.brandName ? ` · ${product.brandName}` : ''} · stock{' '}
-                      {product.stockQuantity}
-                    </Typography>
-                  </Stack>
-                  <Typography sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', ml: 2 }}>
-                    {money(product.sellingPrice)}
-                  </Typography>
-                </ListItemButton>
-              );
-            })}
-          </List>
-        </Paper>
+                  </ButtonBase>
+                );
+              })}
+            </Box>
+          </Paper>
+        </Stack>
 
-        {/* Cart */}
+        {/* Right: cart, full height */}
         <Paper
           sx={{
-            width: 520,
+            minHeight: { xs: 560, md: 0 },
             display: 'flex',
             flexDirection: 'column',
             border: '1px solid',
             borderColor: 'divider',
+            overflow: 'hidden',
           }}
         >
-          <Box sx={{ p: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-              <Typography variant="subtitle1" sx={{ flexGrow: 1, fontWeight: 700 }}>
-                Cart
-              </Typography>
-              {cart.length > 0 && (
-                <Button size="small" color="inherit" onClick={clearCart}>
-                  Clear
-                </Button>
-              )}
-            </Stack>
-          </Box>
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{ px: 2, py: 1.25, alignItems: 'center', borderBottom: '1px solid', borderColor: 'divider' }}
+          >
+            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+              Cart
+            </Typography>
+            {cart.length > 0 && <Chip size="small" label={`${itemCount} item(s)`} />}
+            <Box sx={{ flexGrow: 1 }} />
+            {cart.length > 0 && (
+              <Button size="small" color="inherit" onClick={clearCart}>
+                Clear
+              </Button>
+            )}
+          </Stack>
 
-          <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
+          <Box sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto' }}>
             {cart.length === 0 && (
               <Box sx={{ p: 5, textAlign: 'center', color: 'text.secondary' }}>
                 <Typography variant="body2">The cart is empty.</Typography>
@@ -429,60 +499,59 @@ export default function PosPage() {
               </Box>
             )}
 
-            {cart.map((line) => {
-              const lineQuote = totals?.lines.find(
-                (l) =>
-                  l.productId === line.product.id &&
-                  (l.productSerialId ?? null) === (line.serial?.id ?? null),
-              );
+            {cart.map((line, index) => {
+              // Quote lines come back in cart order; a product can appear twice (paid and gift).
+              const unitPrice = line.isGift
+                ? (line.serial?.sellingPrice ?? line.product.sellingPrice)
+                : (totals?.lines[index]?.unitPrice ?? line.product.sellingPrice);
               return (
-                <Box
-                  key={line.key}
-                  sx={{ p: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}
-                >
+                <Box key={line.key} sx={{ px: 2, py: 1.25, borderBottom: '1px solid', borderColor: 'divider' }}>
                   <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
-                    <Stack sx={{ flexGrow: 1, minWidth: 0 }}>
-                      <Typography noWrap sx={{ fontWeight: 600 }}>
+                    <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                      <Typography sx={{ fontWeight: 600, lineHeight: 1.3, wordBreak: 'break-word' }}>
                         {line.product.name}
                       </Typography>
-                      {(line.product.sku || line.product.brandName) && (
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          noWrap
-                          title={[line.product.sku, line.product.brandName].filter(Boolean).join(' · ')}
-                        >
-                          {[line.product.sku, line.product.brandName].filter(Boolean).join(' · ')}
-                        </Typography>
-                      )}
-                      <Typography variant="caption" color="text.secondary" noWrap>
-                        {line.serial
-                          ? `IMEI ${line.serial.imei1 ?? line.serial.serialNumber}`
-                          : `${money(line.product.sellingPrice)} each`}
+                      <Typography variant="caption" color="text.secondary" component="div" sx={{ wordBreak: 'break-word' }}>
+                        {[line.product.sku, line.product.brandName].filter(Boolean).join(' · ')}
+                        {line.serial && ` · IMEI ${line.serial.imei1 ?? line.serial.serialNumber}`}
                       </Typography>
-                    </Stack>
+                    </Box>
+                    <Tooltip title={line.isGift ? 'Charge for this item' : 'Give free as a gift'}>
+                      <IconButton
+                        size="small"
+                        aria-pressed={line.isGift}
+                        color={line.isGift ? 'success' : 'default'}
+                        onClick={() =>
+                          setCart((current) => current.map((l) => (l.key === line.key ? { ...l, isGift: !l.isGift } : l)))
+                        }
+                        sx={{ mt: -0.5 }}
+                      >
+                        <CardGiftcardIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Remove">
+                      <IconButton size="small" onClick={() => setQuantity(line.key, 0)} sx={{ mt: -0.5, mr: -0.75 }}>
+                        <DeleteOutlineIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
 
+                  <Stack direction="row" spacing={1} sx={{ mt: 0.75, alignItems: 'center' }}>
                     {!line.serial ? (
-                      <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-                        <IconButton
-                          size="small"
-                          onClick={() => setQuantity(line.key, line.quantity - 1)}
-                        >
+                      <Stack
+                        direction="row"
+                        sx={{ alignItems: 'center', border: '1px solid', borderColor: 'divider', borderRadius: 2 }}
+                      >
+                        <IconButton size="small" aria-label="Decrease" onClick={() => setQuantity(line.key, line.quantity - 1)}>
                           <RemoveIcon fontSize="small" />
                         </IconButton>
-                        <Typography sx={{ minWidth: 28, textAlign: 'center', fontWeight: 700 }}>
-                          {line.quantity}
-                        </Typography>
+                        <Typography sx={{ minWidth: 28, textAlign: 'center', fontWeight: 700 }}>{line.quantity}</Typography>
                         <IconButton
                           size="small"
+                          aria-label="Increase"
                           onClick={() => {
-                            if (
-                              line.quantity + 1 > line.product.stockQuantity &&
-                              line.product.stockQuantity >= 0
-                            ) {
-                              setError(
-                                `Only ${line.product.stockQuantity} of ${line.product.name} in stock.`,
-                              );
+                            if ((cartQty.get(line.product.id) ?? 0) + 1 > line.product.stockQuantity && line.product.stockQuantity >= 0) {
+                              setError(`Only ${line.product.stockQuantity} of ${line.product.name} in stock.`);
                               return;
                             }
                             setQuantity(line.key, line.quantity + 1);
@@ -492,30 +561,31 @@ export default function PosPage() {
                         </IconButton>
                       </Stack>
                     ) : (
-                      <Chip size="small" label="1" />
+                      <Chip size="small" label="1 unit" />
                     )}
-
                     <Typography
-                      sx={{ minWidth: 96, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ flexGrow: 1, textDecoration: line.isGift ? 'line-through' : 'none' }}
                     >
-                      {money((lineQuote?.unitPrice ?? line.product.sellingPrice) * line.quantity)}
+                      × {money(unitPrice)}
                     </Typography>
-
-                    <IconButton size="small" onClick={() => setQuantity(line.key, 0)}>
-                      <DeleteOutlineIcon fontSize="small" />
-                    </IconButton>
+                    {line.isGift ? (
+                      <Chip size="small" color="success" icon={<CardGiftcardIcon />} label="Free gift" />
+                    ) : (
+                      <Typography sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                        {money(unitPrice * line.quantity)}
+                      </Typography>
+                    )}
                   </Stack>
                 </Box>
               );
             })}
           </Box>
 
-          <Divider />
-
-          <Box sx={{ p: 2 }}>
-            <Stack spacing={1}>
+          <Box sx={{ px: 2, py: 1.5, borderTop: '1px solid', borderColor: 'divider', bgcolor: '#fafbfc' }}>
+            <Stack spacing={0.75}>
               <TotalRow label="Subtotal" value={money(totals?.subtotal ?? 0)} />
-
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                 <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
                   Discount
@@ -524,43 +594,36 @@ export default function PosPage() {
                   value={discount}
                   onChange={setDiscount}
                   size="small"
-                  sx={{ maxWidth: 170 }}
+                  fullWidth={false}
+                  sx={{ width: 150 }}
                   disabled={cart.length === 0}
                 />
               </Stack>
-
               <TotalRow label="Tax" value={money(totals?.taxAmount ?? 0)} />
-
-              <Divider />
-
+              <Divider sx={{ my: 0.5 }} />
               <Stack direction="row" sx={{ alignItems: 'baseline' }}>
-                <Typography variant="h6" sx={{ flexGrow: 1 }}>
-                  GRAND TOTAL
-                </Typography>
-                <Typography variant="h4" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                <Typography sx={{ flexGrow: 1, fontWeight: 600 }}>Total</Typography>
+                <Typography variant="h5" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
                   {money(totals?.grandTotal ?? 0)}
                 </Typography>
               </Stack>
             </Stack>
-          </Box>
 
-          <Divider />
-
-          <Box sx={{ p: 2, pt: 1.5 }}>
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1.5 }}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mt: 1.5 }}>
               <Tooltip title="Choose a customer — F3">
                 <Button
-                  size="small"
                   variant="outlined"
                   startIcon={<PersonIcon />}
                   onClick={() => setCustomerPickerOpen(true)}
-                  sx={{ flexGrow: 1, justifyContent: 'flex-start' }}
+                  sx={{ flexGrow: 1, justifyContent: 'flex-start', minWidth: 0 }}
                 >
-                  {customer ? customer.name : 'Walk-in Customer'}
+                  <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {customer ? customer.name : 'Walk-in Customer'}
+                  </Box>
                 </Button>
               </Tooltip>
               {customer && (
-                <Button size="small" color="inherit" onClick={() => setCustomer(null)}>
+                <Button color="inherit" onClick={() => setCustomer(null)}>
                   Clear
                 </Button>
               )}
@@ -571,14 +634,14 @@ export default function PosPage() {
               size="large"
               variant="contained"
               disabled={cart.length === 0 || quote.isFetching}
-              onClick={() => setPaymentOpen(true)}
-              sx={{ py: 1.5, fontSize: 17 }}
+              onClick={checkout}
+              sx={{ mt: 1.25, py: 1.25, fontSize: 16 }}
             >
               Complete Sale — F8
             </Button>
           </Box>
         </Paper>
-      </Stack>
+      </Box>
 
       {serialPickerFor && (
         <SerialPickerDialog
@@ -606,6 +669,7 @@ export default function PosPage() {
       {paymentOpen && totals && (
         <PaymentDialog
           grandTotal={totals.grandTotal}
+          summary={<CartSummary cart={cart} quote={totals} customerName={customer?.name ?? 'Walk-in Customer'} />}
           submitting={completeSale.isPending}
           onClose={() => setPaymentOpen(false)}
           onConfirm={(payments) => completeSale.mutate(payments)}
@@ -653,7 +717,7 @@ export default function PosPage() {
             : '.'}
         </Alert>
       </Snackbar>
-    </Stack>
+    </>
   );
 }
 
@@ -667,5 +731,65 @@ function TotalRow({ label, value }: { label: string; value: string }) {
         {value}
       </Typography>
     </Stack>
+  );
+}
+
+/** Read-only list of what is being paid for, shown in the payment dialog. */
+function CartSummary({ cart, quote, customerName }: { cart: CartLine[]; quote: SaleQuote; customerName: string }) {
+  const money = useMoneyFormatter();
+  const count = cart.reduce((sum, line) => sum + line.quantity, 0);
+  return (
+    <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2.5, overflow: 'hidden' }}>
+      <Stack direction="row" spacing={1} sx={{ px: 2, py: 1.25, alignItems: 'center', bgcolor: 'background.default' }}>
+        <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>
+          {count} item(s)
+        </Typography>
+        <Typography variant="caption" color="text.secondary" noWrap>
+          {customerName}
+        </Typography>
+      </Stack>
+      <Box sx={{ maxHeight: 340, overflow: 'auto' }}>
+        {cart.map((line, index) => {
+          // Quote lines come back in cart order.
+          const priced = quote.lines[index];
+          const unitPrice = line.isGift ? (line.serial?.sellingPrice ?? line.product.sellingPrice) : (priced?.unitPrice ?? 0);
+          return (
+            <Box key={line.key} sx={{ px: 2, py: 1, borderTop: '1px solid', borderColor: 'divider' }}>
+              <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start' }}>
+                <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600, wordBreak: 'break-word' }}>
+                    {line.product.name}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" component="div" sx={{ wordBreak: 'break-word' }}>
+                    {[line.product.brandName, line.product.sku].filter(Boolean).join(' · ')}
+                    {line.serial && ` · IMEI ${line.serial.imei1 ?? line.serial.serialNumber}`}
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ textDecoration: line.isGift ? 'line-through' : 'none' }}
+                  >
+                    {line.quantity} × {money(unitPrice)}
+                  </Typography>
+                </Box>
+                {line.isGift ? (
+                  <Chip size="small" color="success" label="Gift" />
+                ) : (
+                  <Typography variant="body2" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                    {/* Gross, so the lines add up to the subtotal below. */}
+                    {money(unitPrice * line.quantity)}
+                  </Typography>
+                )}
+              </Stack>
+            </Box>
+          );
+        })}
+      </Box>
+      <Stack spacing={0.5} sx={{ px: 2, py: 1.25, borderTop: '1px solid', borderColor: 'divider', bgcolor: 'background.default' }}>
+        <TotalRow label="Subtotal" value={money(quote.subtotal)} />
+        {quote.discountAmount > 0 && <TotalRow label="Discount" value={`−${money(quote.discountAmount)}`} />}
+        {quote.taxAmount > 0 && <TotalRow label="Tax" value={money(quote.taxAmount)} />}
+      </Stack>
+    </Box>
   );
 }

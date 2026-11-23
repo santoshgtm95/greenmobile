@@ -284,6 +284,7 @@ export default function SalesPage() {
                 >
                   <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
                     {sale.invoiceNumber}
+                    {sale.hasGift === 1 && <Chip size="small" color="success" label="Gift" sx={{ ml: 1, fontFamily: 'inherit' }} />}
                   </TableCell>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatInstant(sale.saleDate)}</TableCell>
                   <TableCell>

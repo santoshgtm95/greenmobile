@@ -299,6 +299,8 @@ model SaleItem {
   totalAmount     Int
   /// Quantity already given back through SaleReturnItem.
   returnedQuantity Int    @default(0)
+  /// 1 when given away free (unitPrice is then 0).
+  isGift          Int     @default(0)
   createdAt       String
 
   sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)

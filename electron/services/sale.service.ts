@@ -70,6 +70,8 @@ export interface SaleRow {
   createdBy: string;
   cashierName: string | null;
   createdAt: string;
+  /** 1 when any line was given away free. */
+  hasGift: number;
 }
 
 export interface SaleItemRow {
@@ -85,6 +87,7 @@ export interface SaleItemRow {
   taxAmount: number;
   totalAmount: number;
   returnedQuantity: number;
+  isGift: number;
   serials: string | null;
 }
 
@@ -119,6 +122,7 @@ interface PricedLine {
   totalAmount: number;
   /** unitPrice * quantity, before any discount. */
   grossAmount: number;
+  isGift: boolean;
   isSerialized: boolean;
   warrantyMonths: number;
   /** Resolved once from the product row, in basis points. */
@@ -219,6 +223,9 @@ export function priceSale(
       if (serial.sellingPrice !== null) unitPrice = serial.sellingPrice;
     }
 
+    // A gift is charged nothing but still costs the shop its stock, so profit shows the loss.
+    if (item.isGift) unitPrice = 0;
+
     const grossAmount = multiplyMoney(unitPrice, quantity);
 
     lines.push({
@@ -233,6 +240,7 @@ export function priceSale(
       taxAmount: 0,
       totalAmount: grossAmount,
       grossAmount,
+      isGift: item.isGift === true,
       isSerialized: product.isSerialized === 1,
       warrantyMonths: product.warrantyMonths,
       taxRate: effectiveTaxRate(
@@ -376,8 +384,8 @@ export function createSale(
     const insertItem = db.prepare(
       `INSERT INTO "SaleItem" (id, saleId, productId, productSerialId, productName, sku,
          unitCost, unitPrice, quantity, discountAmount, taxAmount, totalAmount,
-         returnedQuantity, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+         returnedQuantity, isGift, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
     );
 
     for (const line of priced.lines) {
@@ -395,6 +403,7 @@ export function createSale(
         line.discountAmount,
         line.taxAmount,
         line.totalAmount,
+        line.isGift ? 1 : 0,
         now,
       );
 
@@ -567,7 +576,8 @@ const SALE_SELECT = `
   SELECT s.id, s.invoiceNumber, s.customerId, s.customerName, s.customerPhone, s.saleDate,
          s.saleDay, s.subtotal, s.discountAmount, s.taxAmount, s.grandTotal, s.amountPaid,
          s.changeAmount, s.costTotal, s.refundedAmount, s.paymentStatus, s.status, s.notes,
-         s.createdBy, u.fullName AS cashierName, s.createdAt
+         s.createdBy, u.fullName AS cashierName, s.createdAt,
+         EXISTS (SELECT 1 FROM "SaleItem" gi WHERE gi.saleId = s.id AND gi.isGift = 1) AS hasGift
     FROM "Sale" s
     LEFT JOIN "User" u ON u.id = s.createdBy
 `;
@@ -579,7 +589,7 @@ export function getSale(id: string, db: Db = getDatabase()): SaleDetail {
   const items = db
     .prepare(
       `SELECT i.id, i.saleId, i.productId, i.productName, i.sku, i.quantity, i.unitCost,
-              i.unitPrice, i.discountAmount, i.taxAmount, i.totalAmount, i.returnedQuantity,
+              i.unitPrice, i.discountAmount, i.taxAmount, i.totalAmount, i.returnedQuantity, i.isGift,
               (SELECT GROUP_CONCAT(COALESCE(ps.imei1, ps.serialNumber), ', ')
                  FROM "ProductSerial" ps WHERE ps.saleItemId = i.id) AS serials
          FROM "SaleItem" i

@@ -242,6 +242,8 @@ export interface Sale {
   createdBy: string;
   cashierName: string | null;
   createdAt: string;
+  /** 1 when any line was given away free. */
+  hasGift: SqliteBool;
 }
 
 export interface SaleItem {
@@ -257,6 +259,8 @@ export interface SaleItem {
   taxAmount: number;
   totalAmount: number;
   returnedQuantity: number;
+  /** 1 when given away free (unitPrice is then 0). */
+  isGift: SqliteBool;
   /** Comma-separated IMEIs / serials sold on this line. */
   serials: string | null;
 }

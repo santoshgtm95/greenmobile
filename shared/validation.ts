@@ -446,6 +446,8 @@ export const zSaleItem = z.object({
   productId: zId,
   quantity: zQuantity,
   productSerialId: zId.optional(),
+  /** Given away free: the main process prices the line at 0 and keeps its cost. */
+  isGift: z.boolean().optional(),
 });
 
 /**

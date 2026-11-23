@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   Alert,
   Box,
@@ -54,12 +54,15 @@ function quickCashOptions(total: number): number[] {
 export default function PaymentDialog({
   grandTotal,
   totalLabel = 'Grand Total',
+  summary,
   submitting,
   onClose,
   onConfirm,
 }: {
   grandTotal: number;
   totalLabel?: string;
+  /** What is being paid for, shown beside the payment form as a reference. */
+  summary?: ReactNode;
   submitting: boolean;
   onClose: () => void;
   onConfirm: (
@@ -99,9 +102,17 @@ export default function PaymentDialog({
     setLines((current) => current.map((line, i) => (i === index ? { ...line, ...patch } : line)));
 
   return (
-    <Dialog open fullWidth maxWidth="sm" onClose={submitting ? undefined : onClose}>
+    <Dialog open fullWidth maxWidth={summary ? 'md' : 'sm'} onClose={submitting ? undefined : onClose}>
       <DialogTitle>Payment</DialogTitle>
-      <DialogContent dividers>
+      <DialogContent
+        dividers
+        sx={
+          summary
+            ? { display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' }, gap: 3, alignItems: 'start' }
+            : undefined
+        }
+      >
+        {summary}
         <Stack spacing={2.5}>
           <Box
             sx={{

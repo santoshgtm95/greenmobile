@@ -66,6 +66,7 @@ function makeSale(overrides: Partial<SaleDetail['sale']> = {}, itemName = 'USB-C
       createdBy: 'u1',
       cashierName: 'Somchai',
       createdAt: '2026-08-10T03:15:00.000Z',
+      hasGift: 0,
       ...overrides,
     },
     items: [
@@ -82,6 +83,7 @@ function makeSale(overrides: Partial<SaleDetail['sale']> = {}, itemName = 'USB-C
         taxAmount: 14_000,
         totalAmount: 214_000,
         returnedQuantity: 0,
+        isGift: 0,
         serials: null,
       },
     ],

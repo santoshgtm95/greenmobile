@@ -206,6 +206,9 @@ export default function SaleDetailDialog({
                   <TableRow key={item.id}>
                     <TableCell>
                       {item.productName}
+                      {item.isGift === 1 && (
+                        <Chip size="small" color="success" label="Gift" sx={{ ml: 1 }} />
+                      )}
                       <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                         {item.sku}
                         {item.serials ? ` · IMEI ${item.serials}` : ''}

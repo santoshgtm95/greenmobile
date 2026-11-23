@@ -152,6 +152,48 @@ describe('spec §80 — profit maths', () => {
     expect(sale.changeAmount).toBe(0);
   });
 
+  it('gives a gift line away free while still taking its stock and cost', () => {
+    const product = makeSimpleProduct({ cost: 80_000, price: 100_000, stock: 10 });
+    const gift = makeSimpleProduct({ cost: 5_000, price: 20_000, stock: 5 });
+
+    const { sale, items } = createSale(
+      {
+        customerId: undefined,
+        items: [
+          { productId: product.id, quantity: 1, productSerialId: undefined },
+          { productId: gift.id, quantity: 2, productSerialId: undefined, isGift: true },
+        ],
+        discountAmount: 10_000,
+        payments: [{ amount: 90_000, paymentMethod: 'CASH', referenceNumber: undefined, notes: undefined }],
+        notes: undefined,
+      },
+      actor,
+      ctx.db,
+    );
+
+    expect(sale.grandTotal).toBe(90_000);
+    expect(sale.costTotal).toBe(90_000);
+    expect(items.find((i) => i.productId === gift.id)).toMatchObject({ unitPrice: 0, discountAmount: 0, totalAmount: 0, isGift: 1 });
+    expect(getProduct(gift.id, ctx.db).stockQuantity).toBe(3);
+
+    // A cart of only gifts needs no payment.
+    const free = createSale(
+      {
+        customerId: undefined,
+        items: [{ productId: gift.id, quantity: 1, productSerialId: undefined, isGift: true }],
+        discountAmount: 0,
+        payments: [],
+        notes: undefined,
+      },
+      actor,
+      ctx.db,
+    );
+    expect(free.sale.grandTotal).toBe(0);
+    expect(free.sale.paymentStatus).toBe('PAID');
+    expect(free.sale.hasGift).toBe(1);
+    expect(sale.hasGift).toBe(1);
+  });
+
   it('freezes the historical unit cost so a later price change cannot rewrite profit', () => {
     const product = makeSimpleProduct({ cost: 80_000, price: 100_000, stock: 10 });
 
