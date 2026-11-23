@@ -3,9 +3,8 @@ import {
   AppBar,
   Avatar,
   Box,
-  Chip,
-  Divider,
   Drawer,
+  IconButton,
   List,
   ListItemButton,
   ListItemIcon,
@@ -16,50 +15,44 @@ import {
   Toolbar,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
-import { alpha, keyframes } from "@mui/material/styles";
-import DashboardIcon from "@mui/icons-material/Dashboard";
-import PointOfSaleIcon from "@mui/icons-material/PointOfSale";
-import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
-import Inventory2Icon from "@mui/icons-material/Inventory2";
-import LocalShippingIcon from "@mui/icons-material/LocalShipping";
-import PeopleIcon from "@mui/icons-material/People";
-import BuildIcon from "@mui/icons-material/Build";
-import PaymentsIcon from "@mui/icons-material/Payments";
-import AccountBalanceIcon from "@mui/icons-material/AccountBalance";
-import AssessmentIcon from "@mui/icons-material/Assessment";
-import ManageAccountsIcon from "@mui/icons-material/ManageAccounts";
-import SettingsIcon from "@mui/icons-material/Settings";
+import { alpha, keyframes, useTheme } from "@mui/material/styles";
+import DashboardIcon from "@mui/icons-material/DashboardOutlined";
+import PointOfSaleIcon from "@mui/icons-material/PointOfSaleOutlined";
+import ReceiptLongIcon from "@mui/icons-material/ReceiptLongOutlined";
+import Inventory2Icon from "@mui/icons-material/Inventory2Outlined";
+import LocalShippingIcon from "@mui/icons-material/LocalShippingOutlined";
+import PeopleIcon from "@mui/icons-material/PeopleOutlined";
+import BuildIcon from "@mui/icons-material/BuildOutlined";
+import PaymentsIcon from "@mui/icons-material/PaymentsOutlined";
+import AccountBalanceIcon from "@mui/icons-material/AccountBalanceOutlined";
+import AssessmentIcon from "@mui/icons-material/AssessmentOutlined";
+import ManageAccountsIcon from "@mui/icons-material/ManageAccountsOutlined";
+import SettingsIcon from "@mui/icons-material/SettingsOutlined";
 import LogoutIcon from "@mui/icons-material/Logout";
-import WifiOffIcon from "@mui/icons-material/WifiOff";
+import MenuIcon from "@mui/icons-material/Menu";
+import UnfoldMoreIcon from "@mui/icons-material/UnfoldMore";
 import { NavLink, useLocation } from "react-router-dom";
 import Logo from "../components/Logo";
 import { useAuth } from "../hooks/useAuth";
 import { useSettings } from "../hooks/useSettings";
 import { USER_ROLE_LABELS, type Permission } from "@shared/domain";
 
-const DRAWER_WIDTH = 232;
+const DRAWER_WIDTH = 240;
 
-const slideIn = keyframes`
-  from { opacity: 0; transform: translateX(-14px); }
-  to { opacity: 1; transform: none; }
-`;
-const pop = keyframes`
-  from { opacity: 0; transform: scale(0.6) rotate(-12deg); }
-  to { opacity: 1; transform: none; }
-`;
 const rise = keyframes`
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: none; }
 `;
-const dropIn = keyframes`
-  from { opacity: 0; transform: translateY(-100%); }
-  to { opacity: 1; transform: none; }
+const fade = keyframes`
+  from { opacity: 0; }
+  to { opacity: 1; }
 `;
 const pulse = keyframes`
-  0% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.6); }
-  70% { box-shadow: 0 0 0 7px rgba(74, 222, 128, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+  0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
+  70% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
 `;
 
 interface NavItem {
@@ -68,305 +61,164 @@ interface NavItem {
   icon: ReactNode;
   /** Hidden when the signed-in role lacks this. */
   permission: Permission;
+  /** Starts a new visual group in the sidebar. */
+  section?: string;
 }
 
 /** Main navigation (spec §71). */
 const NAV_ITEMS: NavItem[] = [
-  {
-    label: "Dashboard",
-    to: "/",
-    icon: <DashboardIcon />,
-    permission: "sales.view",
-  },
-  {
-    label: "POS",
-    to: "/pos",
-    icon: <PointOfSaleIcon />,
-    permission: "pos.sell",
-  },
-  {
-    label: "Sales",
-    to: "/sales",
-    icon: <ReceiptLongIcon />,
-    permission: "sales.view",
-  },
-  {
-    label: "Stocks",
-    to: "/stocks",
-    icon: <Inventory2Icon />,
-    permission: "products.view",
-  },
-  {
-    label: "Purchase Invoice",
-    to: "/purchases",
-    icon: <LocalShippingIcon />,
-    permission: "products.view",
-  },
-  {
-    label: "Customers",
-    to: "/customers",
-    icon: <PeopleIcon />,
-    permission: "customers.view",
-  },
-  {
-    label: "Services",
-    to: "/services",
-    icon: <BuildIcon />,
-    permission: "services.view",
-  },
-  {
-    label: "Expenses",
-    to: "/expenses",
-    icon: <PaymentsIcon />,
-    permission: "expenses.view",
-  },
-  {
-    label: "Banking",
-    to: "/banking",
-    icon: <AccountBalanceIcon />,
-    permission: "banking.view",
-  },
-  {
-    label: "Reports",
-    to: "/reports",
-    icon: <AssessmentIcon />,
-    permission: "reports.view",
-  },
-  {
-    label: "Users",
-    to: "/users",
-    icon: <ManageAccountsIcon />,
-    permission: "users.view",
-  },
-  {
-    label: "Settings",
-    to: "/settings",
-    icon: <SettingsIcon />,
-    permission: "settings.view",
-  },
+  { label: "Dashboard", to: "/", icon: <DashboardIcon />, permission: "sales.view" },
+  { label: "POS", to: "/pos", icon: <PointOfSaleIcon />, permission: "pos.sell" },
+  { label: "Sales", to: "/sales", icon: <ReceiptLongIcon />, permission: "sales.view", section: "Operations" },
+  { label: "Stocks", to: "/stocks", icon: <Inventory2Icon />, permission: "products.view" },
+  { label: "Purchase Invoice", to: "/purchases", icon: <LocalShippingIcon />, permission: "products.view" },
+  { label: "Customers", to: "/customers", icon: <PeopleIcon />, permission: "customers.view" },
+  { label: "Services", to: "/services", icon: <BuildIcon />, permission: "services.view" },
+  { label: "Expenses", to: "/expenses", icon: <PaymentsIcon />, permission: "expenses.view", section: "Finance" },
+  { label: "Banking", to: "/banking", icon: <AccountBalanceIcon />, permission: "banking.view" },
+  { label: "Reports", to: "/reports", icon: <AssessmentIcon />, permission: "reports.view" },
+  { label: "Users", to: "/users", icon: <ManageAccountsIcon />, permission: "users.view", section: "Admin" },
+  { label: "Settings", to: "/settings", icon: <SettingsIcon />, permission: "settings.view" },
 ];
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { user, can, logout } = useAuth();
   const { data: settings } = useSettings();
   const location = useLocation();
+  const theme = useTheme();
+  const compact = useMediaQuery(theme.breakpoints.down("md"));
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const [navOpen, setNavOpen] = useState(false);
 
   const visibleItems = NAV_ITEMS.filter((item) => can(item.permission));
   const currentItem = visibleItems.find((item) =>
-    item.to === "/"
-      ? location.pathname === "/"
-      : location.pathname.startsWith(item.to),
+    item.to === "/" ? location.pathname === "/" : location.pathname.startsWith(item.to),
   );
   const currentLabel = currentItem?.label ?? "Green Mobile";
+  const shopName = settings?.shopName || "Green Mobile";
+
+  const sidebar = (
+    <Stack sx={{ height: "100%" }}>
+      <Stack direction="row" spacing={1.25} sx={{ px: 2, height: 60, alignItems: "center", flexShrink: 0 }}>
+        <Logo size={28} />
+        <Box sx={{ minWidth: 0 }}>
+          <Typography noWrap sx={{ fontWeight: 650, fontSize: 14.5, letterSpacing: "-0.01em", lineHeight: 1.25 }}>
+            {shopName}
+          </Typography>
+          <Typography noWrap sx={{ fontSize: 12, color: "text.secondary", lineHeight: 1.3 }}>
+            Point of Sale
+          </Typography>
+        </Box>
+      </Stack>
+
+      <List component="nav" sx={{ px: 1.25, py: 1, overflowY: "auto", flexGrow: 1 }}>
+        {visibleItems.map((item) => (
+          <Box key={item.to}>
+            {item.section && (
+              <Typography
+                sx={{ px: 1.25, pt: 2, pb: 0.75, fontSize: 11.5, fontWeight: 600, color: "text.disabled", letterSpacing: "0.04em", textTransform: "uppercase" }}
+              >
+                {item.section}
+              </Typography>
+            )}
+            <ListItemButton
+              component={NavLink}
+              to={item.to}
+              end={item.to === "/"}
+              onClick={() => setNavOpen(false)}
+              sx={{
+                mb: 0.25,
+                py: 0.6,
+                px: 1.25,
+                color: "text.secondary",
+                transition: "background-color 150ms, color 150ms",
+                "& .MuiListItemIcon-root": { color: "text.disabled", minWidth: 32, transition: "color 150ms" },
+                "& .MuiSvgIcon-root": { fontSize: 19 },
+                "&:hover": { bgcolor: alpha(theme.palette.text.primary, 0.05), color: "text.primary" },
+                "&:hover .MuiListItemIcon-root": { color: "text.secondary" },
+                "&.active": {
+                  bgcolor: "background.paper",
+                  color: "text.primary",
+                  boxShadow: `0 1px 2px ${alpha(theme.palette.text.primary, 0.08)}, 0 0 0 1px ${theme.palette.divider}`,
+                  "& .MuiListItemIcon-root": { color: "primary.main" },
+                  "& .MuiListItemText-primary": { fontWeight: 600 },
+                },
+                "&.Mui-focusVisible": { outline: `2px solid ${alpha(theme.palette.primary.main, 0.5)}`, outlineOffset: 1 },
+              }}
+            >
+              <ListItemIcon>{item.icon}</ListItemIcon>
+              <ListItemText primary={item.label} slotProps={{ primary: { sx: { fontSize: 14, fontWeight: 500 } } }} />
+            </ListItemButton>
+          </Box>
+        ))}
+      </List>
+
+      <Tooltip title="This POS stores all data on this computer and needs no internet connection." placement="top">
+        <Stack direction="row" spacing={1} sx={{ m: 1.5, px: 1.25, py: 1, alignItems: "center", borderRadius: 2, color: "text.secondary", fontSize: 12.5 }}>
+          <Box sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: "#22c55e", animation: `${pulse} 2.4s infinite` }} />
+          <span>Offline · data on this PC</span>
+        </Stack>
+      </Tooltip>
+    </Stack>
+  );
 
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh" }}>
+    <Box
+      sx={{
+        display: "flex",
+        minHeight: "100vh",
+        bgcolor: "background.default",
+        "@media (prefers-reduced-motion: reduce)": { "& *": { animation: "none !important" } },
+      }}
+    >
       <Drawer
-        variant="permanent"
-        sx={(theme) => ({
-          width: DRAWER_WIDTH,
+        variant={compact ? "temporary" : "permanent"}
+        open={compact ? navOpen : true}
+        onClose={() => setNavOpen(false)}
+        ModalProps={{ keepMounted: true }}
+        sx={{
+          width: compact ? 0 : DRAWER_WIDTH,
           flexShrink: 0,
           "& .MuiDrawer-paper": {
             width: DRAWER_WIDTH,
             boxSizing: "border-box",
-            background: `radial-gradient(circle at 0% 0%, ${alpha(theme.palette.primary.main, 0.28)}, transparent 42%), linear-gradient(180deg, #0f1b2d 0%, #0b1524 65%, #08101c 100%)`,
-            color: "#e3e8ef",
-            borderRight: "1px solid rgba(255,255,255,0.05)",
-            "@media (prefers-reduced-motion: reduce)": {
-              "& *": { animation: "none !important", transition: "none !important" },
-            },
+            bgcolor: "#f3f4f7",
+            borderRight: `1px solid ${theme.palette.divider}`,
           },
-        })}
-      >
-        <Stack
-          direction="row"
-          spacing={1.5}
-          sx={{ px: 2, py: 2.25, alignItems: "center" }}
-        >
-          {/* onDark: the logo's grey half is unreadable straight on this navy. */}
-          <Box
-            sx={(theme) => ({
-              display: "flex",
-              p: 0.5,
-              borderRadius: 2,
-              bgcolor: "rgba(255,255,255,0.06)",
-              boxShadow: `0 0 18px ${alpha(theme.palette.primary.main, 0.35)}`,
-              animation: `${pop} 500ms cubic-bezier(.2,.9,.3,1.3) both`,
-              transition: "transform 300ms",
-              "&:hover": { transform: "rotate(-8deg) scale(1.06)" },
-            })}
-          >
-            <Logo size={30} onDark />
-          </Box>
-          <Box sx={{ minWidth: 0, animation: `${slideIn} 450ms 80ms ease-out both` }}>
-            <Typography variant="subtitle1" noWrap sx={{ fontWeight: 700 }}>
-              {settings?.shopName || "Green Mobile"}
-            </Typography>
-            <Typography variant="caption" sx={{ color: "#8fa3bf" }}>
-              Offline Point of Sale
-            </Typography>
-          </Box>
-        </Stack>
-        <Divider sx={{ borderColor: "rgba(255,255,255,0.08)" }} />
-
-        <Typography
-          variant="overline"
-          sx={{ px: 2.5, pt: 1.5, color: "#5f7591", fontSize: 10.5, letterSpacing: 1.4 }}
-        >
-          Menu
-        </Typography>
-        <List sx={{ px: 1.25, py: 0.5 }}>
-          {visibleItems.map((item, index) => (
-            <ListItemButton
-              key={item.to}
-              component={NavLink}
-              to={item.to}
-              end={item.to === "/"}
-              sx={(theme) => ({
-                position: "relative",
-                borderRadius: 2,
-                mb: 0.5,
-                py: 0.85,
-                color: "#c2cede",
-                animation: `${slideIn} 420ms ${index * 35}ms ease-out both`,
-                transition: "background-color 200ms, color 200ms, transform 200ms, box-shadow 200ms",
-                "& .MuiListItemIcon-root": {
-                  color: "#8fa3bf",
-                  minWidth: 38,
-                  transition: "transform 250ms cubic-bezier(.2,.9,.3,1.4), color 200ms",
-                },
-                // Left indicator bar that grows in on the active item.
-                "&::before": {
-                  content: '""',
-                  position: "absolute",
-                  left: -10,
-                  top: "50%",
-                  width: 4,
-                  height: 0,
-                  borderRadius: 4,
-                  bgcolor: "primary.light",
-                  transform: "translateY(-50%)",
-                  transition: "height 250ms ease-out",
-                },
-                "&:hover": {
-                  bgcolor: "rgba(255,255,255,0.06)",
-                  color: "#fff",
-                  transform: "translateX(3px)",
-                  "& .MuiListItemIcon-root": { color: "#fff", transform: "scale(1.15)" },
-                },
-                "&.active": {
-                  background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.primary.dark})`,
-                  color: "#fff",
-                  boxShadow: `0 6px 18px ${alpha(theme.palette.primary.main, 0.4)}`,
-                  "& .MuiListItemIcon-root": { color: "#fff" },
-                  "& .MuiListItemText-primary": { fontWeight: 600 },
-                  "&::before": { height: "60%" },
-                  "&:hover": { transform: "none" },
-                },
-                "&.Mui-focusVisible": {
-                  outline: `2px solid ${alpha(theme.palette.primary.light, 0.8)}`,
-                  outlineOffset: 1,
-                },
-              })}
-            >
-              <ListItemIcon>{item.icon}</ListItemIcon>
-              <ListItemText
-                primary={item.label}
-                slotProps={{ primary: { sx: { fontSize: 14.5 } } }}
-              />
-            </ListItemButton>
-          ))}
-        </List>
-
-        <Box sx={{ mt: "auto", p: 2 }}>
-          <Tooltip title="This POS stores all data on this computer and needs no internet connection.">
-            <Chip
-              icon={<WifiOffIcon sx={{ fontSize: 16 }} />}
-              label={
-                <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                  <span>Works offline</span>
-                  <Box
-                    component="span"
-                    sx={{
-                      width: 7,
-                      height: 7,
-                      borderRadius: "50%",
-                      bgcolor: "#4ade80",
-                      animation: `${pulse} 2s infinite`,
-                    }}
-                  />
-                </Stack>
-              }
-              size="small"
-              sx={{
-                bgcolor: "rgba(255,255,255,0.06)",
-                border: "1px solid rgba(255,255,255,0.08)",
-                color: "#c2cede",
-                "& .MuiChip-icon": { color: "#8fa3bf" },
-              }}
-            />
-          </Tooltip>
-        </Box>
-      </Drawer>
-
-      <Box
-        sx={{
-          flexGrow: 1,
-          display: "flex",
-          flexDirection: "column",
-          minWidth: 0,
         }}
       >
+        {sidebar}
+      </Drawer>
+
+      <Box sx={{ flexGrow: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         <AppBar
           position="sticky"
           color="inherit"
           elevation={0}
-          sx={(theme) => ({
-            bgcolor: alpha(theme.palette.background.paper, 0.78),
-            backdropFilter: "blur(12px) saturate(160%)",
-            animation: `${dropIn} 400ms ease-out both`,
-            // Gradient hairline instead of a flat grey border.
-            "&::after": {
-              content: '""',
-              position: "absolute",
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: "1px",
-              background: `linear-gradient(90deg, ${alpha(theme.palette.primary.main, 0.6)}, ${theme.palette.divider} 40%, transparent)`,
-            },
-            "@media (prefers-reduced-motion: reduce)": {
-              "&, & *": { animation: "none !important", transition: "none !important" },
-            },
-          })}
+          sx={{
+            bgcolor: alpha(theme.palette.background.default, 0.8),
+            backdropFilter: "blur(12px) saturate(180%)",
+            borderBottom: `1px solid ${theme.palette.divider}`,
+          }}
         >
-          <Toolbar sx={{ gap: 2 }}>
-            {/* Keyed so the title re-animates on every page change. */}
+          <Toolbar sx={{ gap: 1.5, minHeight: "60px !important", px: { xs: 2, md: 3 } }}>
+            {compact && (
+              <IconButton edge="start" aria-label="Open menu" onClick={() => setNavOpen(true)}>
+                <MenuIcon />
+              </IconButton>
+            )}
+            {/* Breadcrumb; keyed so it fades on every page change. */}
             <Stack
               key={currentLabel}
               direction="row"
-              spacing={1.25}
-              sx={{ flexGrow: 1, alignItems: "center", animation: `${slideIn} 350ms ease-out both` }}
+              spacing={1}
+              sx={{ flexGrow: 1, minWidth: 0, alignItems: "center", animation: `${fade} 250ms ease-out both` }}
             >
-              {currentItem && (
-                <Box
-                  sx={(theme) => ({
-                    display: "grid",
-                    placeItems: "center",
-                    width: 34,
-                    height: 34,
-                    borderRadius: 2,
-                    color: "primary.main",
-                    bgcolor: alpha(theme.palette.primary.main, 0.12),
-                    animation: `${pop} 450ms cubic-bezier(.2,.9,.3,1.3) both`,
-                    "& svg": { fontSize: 20 },
-                  })}
-                >
-                  {currentItem.icon}
-                </Box>
-              )}
-              <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: -0.2 }}>
+              <Typography noWrap sx={{ color: "text.secondary", fontSize: 14, display: { xs: "none", sm: "block" } }}>
+                {shopName}
+              </Typography>
+              <Typography sx={{ color: "text.disabled", display: { xs: "none", sm: "block" } }}>/</Typography>
+              <Typography noWrap sx={{ fontWeight: 600, fontSize: 15, letterSpacing: "-0.01em" }}>
                 {currentLabel}
               </Typography>
             </Stack>
@@ -378,57 +230,42 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                   type="button"
                   aria-label="Account menu"
                   onClick={(e) => setMenuAnchor(e.currentTarget)}
-                  sx={(theme) => ({
+                  sx={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 1.25,
-                    pl: { xs: 0.5, sm: 1.5 },
-                    pr: 0.5,
-                    py: 0.5,
-                    border: "1px solid",
-                    borderColor: "divider",
-                    borderRadius: 99,
-                    bgcolor: "background.paper",
+                    gap: 1,
+                    p: 0.5,
+                    pr: { xs: 0.5, sm: 1 },
+                    border: 0,
+                    borderRadius: 2,
+                    bgcolor: "transparent",
                     color: "inherit",
                     font: "inherit",
                     cursor: "pointer",
-                    transition: "box-shadow 200ms, border-color 200ms, transform 200ms",
-                    "&:hover, &:focus-visible": {
-                      borderColor: alpha(theme.palette.primary.main, 0.5),
-                      boxShadow: `0 4px 14px ${alpha(theme.palette.primary.main, 0.18)}`,
-                      transform: "translateY(-1px)",
-                    },
+                    transition: "background-color 150ms",
+                    "&:hover": { bgcolor: alpha(theme.palette.text.primary, 0.05) },
                     "&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 },
-                  })}
+                  }}
                 >
-                  <Box
-                    sx={{
-                      textAlign: "right",
-                      display: { xs: "none", sm: "block" },
-                    }}
-                  >
-                    <Typography
-                      variant="body2"
-                      sx={{ fontWeight: 600, lineHeight: 1.2 }}
-                    >
-                      {user.fullName}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {USER_ROLE_LABELS[user.role]}
-                    </Typography>
-                  </Box>
                   <Avatar
-                    sx={(theme) => ({
-                      width: 32,
-                      height: 32,
-                      fontSize: 14,
-                      fontWeight: 700,
-                      background: `linear-gradient(135deg, ${theme.palette.primary.light}, ${theme.palette.primary.dark})`,
-                      boxShadow: `0 0 0 2px ${theme.palette.background.paper}, 0 0 0 3.5px ${alpha(theme.palette.primary.main, 0.5)}`,
-                    })}
+                    sx={{
+                      width: 30,
+                      height: 30,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "primary.dark",
+                      bgcolor: alpha(theme.palette.primary.main, 0.12),
+                    }}
                   >
                     {user.fullName.trim().charAt(0).toUpperCase()}
                   </Avatar>
+                  <Box sx={{ textAlign: "left", display: { xs: "none", sm: "block" } }}>
+                    <Typography sx={{ fontWeight: 600, fontSize: 13.5, lineHeight: 1.2 }}>{user.fullName}</Typography>
+                    <Typography sx={{ fontSize: 12, color: "text.secondary", lineHeight: 1.2 }}>
+                      {USER_ROLE_LABELS[user.role]}
+                    </Typography>
+                  </Box>
+                  <UnfoldMoreIcon sx={{ fontSize: 16, color: "text.disabled", display: { xs: "none", sm: "block" } }} />
                 </Box>
                 <Menu
                   anchorEl={menuAnchor}
@@ -436,7 +273,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                   onClose={() => setMenuAnchor(null)}
                   anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
                   transformOrigin={{ vertical: "top", horizontal: "right" }}
-                  slotProps={{ paper: { sx: { mt: 1, borderRadius: 2, minWidth: 180 } } }}
+                  slotProps={{ paper: { sx: { minWidth: 200 } } }}
                 >
                   <MenuItem
                     onClick={() => {
@@ -457,34 +294,30 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
         <Box
           component="main"
-          sx={(theme) => ({
+          sx={{
             flexGrow: 1,
-            p: 3,
+            p: { xs: 2, md: 3 },
             minWidth: 0,
-            background: `radial-gradient(circle at 100% 0%, ${alpha(theme.palette.primary.main, 0.06)}, transparent 40%), ${theme.palette.background.default}`,
-            // Pages are a Stack of blocks; each block rises in, one after another.
+            // Pages are a Stack of blocks; each block eases in, one after another.
             // A new page mounts new nodes, so this replays on every navigation.
             "& > .MuiStack-root > *, & > .MuiPaper-root": {
-              animation: `${rise} 420ms ease-out both`,
+              animation: `${rise} 320ms cubic-bezier(.2,.8,.2,1) both`,
             },
             ...Object.fromEntries(
               Array.from({ length: 8 }, (_, i) => [
                 `& > .MuiStack-root > :nth-of-type(${i + 1})`,
-                { animationDelay: `${i * 60}ms` },
+                { animationDelay: `${i * 40}ms` },
               ]),
             ),
-            // Page cards: rounder, with a soft lift on hover.
+            // Page cards: rounder, hairline border, faint depth.
             "& .MuiPaper-root:not(.MuiAccordion-root)": {
               borderRadius: 3,
               transition: "box-shadow 200ms, border-color 200ms",
             },
-            "& .MuiPaper-outlined, & .MuiPaper-root[class*='MuiCard']": {
-              "&:hover": { boxShadow: `0 6px 20px ${alpha(theme.palette.primary.main, 0.1)}` },
+            "& > .MuiStack-root > .MuiPaper-root, & > .MuiPaper-root": {
+              boxShadow: `0 1px 2px ${alpha(theme.palette.text.primary, 0.04)}`,
             },
-            "@media (prefers-reduced-motion: reduce)": {
-              "& *": { animation: "none !important" },
-            },
-          })}
+          }}
         >
           {children}
         </Box>

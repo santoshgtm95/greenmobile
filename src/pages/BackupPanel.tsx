@@ -1,3 +1,4 @@
+import { alpha } from '@mui/material/styles';
 import { useState } from 'react';
 import {
   Alert,
@@ -457,7 +458,7 @@ function RestoreDialog({
       <DialogTitle
         sx={(theme) => {
           const tone = usable ? theme.palette.warning : theme.palette.error;
-          return { backgroundImage: `linear-gradient(135deg, ${tone.dark}, ${tone.main})` };
+          return { color: tone.dark, backgroundColor: alpha(tone.main, 0.08), borderBottomColor: alpha(tone.main, 0.3) };
         }}
       >
         {usable ? 'Restore this backup?' : 'This backup cannot be used'}

@@ -43,6 +43,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuth } from "../hooks/useAuth";
 import { useMoneyFormatter } from "../hooks/useSettings";
+import { useAfterPaint } from "../hooks/useAfterPaint";
 import { useDebounced } from "../hooks/useDebounced";
 import ExportMenu from "../components/ExportMenu";
 import BankAccountsDialog from "../components/BankAccountsDialog";
@@ -125,6 +126,8 @@ export default function BankingPage() {
   const [toast, setToast] = useState<string | null>(null);
 
   const debouncedSearch = useDebounced(search, 250);
+  // Show the page first, then load: see useAfterPaint.
+  const painted = useAfterPaint();
 
   const range = useMemo(
     () =>
@@ -154,26 +157,31 @@ export default function BankingPage() {
   const transactions = useQuery({
     queryKey: ["bankTransactions", query],
     queryFn: () => api.banking.listTransactions(query),
+    enabled: painted,
   });
 
   const overview = useQuery({
     queryKey: ["bankingOverview", range],
     queryFn: () => api.banking.overview(range),
+    enabled: painted,
   });
 
   const accounts = useQuery({
     queryKey: ["bankAccounts", "active"],
     queryFn: () => api.banking.listAccounts({ includeInactive: false }),
+    enabled: painted,
   });
 
   // Only their all-time totals are used (heldTotal / outstandingTotal), not the rows.
   const customerAdvances = useQuery({
     queryKey: ["bankAdvances", "netPosition"],
     queryFn: () => api.banking.listAdvances({ page: 0, pageSize: 1 }),
+    enabled: painted,
   });
   const shopAdvances = useQuery({
     queryKey: ["shopAdvances", "netPosition"],
     queryFn: () => api.banking.listShopAdvances({ page: 0, pageSize: 1 }),
+    enabled: painted,
   });
 
 
@@ -258,7 +266,7 @@ export default function BankingPage() {
         </Alert>
       )}
 
-      {!overview.isLoading && positions.length === 0 && (
+      {!overview.isPending && positions.length === 0 && (
         <Alert severity="info" icon={<AccountBalanceIcon />}>
           No banks or mobile payments are registered yet.
           {can("banking.manage")
@@ -658,7 +666,7 @@ export default function BankingPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {transactions.isLoading && (
+              {transactions.isPending && (
                 <TableRow>
                   <TableCell
                     colSpan={12}
@@ -670,7 +678,7 @@ export default function BankingPage() {
                 </TableRow>
               )}
 
-              {!transactions.isLoading && rows.length === 0 && (
+              {!transactions.isPending && rows.length === 0 && (
                 <TableRow>
                   <TableCell
                     colSpan={12}

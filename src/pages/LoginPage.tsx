@@ -158,7 +158,7 @@ export default function LoginPage() {
           backdropFilter: "blur(16px)",
           border: "1px solid",
           borderColor: alpha("#fff", 0.12),
-          boxShadow: `0 30px 80px ${alpha("#000", 0.45)}, 0 0 0 1px ${alpha(theme.palette.primary.main, 0.08)}`,
+          boxShadow: `0 24px 60px -12px ${alpha("#0f1222", 0.18)}, 0 0 0 1px ${alpha(theme.palette.primary.main, 0.08)}`,
           animation:
             attempt > 0
               ? `${shakes[attempt % 2]} 450ms ease-in-out both`
