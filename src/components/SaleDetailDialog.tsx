@@ -388,6 +388,68 @@ export default function SaleDetailDialog({
         <PaymentDialog
           grandTotal={balance}
           totalLabel="Balance due"
+          summary={
+            data && (
+              <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2.5, overflow: 'hidden' }}>
+                <Stack direction="row" spacing={1} sx={{ px: 2, py: 1.25, alignItems: 'center', bgcolor: 'background.default' }}>
+                  <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>
+                    {data.sale.invoiceNumber}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" noWrap>
+                    {data.sale.customerName}
+                  </Typography>
+                </Stack>
+                <Box sx={{ maxHeight: 340, overflow: 'auto' }}>
+                  {data.items.map((item) => (
+                    <Stack
+                      key={item.id}
+                      direction="row"
+                      spacing={1.5}
+                      sx={{ px: 2, py: 1, borderTop: '1px solid', borderColor: 'divider', alignItems: 'flex-start' }}
+                    >
+                      <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 600, wordBreak: 'break-word' }}>
+                          {item.productName}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" component="div" sx={{ wordBreak: 'break-word' }}>
+                          {item.sku}
+                          {item.serials ? ` · IMEI ${item.serials}` : ''}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {item.quantity} × {item.isGift ? 'free' : money(item.unitPrice)}
+                        </Typography>
+                      </Box>
+                      {item.isGift === 1 ? (
+                        <Chip size="small" color="success" label="Gift" />
+                      ) : (
+                        <Typography variant="body2" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                          {money(item.unitPrice * item.quantity)}
+                        </Typography>
+                      )}
+                    </Stack>
+                  ))}
+                </Box>
+                <Stack spacing={0.5} sx={{ px: 2, py: 1.25, borderTop: '1px solid', borderColor: 'divider', bgcolor: 'background.default' }}>
+                  {[
+                    ['Subtotal', money(data.sale.subtotal)],
+                    ...(data.sale.discountAmount > 0 ? [['Discount', `−${money(data.sale.discountAmount)}`]] : []),
+                    ...(data.sale.taxAmount > 0 ? [['Tax', money(data.sale.taxAmount)]] : []),
+                    ['Grand total', money(data.sale.grandTotal)],
+                    ['Already paid', money(data.sale.amountPaid)],
+                  ].map(([label, value]) => (
+                    <Stack key={label} direction="row">
+                      <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
+                        {label}
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                        {value}
+                      </Typography>
+                    </Stack>
+                  ))}
+                </Stack>
+              </Box>
+            )
+          }
           submitting={receive.isPending}
           onClose={() => setReceiving(false)}
           onConfirm={(payments) => {

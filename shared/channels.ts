@@ -100,6 +100,8 @@ export const CHANNELS = {
     withdrawAdvance: 'banking:withdrawAdvance',
     saveCashCount: 'banking:saveCashCount',
     cashHistory: 'banking:cashHistory',
+    bankHistory: 'banking:bankHistory',
+    sales: 'banking:sales',
     feeHistory: 'banking:feeHistory',
     dailyPositions: 'banking:dailyPositions',
     saveBankBalances: 'banking:saveBankBalances',

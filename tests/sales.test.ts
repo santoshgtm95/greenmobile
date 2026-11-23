@@ -26,7 +26,7 @@ import { setSettings } from '../electron/services/settings.service';
 import { listSerials, findSerialByCode } from '../electron/services/inventory.service';
 import { AppError } from '../shared/errors';
 import type { FirstRunSetupInput } from '../shared/validation';
-import { saveCashCount } from '../electron/services/banking.service';
+import { saveCashCount, listBankingSales } from '../electron/services/banking.service';
 
 let ctx: TestDatabase;
 let actor: SessionUser;
@@ -192,6 +192,58 @@ describe('spec §80 — profit maths', () => {
     expect(free.sale.paymentStatus).toBe('PAID');
     expect(free.sale.hasGift).toBe(1);
     expect(sale.hasGift).toBe(1);
+  });
+
+  it('totals sales for the Banking card with cash net of change', () => {
+    const product = makeSimpleProduct({ price: 100_000, stock: 10 });
+    const { sale } = createSale(
+      {
+        customerId: undefined,
+        items: [{ productId: product.id, quantity: 1, productSerialId: undefined }],
+        discountAmount: 0,
+        payments: [{ amount: 150_000, paymentMethod: 'CASH', referenceNumber: undefined, notes: undefined }],
+        notes: undefined,
+      },
+      actor,
+      ctx.db,
+    );
+    createSale(
+      {
+        customerId: undefined,
+        items: [{ productId: product.id, quantity: 2, productSerialId: undefined }],
+        discountAmount: 0,
+        payments: [],
+        notes: undefined,
+      },
+      actor,
+      ctx.db,
+    );
+
+    const range = { from: sale.saleDay, to: sale.saleDay, page: 0, pageSize: 50 };
+    const before = listBankingSales(range, ctx.db);
+    expect(before.total).toBe(2);
+    expect(before.totals).toEqual({ total: 300_000, cash: 100_000, bank: 0, unpaid: 200_000 });
+
+    // A cash refund is its own row and comes off both the total and the cash.
+    const { items } = getSale(sale.id, ctx.db);
+    refundSale(
+      {
+        saleId: sale.id,
+        items: [{ saleItemId: items[0].id, quantity: 1, isDefective: false }],
+        reason: 'Changed mind',
+        refundMethod: 'CASH',
+        notes: undefined,
+      },
+      actor,
+      ctx.db,
+    );
+    const after = listBankingSales(range, ctx.db);
+    expect(after.total).toBe(3);
+    expect(after.totals).toEqual({ total: 200_000, cash: 0, bank: 0, unpaid: 200_000 });
+    expect(after.rows.find((r) => r.kind === 'REFUND')).toMatchObject({ total: -100_000, cash: -100_000, invoiceNumber: sale.invoiceNumber });
+
+    const cashOnly = listBankingSales({ ...range, method: 'CASH' }, ctx.db);
+    expect(cashOnly.rows.map((r) => r.kind).sort()).toEqual(['REFUND', 'SALE']);
   });
 
   it('freezes the historical unit cost so a later price change cannot rewrite profit', () => {

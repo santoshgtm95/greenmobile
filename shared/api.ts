@@ -63,6 +63,7 @@ import type {
   CreateInternalTransferInput,
   InternalTransferListQueryInput,
   CashHistoryQueryInput,
+  BankingSalesQueryInput,
   FeeHistoryQueryInput,
   DeleteInternalTransferInput,
   CreateShopAdvanceInput,
@@ -601,6 +602,49 @@ export interface CashHistoryEntry {
   /** Cash in hand after this entry. */
   balance: number;
   countedByName: string | null;
+}
+
+/** One sale or refund in the Banking screen's Sales history. */
+export interface BankingSaleRow {
+  id: string;
+  kind: 'SALE' | 'REFUND';
+  date: string;
+  /** Invoice number, or the refund's return number. */
+  number: string;
+  /** For a refund, the sale it refunds. */
+  invoiceNumber: string | null;
+  customerName: string;
+  /** A sale's grand total; a refund is negative. */
+  total: number;
+  /** Cash taken less change given; a cash refund is negative. */
+  cash: number;
+  /** Bank or wallet money; a refund paid back that way is negative. */
+  bank: number;
+  unpaid: number;
+}
+
+export interface BankingSalesResult {
+  rows: BankingSaleRow[];
+  total: number;
+  /** Over every sale matching the query, not just this page. */
+  totals: { total: number; cash: number; bank: number; unpaid: number };
+}
+
+/** One movement in the "In the banks" balance. */
+export interface BankHistoryEntry {
+  id: string;
+  at: string;
+  /** Receive, Transfer, Sale, Expense, Opening balance, … */
+  source: string;
+  /** "Kpay · 0912345678" */
+  account: string;
+  reference: string;
+  notes: string | null;
+  /** Positive in, negative out. */
+  change: number;
+  /** All banks together after this entry. */
+  balance: number;
+  byName: string | null;
 }
 
 export interface FeeHistoryEntry {
@@ -1214,6 +1258,8 @@ export interface PosApi {
     saveCashCount(input: SaveCashCountInput): Promise<CashInHand>;
     /** Every change to cash in hand, newest first, with its source. */
     cashHistory(query: CashHistoryQueryInput): Promise<CashHistoryResult>;
+    sales(query: BankingSalesQueryInput): Promise<BankingSalesResult>;
+    bankHistory(query: CashHistoryQueryInput): Promise<{ rows: BankHistoryEntry[]; total: number; sources: string[] }>;
     /** Every fee received or paid, newest first — the rows behind the Fees cards. */
     feeHistory(query: FeeHistoryQueryInput): Promise<FeeHistoryResult>;
     /** End-of-day balances, advances and fees, one row per day, newest first (at most a year). */

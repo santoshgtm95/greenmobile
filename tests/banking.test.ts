@@ -19,6 +19,7 @@ import { completeFirstRunSetup } from '../electron/services/auth.service';
 import { getSessionUser, setSessionUser, type SessionUser } from '../electron/session';
 import {
   bankingOverview,
+  listBankHistory,
   cashInHand,
   createBankTransaction,
   deleteBankAccount,
@@ -908,6 +909,21 @@ describe('balances', () => {
     expect(sum((a) => a.transferred)).toBe(overview.totals.transferred);
     expect(sum((a) => a.balance)).toBe(overview.bankBalance);
     expect(overview.totals.net).toBe(overview.totals.received - overview.totals.transferred);
+  });
+
+  it('lists every bank movement with a running balance that ends at "In the banks"', () => {
+    receive(900_000, { to: kpay });
+    receive(300_000, { to: aya });
+    transfer(100_000, { from: aya });
+
+    const history = listBankHistory({ page: 0, pageSize: 50 }, ctx.db);
+    expect(history.total).toBe(3);
+    expect(history.rows[0].balance).toBe(bankingOverview(ALL_TIME, ctx.db).bankBalance);
+    expect(history.rows[0].change).toBe(-100_000);
+    expect(history.rows.map((r) => r.source)).toEqual(['Transfer', 'Receive', 'Receive']);
+
+    const outOnly = listBankHistory({ page: 0, pageSize: 50, direction: 'OUT' }, ctx.db);
+    expect(outOnly.rows).toHaveLength(1);
   });
 
   it('shows the period figures for the range but the balance for all time', () => {

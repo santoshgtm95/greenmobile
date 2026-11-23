@@ -668,6 +668,16 @@ export const zDayRange = z.object({
   to: zBusinessDay,
 });
 
+/** Sales in a period, for the Banking screen's Sales card and its history. */
+export const zBankingSalesQuery = zPaging.extend({
+  from: zBusinessDay,
+  to: zBusinessDay,
+  /** Only sales that took some cash, or some bank / wallet money. */
+  method: z.enum(['CASH', 'BANK']).optional(),
+});
+export type BankingSalesQueryInput = z.input<typeof zBankingSalesQuery>;
+export type BankingSalesQuery = z.output<typeof zBankingSalesQuery>;
+
 // -----------------------------------------------------------------------------
 // Banking — accounts, transfers and receipts, cash in hand
 // -----------------------------------------------------------------------------

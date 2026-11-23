@@ -51,6 +51,9 @@ import RegisterShopAccountsDialog from "../components/RegisterShopAccountsDialog
 import CashTransactionDialog from "../components/CashTransactionDialog";
 import CashCountDialog from "../components/CashCountDialog";
 import CashHistoryDialog from "../components/CashHistoryDialog";
+import BankHistoryDialog from "../components/BankHistoryDialog";
+import BankingSalesDialog from "../components/BankingSalesDialog";
+import PointOfSaleIcon from "@mui/icons-material/PointOfSale";
 import FeeHistoryDialog from "../components/FeeHistoryDialog";
 import NetPositionHistoryDialog from "../components/NetPositionHistoryDialog";
 import BankBalanceDialog from "../components/BankBalanceDialog";
@@ -119,6 +122,8 @@ export default function BankingPage() {
   const [newTransactionOpen, setNewTransactionOpen] = useState(false);
   const [cashOpen, setCashOpen] = useState(false);
   const [cashHistoryOpen, setCashHistoryOpen] = useState(false);
+  const [bankHistoryOpen, setBankHistoryOpen] = useState(false);
+  const [salesHistoryOpen, setSalesHistoryOpen] = useState(false);
   const [feeHistory, setFeeHistory] = useState<"RECEIVE" | "PAY" | null>(null);
   const [bankBalanceOpen, setBankBalanceOpen] = useState(false);
   const [netHistoryOpen, setNetHistoryOpen] = useState(false);
@@ -163,6 +168,13 @@ export default function BankingPage() {
   const overview = useQuery({
     queryKey: ["bankingOverview", range],
     queryFn: () => api.banking.overview(range),
+    enabled: painted,
+  });
+
+  // Only the totals are used here; the rows are in the Sales history dialog.
+  const sales = useQuery({
+    queryKey: ["bankingSales", "summary", range],
+    queryFn: () => api.banking.sales({ ...range, page: 0, pageSize: 1 }),
     enabled: painted,
   });
 
@@ -291,8 +303,11 @@ export default function BankingPage() {
           gridTemplateColumns: {
             xs: "1fr",
             sm: "repeat(2, 1fr)",
-            lg: "repeat(4, 1fr)",
+            // 20 tracks: five cards of 4 on the first row, four of 5 on the second.
+            lg: "repeat(20, 1fr)",
           },
+          "& > *": { gridColumn: { lg: "span 5" } },
+          "& > :nth-child(-n + 5)": { gridColumn: { lg: "span 4" } },
         }}
       >
         <SummaryCard
@@ -356,16 +371,27 @@ export default function BankingPage() {
           caption="Received less transferred, all time"
           icon={<AccountBalanceIcon fontSize="small" />}
           action={
-            can("banking.manage") ? (
-              <Tooltip title="Update bank balances">
+            <Stack direction="row" spacing={0.5}>
+              <Tooltip title="History: every movement in and out of the banks">
                 <IconButton
                   size="small"
-                  onClick={() => setBankBalanceOpen(true)}
+                  aria-label="Bank history"
+                  onClick={() => setBankHistoryOpen(true)}
                 >
-                  <EditIcon fontSize="small" />
+                  <HistoryIcon fontSize="small" />
                 </IconButton>
               </Tooltip>
-            ) : undefined
+              {can("banking.manage") && (
+                <Tooltip title="Update bank balances">
+                  <IconButton
+                    size="small"
+                    onClick={() => setBankBalanceOpen(true)}
+                  >
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </Stack>
           }
         />
         <SummaryCard
@@ -402,6 +428,24 @@ export default function BankingPage() {
                 </Tooltip>
               )}
             </Stack>
+          }
+        />
+        <SummaryCard
+          label="Sales"
+          value={money(sales.data?.totals.total ?? 0)}
+          caption={
+            sales.data
+              ? `Cash ${money(sales.data.totals.cash)} · Bank ${money(sales.data.totals.bank)}` +
+                (sales.data.totals.unpaid > 0 ? ` · Unpaid ${money(sales.data.totals.unpaid)}` : "")
+              : `${formatBusinessDay(range.from)} to ${formatBusinessDay(range.to)}`
+          }
+          icon={<PointOfSaleIcon fontSize="small" />}
+          action={
+            <Tooltip title="History: every sale in this period">
+              <IconButton size="small" aria-label="Sales history" onClick={() => setSalesHistoryOpen(true)}>
+                <HistoryIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           }
         />
         <SummaryCard
@@ -925,6 +969,12 @@ export default function BankingPage() {
 
       {cashHistoryOpen && (
         <CashHistoryDialog onClose={() => setCashHistoryOpen(false)} />
+      )}
+      {salesHistoryOpen && (
+        <BankingSalesDialog range={range} onClose={() => setSalesHistoryOpen(false)} />
+      )}
+      {bankHistoryOpen && (
+        <BankHistoryDialog onClose={() => setBankHistoryOpen(false)} />
       )}
       {netHistoryOpen && <NetPositionHistoryDialog onClose={() => setNetHistoryOpen(false)} />}
       {feeHistory && (

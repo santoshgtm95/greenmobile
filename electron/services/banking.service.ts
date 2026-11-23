@@ -67,6 +67,9 @@ import {
   subtractMoney,
 } from '../../shared/money';
 import type {
+  BankHistoryEntry,
+  BankingSaleRow,
+  BankingSalesResult,
   ShopBankAccountHistoryResult,
   ShopBankAccountTransactionItem,
   FeeHistoryResult,
@@ -74,6 +77,7 @@ import type {
 import {
   zShopBankAccountHistoryQuery,
   type ShopBankAccountHistoryQueryInput,
+  type BankingSalesQuery,
   BankAdvanceListQuery,
   BankTransactionListQuery,
   CreateBankTransactionInput,
@@ -2078,6 +2082,149 @@ export function listCashHistory(
       .all() as Array<{ s: string }>
   ).map((r) => r.s);
   return { rows: rows.map(({ seq: _seq, countedDay: _day, ...row }) => row), total, sources };
+}
+
+/**
+ * Every movement in the "In the banks" balance, one row each: the same
+ * movements dailyPositionHistory works back through, plus each account's
+ * opening balance, so the newest row's balance is the card's figure.
+ */
+const BANK_HISTORY_SELECT = `
+  WITH moves AS (
+    SELECT t.id, t.transactionDate AS at, t.transactionDay AS day, t.createdAt,
+           CASE WHEN t.advanceRole = 'DEPOSIT' THEN 'Customer advance' ELSE 'Receive' END AS source,
+           COALESCE(b.name || ' · ', '') || t.toAccountNumber AS account,
+           t.transactionNumber AS reference, t.notes, t.amount - t.otherFees AS change, t.createdBy
+      FROM "BankTransaction" t LEFT JOIN "BankAccount" b ON b.id = t.toAccountId
+     WHERE t.type = 'RECEIVE' AND t.toAccountId IS NOT NULL AND t.isDeleted = 0
+    UNION ALL
+    SELECT t.id, t.transactionDate, t.transactionDay, t.createdAt,
+           CASE WHEN t.advanceRole = 'WITHDRAWAL' THEN 'Customer advance return' ELSE 'Transfer' END,
+           COALESCE(b.name || ' · ', '') || t.fromAccountNumber,
+           t.transactionNumber, t.notes,
+           -(t.amount + t.otherFees - CASE WHEN t.advanceRole = 'WITHDRAWAL' THEN t.feeAmount ELSE 0 END),
+           t.createdBy
+      FROM "BankTransaction" t LEFT JOIN "BankAccount" b ON b.id = t.fromAccountId
+     WHERE t.type = 'TRANSFER' AND t.fromAccountId IS NOT NULL AND t.isDeleted = 0
+    UNION ALL
+    -- Only the charges change the total; the amount leaves one account for another.
+    SELECT i.id, i.transferDate, i.transferDay, i.createdAt, 'Internal transfer charges',
+           i.fromAccountNumber || ' → ' || i.toAccountNumber, i.transferNumber, i.notes, -i.bankCharges, i.createdBy
+      FROM "InternalTransfer" i WHERE i.isDeleted = 0 AND i.bankCharges <> 0
+    UNION ALL
+    SELECT sas.id, sas.settlementDate, sas.settlementDay, sas.createdAt, 'Shop advance repayment',
+           COALESCE(sas.toBankName || ' · ', '') || sas.toAccountNumber, sas.settlementNumber, sas.notes,
+           sas.actualAmount, sas.createdBy
+      FROM "ShopAdvanceSettlement" sas WHERE sas.toShopAccountId IS NOT NULL AND sas.isDeleted = 0
+    UNION ALL
+    SELECT sa.id, sa.advanceDate, sa.advanceDay, sa.createdAt, 'Shop advance',
+           COALESCE(sa.fromBankName || ' · ', '') || sa.fromAccountNumber, sa.advanceNumber, sa.notes,
+           -(sa.amount + sa.bankCharges), sa.createdBy
+      FROM "ShopAdvance" sa WHERE sa.fromShopAccountId IS NOT NULL AND sa.isDeleted = 0
+    UNION ALL
+    SELECT e.id, e.entryDate, e.entryDay, e.createdAt, e.source,
+           COALESCE(b.name || ' · ', '') || s.accountNumber, e.reference, e.notes, e.amount, e.createdBy
+      FROM "ShopAccountEntry" e
+      JOIN "ShopBankAccount" s ON s.id = e.shopAccountId
+      LEFT JOIN "BankAccount" b ON b.id = s.bankAccountId
+    UNION ALL
+    SELECT s.id, s.createdAt, substr(s.createdAt, 1, 10), s.createdAt, 'Opening balance',
+           COALESCE(b.name || ' · ', '') || s.accountNumber, '', s.accountName, s.balance, s.createdBy
+      FROM "ShopBankAccount" s LEFT JOIN "BankAccount" b ON b.id = s.bankAccountId
+     WHERE s.balance <> 0
+  )
+  SELECT m.id, m.at, m.day, m.source, m.account, m.reference, m.notes, m.change,
+         SUM(m.change) OVER (ORDER BY m.at, m.createdAt, m.id ROWS UNBOUNDED PRECEDING) AS balance,
+         u.fullName AS byName,
+         ROW_NUMBER() OVER (ORDER BY m.at, m.createdAt, m.id) AS seq
+    FROM moves m
+    LEFT JOIN "User" u ON u.id = m.createdBy
+`;
+
+export function listBankHistory(
+  query: CashHistoryQuery,
+  db: Db = getDatabase(),
+): { rows: BankHistoryEntry[]; total: number; sources: string[] } {
+  // Filters apply outside the window, so each row keeps its true balance.
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (query.source) {
+    where.push('h.source = ?');
+    params.push(query.source);
+  }
+  if (query.direction) where.push(query.direction === 'IN' ? 'h.change > 0' : 'h.change < 0');
+  if (query.from) {
+    where.push('h.day >= ?');
+    params.push(query.from);
+  }
+  if (query.to) {
+    where.push('h.day <= ?');
+    params.push(query.to);
+  }
+  if (query.search) {
+    where.push(
+      `(h.notes LIKE ? COLLATE NOCASE OR h.source LIKE ? COLLATE NOCASE OR h.account LIKE ? COLLATE NOCASE
+        OR h.reference LIKE ? COLLATE NOCASE OR h.byName LIKE ? COLLATE NOCASE)`,
+    );
+    const like = `%${query.search}%`;
+    params.push(like, like, like, like, like);
+  }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const rows = db
+    .prepare(`SELECT h.* FROM (${BANK_HISTORY_SELECT}) h ${whereSql} ORDER BY h.seq DESC LIMIT ? OFFSET ?`)
+    .all(...params, query.pageSize, query.page * query.pageSize) as Array<BankHistoryEntry & { seq: number; day: string }>;
+  const total = (
+    db.prepare(`SELECT COUNT(*) AS n FROM (${BANK_HISTORY_SELECT}) h ${whereSql}`).get(...params) as { n: number }
+  ).n;
+  const sources = (
+    db.prepare(`SELECT DISTINCT h.source AS s FROM (${BANK_HISTORY_SELECT}) h ORDER BY s`).all() as Array<{ s: string }>
+  ).map((r) => r.s);
+  return { rows: rows.map(({ seq: _seq, day: _day, ...row }) => row), total, sources };
+}
+
+/**
+ * Sales and refunds in the period, one row each, each on its own day: a sale
+ * with the cash it took (less change) and the bank money; a refund as negative
+ * cash or bank, by how it was paid back. Totals are therefore net of refunds.
+ */
+export function listBankingSales(query: BankingSalesQuery, db: Db = getDatabase()): BankingSalesResult {
+  const ledger = `
+    SELECT s.id, 'SALE' AS kind, s.saleDate AS date, s.invoiceNumber AS number, NULL AS invoiceNumber,
+           s.customerName, s.grandTotal AS total,
+           COALESCE(SUM(CASE WHEN p.paymentMethod = 'CASH' THEN p.amount END), 0) - s.changeAmount AS cash,
+           COALESCE(SUM(CASE WHEN p.paymentMethod <> 'CASH' THEN p.amount END), 0) AS bank,
+           MAX(0, s.grandTotal - s.amountPaid) AS unpaid
+      FROM "Sale" s LEFT JOIN "Payment" p ON p.saleId = s.id
+     WHERE s.status <> 'CANCELLED' AND s.saleDay BETWEEN ? AND ?
+     GROUP BY s.id
+    UNION ALL
+    SELECT r.id, 'REFUND', r.returnDate, r.returnNumber, s.invoiceNumber, s.customerName, -r.refundAmount,
+           CASE WHEN r.shopAccountId IS NULL THEN -r.refundAmount ELSE 0 END,
+           CASE WHEN r.shopAccountId IS NULL THEN 0 ELSE -r.refundAmount END,
+           0
+      FROM "SaleReturn" r JOIN "Sale" s ON s.id = r.saleId
+     WHERE s.status <> 'CANCELLED' AND r.returnDay BETWEEN ? AND ?`;
+  const where: string[] = [];
+  const params: unknown[] = [query.from, query.to, query.from, query.to];
+  if (query.method === 'CASH') where.push('x.cash <> 0');
+  if (query.method === 'BANK') where.push('x.bank <> 0');
+  if (query.search) {
+    where.push('(x.number LIKE ? COLLATE NOCASE OR x.invoiceNumber LIKE ? COLLATE NOCASE OR x.customerName LIKE ? COLLATE NOCASE)');
+    const like = `%${query.search}%`;
+    params.push(like, like, like);
+  }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const rows = db
+    .prepare(`SELECT x.* FROM (${ledger}) x ${whereSql} ORDER BY x.date DESC LIMIT ? OFFSET ?`)
+    .all(...params, query.pageSize, query.page * query.pageSize) as BankingSaleRow[];
+  const { n, ...totals } = db
+    .prepare(
+      `SELECT COUNT(*) AS n, COALESCE(SUM(x.total), 0) AS total, COALESCE(SUM(x.cash), 0) AS cash,
+              COALESCE(SUM(x.bank), 0) AS bank, COALESCE(SUM(x.unpaid), 0) AS unpaid
+         FROM (${ledger}) x ${whereSql}`,
+    )
+    .get(...params) as { n: number; total: number; cash: number; bank: number; unpaid: number };
+  return { rows, total: n, totals };
 }
 
 export function saveCashCount(

@@ -35,6 +35,9 @@ import PaymentDialog from '../components/PaymentDialog';
 import MoneyField from '../components/MoneyField';
 import { alpha } from '@mui/material/styles';
 
+/** Gives each cart line a unique React key. */
+let lineCounter = 0;
+
 export interface CartLine {
   key: string;
   product: Product;
@@ -141,7 +144,8 @@ export default function PosPage() {
             setError(`${product.name} is out of stock.`);
             return current;
           }
-          return [...current, { key: crypto.randomUUID(), product, quantity: 1, serial: null, isGift: false }];
+          // Not crypto.randomUUID: it is missing on plain-http pages (network access from another PC).
+          return [...current, { key: `line-${++lineCounter}`, product, quantity: 1, serial: null, isGift: false }];
         }
 
         if (current.some((l) => l.serial?.id === serial.id)) {
