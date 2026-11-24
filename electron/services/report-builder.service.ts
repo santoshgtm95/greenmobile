@@ -408,6 +408,12 @@ function profitLossReport(range: DayRange, db: Db): Pick<Report, 'figures' | 'ta
       { line: 'Repairs — gross profit', amount: pl.services.grossProfit },
       { line: '', amount: null },
       { line: 'TOTAL GROSS PROFIT', amount: pl.totalGrossProfit },
+      { line: '', amount: null },
+      { line: 'Banking — fees received', amount: pl.banking.feeReceived },
+      { line: 'Banking — fees paid', amount: -pl.banking.feePaid },
+      { line: 'Banking — bank charges', amount: -pl.banking.bankCharges },
+      { line: 'Banking — profit', amount: pl.banking.profit },
+      { line: '', amount: null },
       { line: 'Operating expenses', amount: -pl.expenses },
       { line: 'NET PROFIT', amount: pl.netProfit },
     ],
@@ -416,6 +422,7 @@ function profitLossReport(range: DayRange, db: Db): Pick<Report, 'figures' | 'ta
   return {
     figures: [
       { label: 'Total gross profit', value: pl.totalGrossProfit, type: 'money' },
+      { label: 'Banking profit', value: pl.banking.profit, type: 'money', hint: 'Fees received − (fees paid + bank charges)' },
       { label: 'Operating expenses', value: pl.expenses, type: 'money' },
       {
         label: 'Net profit',

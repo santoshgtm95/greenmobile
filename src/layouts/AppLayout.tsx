@@ -89,6 +89,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const compact = useMediaQuery(theme.breakpoints.down("md"));
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [navOpen, setNavOpen] = useState(false);
+  // Wide screens: the menu button hides the sidebar to give the page the full width.
+  const [navHidden, setNavHidden] = useState(false);
 
   const visibleItems = NAV_ITEMS.filter((item) => can(item.permission));
   const currentItem = visibleItems.find((item) =>
@@ -172,13 +174,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       }}
     >
       <Drawer
-        variant={compact ? "temporary" : "permanent"}
-        open={compact ? navOpen : true}
+        variant={compact ? "temporary" : "persistent"}
+        open={compact ? navOpen : !navHidden}
         onClose={() => setNavOpen(false)}
         ModalProps={{ keepMounted: true }}
         sx={{
-          width: compact ? 0 : DRAWER_WIDTH,
+          width: compact || navHidden ? 0 : DRAWER_WIDTH,
           flexShrink: 0,
+          transition: theme.transitions.create("width"),
           "& .MuiDrawer-paper": {
             width: DRAWER_WIDTH,
             boxSizing: "border-box",
@@ -202,11 +205,15 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           }}
         >
           <Toolbar sx={{ gap: 1.5, minHeight: "60px !important", px: { xs: 2, md: 3 } }}>
-            {compact && (
-              <IconButton edge="start" aria-label="Open menu" onClick={() => setNavOpen(true)}>
+            <Tooltip title={compact ? "Open menu" : navHidden ? "Show menu" : "Hide menu"}>
+              <IconButton
+                edge="start"
+                aria-label={compact ? "Open menu" : navHidden ? "Show menu" : "Hide menu"}
+                onClick={() => (compact ? setNavOpen(true) : setNavHidden((hidden) => !hidden))}
+              >
                 <MenuIcon />
               </IconButton>
-            )}
+            </Tooltip>
             {/* Breadcrumb; keyed so it fades on every page change. */}
             <Stack
               key={currentLabel}

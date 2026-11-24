@@ -673,6 +673,8 @@ export interface DailyPosition {
   feeReceived: number;
   feePaid: number;
   bankCharges: number;
+  sales: number;
+  expenses: number;
 }
 
 export interface FeeHistoryResult {
@@ -906,6 +908,7 @@ export interface ProfitAndLoss {
   goods: { netSales: number; cogs: number; grossProfit: number };
   services: { revenue: number; partsCost: number; grossProfit: number };
   totalGrossProfit: number;
+  banking: { feeReceived: number; feePaid: number; bankCharges: number; profit: number };
   expenses: number;
   netProfit: number;
   /** Collected on behalf of the tax authority; not income. */

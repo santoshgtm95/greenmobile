@@ -24,6 +24,9 @@ export interface StockSelection {
   categoryId?: string;
   /** The category's path, "Phones › Cases". */
   categoryName?: string;
+  /** A brand within the category. */
+  brandId?: string;
+  brandName?: string;
   productId?: string;
 }
 
@@ -38,7 +41,8 @@ async function listCategory(categoryId: string, includeInactive: boolean): Promi
 }
 
 /**
- * Category → Sub Category → Sub Category → Product. A name selects (the left
+ * Category → Sub Category → Sub Category → Brand → Product (products without
+ * a brand sit straight under their category). A name selects (the left
  * panel follows); the `+` beside it expands. A top-level category's products
  * load only once it is opened, and are shared down its branch.
  */
@@ -112,6 +116,39 @@ function CategoryNode({
   const branch = isTop ? loaded.data : products;
   const children = categories.filter((c) => c.parentId === category.id);
   const own = (branch ?? []).filter((p) => p.categoryId === category.id);
+  const brands = new Map<string, { name: string; products: Product[] }>();
+  for (const p of own) {
+    if (!p.brandId) continue;
+    const entry = brands.get(p.brandId) ?? { name: p.brandName ?? '', products: [] };
+    entry.products.push(p);
+    brands.set(p.brandId, entry);
+  }
+  const productRow = (product: Product, depth: number) => (
+    <TreeRow
+      key={product.id}
+      depth={depth}
+      label={product.name}
+      hint={
+        <Chip
+          size="small"
+          label={product.stockQuantity}
+          color={product.stockQuantity <= 0 ? 'error' : 'default'}
+          variant="outlined"
+          sx={{ height: 20, fontSize: 11 }}
+        />
+      }
+      selected={selection.productId === product.id}
+      onSelect={() =>
+        onSelect({
+          categoryId: category.id,
+          categoryName: category.path,
+          brandId: product.brandId ?? undefined,
+          brandName: product.brandName ?? undefined,
+          productId: product.id,
+        })
+      }
+    />
+  );
 
   return (
     <>
@@ -121,7 +158,7 @@ function CategoryNode({
         count={includeInactive ? category.productCount : category.activeProductCount}
         open={open}
         onToggle={() => setOpen(!open)}
-        selected={selection.categoryId === category.id && !selection.productId}
+        selected={selection.categoryId === category.id && !selection.brandId && !selection.productId}
         onSelect={() => onSelect({ categoryId: category.id, categoryName: category.path })}
       />
       <Collapse in={open} unmountOnExit>
@@ -141,24 +178,21 @@ function CategoryNode({
             onSelect={onSelect}
           />
         ))}
-        {own.map((product) => (
-          <TreeRow
-            key={product.id}
+        {[...brands].map(([brandId, brand]) => (
+          <BrandNode
+            key={brandId}
             depth={category.depth + 1}
-            label={product.name}
-            hint={
-              <Chip
-                size="small"
-                label={product.stockQuantity}
-                color={product.stockQuantity <= 0 ? 'error' : 'default'}
-                variant="outlined"
-                sx={{ height: 20, fontSize: 11 }}
-              />
+            name={brand.name}
+            count={brand.products.length}
+            selected={selection.categoryId === category.id && selection.brandId === brandId && !selection.productId}
+            onSelect={() =>
+              onSelect({ categoryId: category.id, categoryName: category.path, brandId, brandName: brand.name })
             }
-            selected={selection.productId === product.id}
-            onSelect={() => onSelect({ categoryId: category.id, categoryName: category.path, productId: product.id })}
-          />
+          >
+            {brand.products.map((product) => productRow(product, category.depth + 2))}
+          </BrandNode>
         ))}
+        {own.filter((p) => !p.brandId).map((product) => productRow(product, category.depth + 1))}
         {branch && children.length === 0 && own.length === 0 && (
           <Typography
             variant="caption"
@@ -168,6 +202,32 @@ function CategoryNode({
             No products
           </Typography>
         )}
+      </Collapse>
+    </>
+  );
+}
+
+function BrandNode({
+  depth,
+  name,
+  count,
+  selected,
+  onSelect,
+  children,
+}: {
+  depth: number;
+  name: string;
+  count: number;
+  selected: boolean;
+  onSelect: () => void;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <TreeRow depth={depth} label={name} count={count} open={open} onToggle={() => setOpen(!open)} selected={selected} onSelect={onSelect} />
+      <Collapse in={open} unmountOnExit>
+        {children}
       </Collapse>
     </>
   );

@@ -1957,6 +1957,9 @@ export interface DailyPositionRow {
   feeReceived: number;
   feePaid: number;
   bankCharges: number;
+  /** That day's sales net of refunds, and expenses. */
+  sales: number;
+  expenses: number;
 }
 
 /**
@@ -2020,7 +2023,12 @@ export function dailyPositionHistory(range: DayRangeInput, db: Db = getDatabase(
               (SELECT COALESCE(SUM(otherFees), 0) FROM "BankTransaction" WHERE isDeleted = 0 AND transactionDay = d.day)
                 + (SELECT COALESCE(SUM(bankCharges), 0) FROM "ShopAdvance" WHERE isDeleted = 0 AND advanceDay = d.day)
                 + (SELECT COALESCE(SUM(bankCharges), 0) FROM "InternalTransfer" WHERE isDeleted = 0 AND transferDay = d.day)
-                AS bankCharges
+                AS bankCharges,
+              -- Net of refunds, each on its own day, as in the Banking sales list.
+              (SELECT COALESCE(SUM(grandTotal), 0) FROM "Sale" WHERE status <> 'CANCELLED' AND saleDay = d.day)
+                - (SELECT COALESCE(SUM(r.refundAmount), 0) FROM "SaleReturn" r JOIN "Sale" s ON s.id = r.saleId
+                    WHERE s.status <> 'CANCELLED' AND r.returnDay = d.day) AS sales,
+              (SELECT COALESCE(SUM(amount), 0) FROM "Expense" WHERE isDeleted = 0 AND expenseDay = d.day) AS expenses
          FROM days d
         ORDER BY d.day DESC`,
     )

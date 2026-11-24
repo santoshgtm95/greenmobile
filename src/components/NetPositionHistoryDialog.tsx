@@ -24,7 +24,7 @@ import { historyTableSx } from './historyTableSx';
 
 const num = { fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } as const;
 
-/** Day by day: end-of-day balances and advances, and that day's fees and charges. */
+/** Day by day: end-of-day balances and advances, and that day's fees, charges, sales and expenses. */
 export default function NetPositionHistoryDialog({ onClose }: { onClose: () => void }) {
   const money = useMoneyFormatter();
   const signed = (minor: number) => (minor < 0 ? `−${money(Math.abs(minor))}` : money(minor));
@@ -82,14 +82,16 @@ export default function NetPositionHistoryDialog({ onClose }: { onClose: () => v
                     <TableCell align="right">Fees received</TableCell>
                     <TableCell align="right">Fees paid</TableCell>
                     <TableCell align="right">Bank charges</TableCell>
-                    <TableCell align="right">Profit</TableCell>
+                    <TableCell align="right">Banking profit</TableCell>
+                    <TableCell align="right">Sales</TableCell>
+                    <TableCell align="right">Expenses</TableCell>
                     <TableCell align="right">Net position</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {history.isLoading && (
                     <TableRow>
-                      <TableCell colSpan={10} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                      <TableCell colSpan={12} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                         Loading…
                       </TableCell>
                     </TableRow>
@@ -109,6 +111,8 @@ export default function NetPositionHistoryDialog({ onClose }: { onClose: () => v
                         <TableCell align="right" sx={{ ...num, fontWeight: 700, color: profit < 0 ? 'error.main' : 'success.main' }}>
                           {signed(profit)}
                         </TableCell>
+                        <TableCell align="right" sx={{ ...num, color: 'success.main' }}>{signed(r.sales)}</TableCell>
+                        <TableCell align="right" sx={{ ...num, color: 'error.main' }}>{money(r.expenses)}</TableCell>
                         <TableCell align="right" sx={{ ...num, fontWeight: 700 }}>
                           {signed(r.bank + r.cash + r.shopAdvanceOutstanding - r.customerAdvanceHeld)}
                         </TableCell>

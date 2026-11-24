@@ -27,6 +27,7 @@ import { expenseSummary } from './expense.service';
 import { serviceSummary } from './service.service';
 import { lowStock } from './inventory.service';
 import { getShopSettings } from './settings.service';
+import { bankingOverview } from './banking.service';
 
 /**
  * Per-line net values, shared by every sales figure below.
@@ -246,8 +247,10 @@ export interface ProfitAndLoss {
   };
   /** goods.grossProfit + services.grossProfit */
   totalGrossProfit: number;
+  /** Banking profit = feeReceived - (feePaid + bankCharges), as on the Banking page. */
+  banking: { feeReceived: number; feePaid: number; bankCharges: number; profit: number };
   expenses: number;
-  /** totalGrossProfit - expenses */
+  /** totalGrossProfit + banking.profit - expenses */
   netProfit: number;
   /** Collected on behalf of the tax authority; not income. */
   taxCollected: number;
@@ -267,6 +270,8 @@ export function profitAndLoss(range: DayRange, db: Db = getDatabase()): ProfitAn
   const expenses = expenseSummary(range, db);
 
   const totalGrossProfit = addMoney(sales.grossProfit, services.grossProfit);
+  const { feeReceived, feePaid, bankCharges } = bankingOverview(range, db).totals;
+  const banking = { feeReceived, feePaid, bankCharges, profit: feeReceived - (feePaid + bankCharges) };
 
   return {
     range,
@@ -281,8 +286,9 @@ export function profitAndLoss(range: DayRange, db: Db = getDatabase()): ProfitAn
       grossProfit: services.grossProfit,
     },
     totalGrossProfit,
+    banking,
     expenses: expenses.total,
-    netProfit: subtractMoney(totalGrossProfit, expenses.total),
+    netProfit: subtractMoney(addMoney(totalGrossProfit, banking.profit), expenses.total),
     taxCollected: sales.tax,
   };
 }

@@ -54,6 +54,7 @@ import {
   getShopBankAccountHistory,
 } from '../electron/services/banking.service';
 import { AppError } from '../shared/errors';
+import { profitAndLoss } from '../electron/services/report.service';
 import { businessDay, addDays, nowLocalDateTime, localDateTimeToInstant } from '../shared/datetime';
 import { roleHasPermission, type BankFeeDirection } from '../shared/domain';
 import { formatMoney, resolveFee } from '../shared/money';
@@ -2731,6 +2732,11 @@ describe('audit trail', () => {
       });
       expect(today!.customerAdvanceHeld).toBe(200_000);
       expect(yesterday).toMatchObject({ customerAdvanceHeld: 0, shopAdvanceOutstanding: 0, feeReceived: 0, feePaid: 0 });
+
+      // Profit & Loss: banking profit from the same totals, and in net profit.
+      const pl = profitAndLoss(ALL_TIME, ctx.db);
+      expect(pl.banking.profit).toBe(totals.feeReceived - (totals.feePaid + totals.bankCharges));
+      expect(pl.netProfit).toBe(pl.totalGrossProfit + pl.banking.profit - pl.expenses);
 
       expect(resolveFee(100_000, 0, 1_000, true)).toEqual({ feeAmount: 1_000, feeBasisPoints: 101 });
       expect(() => resolveFee(100, 0, 101)).toThrow();

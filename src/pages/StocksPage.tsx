@@ -108,12 +108,13 @@ export default function StocksPage() {
     () => ({
       search: debouncedSearch || undefined,
       categoryId: selection.categoryId,
+      brandId: selection.brandId,
       lowStockOnly,
       includeInactive,
       page,
       pageSize,
     }),
-    [debouncedSearch, selection.categoryId, lowStockOnly, includeInactive, page, pageSize],
+    [debouncedSearch, selection.categoryId, selection.brandId, lowStockOnly, includeInactive, page, pageSize],
   );
 
   const products = useQuery({
@@ -290,6 +291,22 @@ export default function StocksPage() {
                   onClick={() => select({ categoryId: selection.categoryId, categoryName: selection.categoryName })}
                 >
                   {selection.categoryName}
+                </Link>
+              )}
+              {selection.brandName && (
+                <Link
+                  component="button"
+                  underline="hover"
+                  onClick={() =>
+                    select({
+                      categoryId: selection.categoryId,
+                      categoryName: selection.categoryName,
+                      brandId: selection.brandId,
+                      brandName: selection.brandName,
+                    })
+                  }
+                >
+                  {selection.brandName}
                 </Link>
               )}
             </Breadcrumbs>
