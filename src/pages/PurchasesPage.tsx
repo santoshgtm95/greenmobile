@@ -303,7 +303,7 @@ export default function PurchasesPage() {
                       {money(s.remaining)}
                     </TableCell>
                     <TableCell align="right">
-                      {can('products.manage') && (
+                      {can('products.edit') && (
                         <IconButton size="small" onClick={() => setEditingSupplier(s)}>
                           <EditIcon fontSize="small" />
                         </IconButton>

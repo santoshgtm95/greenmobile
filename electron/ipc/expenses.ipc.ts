@@ -26,7 +26,7 @@ import {
   listExpenseCategories,
   saveExpenseCategory,
 } from '../services/expense.service';
-import { requireUser } from '../session';
+import { requirePermission, requireUser } from '../session';
 
 export function registerExpensesIpc(): void {
   handle(CHANNELS.expenses.list, { access: 'permission', permission: 'expenses.view' }, zExpenseListQuery, (q) =>
@@ -46,7 +46,7 @@ export function registerExpensesIpc(): void {
 
   handle(
     CHANNELS.expenses.update,
-    { access: 'permission', permission: 'expenses.manage' },
+    { access: 'permission', permission: 'expenses.edit' },
     zUpdateExpense,
     (input) => updateExpense(input, requireUser()),
   );
@@ -75,6 +75,10 @@ export function registerExpensesIpc(): void {
     CHANNELS.expenseCategories.save,
     { access: 'permission', permission: 'expenses.manage' },
     zSaveLookup,
-    (input) => saveExpenseCategory(input, requireUser()),
+    (input) => {
+      // Adding needs expenses.manage; changing an existing one is an edit.
+      if (input.id) requirePermission('expenses.edit');
+      return saveExpenseCategory(input, requireUser());
+    },
   );
 }

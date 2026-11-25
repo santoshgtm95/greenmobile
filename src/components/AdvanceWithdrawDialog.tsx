@@ -153,7 +153,8 @@ export default function AdvanceWithdrawDialog({
             }
           >
             <strong>{advance.transactionNumber}</strong> · {advance.fromName} deposited{" "}
-            {money(advance.amount)} on {formatInstant(advance.transactionDate)}.{" "}
+            {money(advance.received)}
+            {advance.received === advance.amount ? ` on ${formatInstant(advance.transactionDate)}` : " in total"}.{" "}
             <strong>{money(advance.remaining)}</strong> left to collect.
           </Alert>
 

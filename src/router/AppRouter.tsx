@@ -32,7 +32,8 @@ export default function AppRouter() {
         <Route
           path="/"
           element={
-            <Guard permission="sales.view">
+            // Roles without the dashboard (Sales) start on the POS.
+            <Guard permission="dashboard.view" fallback="/pos">
               <DashboardPage />
             </Guard>
           }
@@ -174,9 +175,19 @@ export default function AppRouter() {
 }
 
 /** Renders children only if the signed-in role holds `permission`. */
-function Guard({ permission, children }: { permission: Permission; children: React.ReactNode }) {
+function Guard({
+  permission,
+  fallback,
+  children,
+}: {
+  permission: Permission;
+  /** Where to send a role without `permission`, instead of showing "Not available". */
+  fallback?: string;
+  children: React.ReactNode;
+}) {
   const { can } = useAuth();
   if (can(permission)) return <>{children}</>;
+  if (fallback) return <Navigate to={fallback} replace />;
   return (
     <Stack spacing={2}>
       <Typography variant="h5">Not available</Typography>

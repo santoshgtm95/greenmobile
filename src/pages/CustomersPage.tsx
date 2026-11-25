@@ -191,7 +191,7 @@ export default function CustomersPage() {
                           <HistoryIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
-                      {can('customers.manage') && (
+                      {can('customers.edit') && (
                         <Tooltip title="Edit">
                           <IconButton size="small" onClick={() => setEditing(customer)}>
                             <EditIcon fontSize="small" />

@@ -27,17 +27,21 @@ import {
   deletePurchaseItem,
   deleteSupplierPayment,
 } from '../services/purchase.service';
-import { requireUser } from '../session';
+import { requirePermission, requireUser } from '../session';
 
 
 export function registerPurchasesIpc(): void {
   handle(CHANNELS.suppliers.list, { access: 'permission', permission: 'products.view' }, zLookupQuery, ({ includeInactive }) => listSuppliers(includeInactive));
-  handle(CHANNELS.suppliers.save, { access: 'permission', permission: 'products.manage' }, zSaveSupplier, (input) => saveSupplier(input, requireUser()));
+  handle(CHANNELS.suppliers.save, { access: 'permission', permission: 'products.manage' }, zSaveSupplier, (input) => {
+    // Adding needs products.manage; changing an existing supplier is an edit.
+    if (input.id) requirePermission('products.edit');
+    return saveSupplier(input, requireUser());
+  });
 
   handle(CHANNELS.purchases.list, { access: 'permission', permission: 'products.view' }, zPurchaseInvoiceListQuery, (q) => listPurchaseInvoices(q));
   handle(CHANNELS.purchases.get, { access: 'permission', permission: 'products.view' }, zIdOnly, ({ id }) => getPurchaseInvoice(id));
   handle(CHANNELS.purchases.create, { access: 'permission', permission: 'products.manage' }, zCreatePurchaseInvoice, (input) => createPurchaseInvoice(input, requireUser()));
-  handle(CHANNELS.purchases.update, { access: 'permission', permission: 'products.manage' }, zUpdatePurchaseInvoice, (input) => updatePurchaseInvoice(input, requireUser()));
+  handle(CHANNELS.purchases.update, { access: 'permission', permission: 'products.edit' }, zUpdatePurchaseInvoice, (input) => updatePurchaseInvoice(input, requireUser()));
   handle(
     CHANNELS.purchases.delete,
     { access: 'permission', permission: 'products.delete' },

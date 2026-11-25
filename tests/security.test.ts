@@ -565,10 +565,9 @@ describe('authorization', () => {
     'products.delete',
     'products.import',
     'inventory.adjust',
-    'expenses.view',
-    'expenses.manage',
     'expenses.delete',
     'banking.delete',
+    'dashboard.view',
     'reports.view',
     'users.view',
     'users.manage',
@@ -580,8 +579,11 @@ describe('authorization', () => {
 
   /** Everything a manager must not be able to do. */
   const MANAGER_DENIED: Permission[] = [
+    'products.delete',
     'expenses.delete',
     'banking.delete',
+    'users.view',
+    'settings.view',
     'users.manage',
     'settings.manage',
     'backup.manage',
@@ -593,6 +595,8 @@ describe('authorization', () => {
     for (const permission of CASHIER_DENIED) {
       expect(roleHasPermission('CASHIER', permission), permission).toBe(false);
     }
+    // Adds, never edits.
+    expect(ROLE_PERMISSIONS.CASHIER.filter((p) => p.endsWith('.edit'))).toEqual([]);
   });
 
   it('lets a cashier record banking', () => {
@@ -600,14 +604,13 @@ describe('authorization', () => {
     expect(roleHasPermission('CASHIER', 'banking.manage')).toBe(true);
   });
 
-  it('gives sales exactly its screens, able to register and edit', () => {
+  it('gives sales exactly its screens, able to add but not edit', () => {
     expect([...ROLE_PERMISSIONS.SALES].sort()).toEqual(
       [
         'pos.sell',
         'sales.view',
         'products.view',
         'products.manage',
-        'products.import',
         'inventory.view',
         'inventory.adjust',
         'customers.view',
@@ -616,9 +619,13 @@ describe('authorization', () => {
         'services.manage',
         'expenses.view',
         'expenses.manage',
-        'reports.view',
       ].sort(),
     );
+    // Adds new records only: no dashboard, reports, import or editing.
+    for (const p of ['dashboard.view', 'reports.view', 'products.import'] as const) {
+      expect(ROLE_PERMISSIONS.SALES).not.toContain(p);
+    }
+    expect(ROLE_PERMISSIONS.SALES.filter((p) => p.endsWith('.edit'))).toEqual([]);
   });
 
   it('lets neither cashier nor sales delete, cancel or refund anything', () => {
@@ -636,6 +643,9 @@ describe('authorization', () => {
     for (const permission of MANAGER_DENIED) {
       expect(roleHasPermission('MANAGER', permission), permission).toBe(false);
     }
+    // Edits, never deletes.
+    expect(ROLE_PERMISSIONS.MANAGER.filter((p) => p.endsWith('.delete'))).toEqual([]);
+    expect(roleHasPermission('MANAGER', 'banking.edit')).toBe(true);
   });
 
   it('gives an administrator every permission, with none forgotten', () => {

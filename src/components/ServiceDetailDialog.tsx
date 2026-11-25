@@ -90,6 +90,8 @@ export default function ServiceDetailDialog({
   const order = detail?.order;
   const editable = order ? order.status !== 'DELIVERED' && order.status !== 'CANCELLED' : false;
   const manage = can('services.manage');
+  // Changing what is already on the order (diagnosis, removing a part).
+  const edit = can('services.edit');
 
   // Follow the server's diagnosis unless the user is mid-edit.
   useEffect(() => {
@@ -273,10 +275,10 @@ export default function ServiceDetailDialog({
                 minRows={2}
                 value={diagnosis}
                 onChange={(e) => setDiagnosis(e.target.value)}
-                disabled={!editable || !manage}
+                disabled={!editable || !edit}
                 helperText="Prints on the completion receipt the customer takes away"
               />
-              {editable && manage && (
+              {editable && edit && (
                 <Button
                   startIcon={<SaveIcon />}
                   onClick={() => saveDiagnosis.mutate()}
@@ -334,7 +336,7 @@ export default function ServiceDetailDialog({
                       {money(item.total)}
                     </TableCell>
                     <TableCell align="right">
-                      {editable && manage && (
+                      {editable && edit && (
                         <Tooltip title="Remove (returns any part to stock)">
                           <IconButton
                             size="small"

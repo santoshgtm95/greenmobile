@@ -71,6 +71,7 @@ export default function AdvancesPage() {
   const [opening, setOpening] = useState(false);
   const [viewing, setViewing] = useState<string | null>(null);
   const [withdrawing, setWithdrawing] = useState<BankAdvance | null>(null);
+  const [receivingMore, setReceivingMore] = useState<BankAdvance | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [payableOpen, setPayableOpen] = useState(false);
 
@@ -275,7 +276,7 @@ export default function AdvancesPage() {
                     />
                   </TableCell>
                   <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                    {money(row.amount)}
+                    {money(row.received)}
                   </TableCell>
                   <TableCell
                     align="right"
@@ -374,12 +375,27 @@ export default function AdvancesPage() {
         />
       )}
 
-      {viewing && !withdrawing && (
+      {receivingMore && (
+        <CustomerAdvanceDialog
+          shopAccounts={shopAccounts.data ?? []}
+          cashInHandAmount={cashInHandAmount}
+          parent={receivingMore}
+          onClose={() => setReceivingMore(null)}
+          onSaved={() => {
+            setReceivingMore(null);
+            setToast('Added to the advance.');
+            refresh();
+          }}
+        />
+      )}
+
+      {viewing && !withdrawing && !receivingMore && (
         <AdvanceDetailDialog
           advanceId={viewing}
           canWithdraw={canManage}
           canDelete={can('banking.delete')}
           onWithdraw={(advance) => setWithdrawing(advance)}
+          onReceiveMore={(advance) => setReceivingMore(advance)}
           onChanged={() => {
             setToast('Removed from the balances.');
             refresh();

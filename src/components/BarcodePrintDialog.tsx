@@ -24,6 +24,7 @@ import JsBarcode from 'jsbarcode';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useMoneyFormatter } from '../hooks/useSettings';
+import { useAuth } from '../hooks/useAuth';
 import { generateEan13Candidate, isValidEan13 } from '@shared/barcode';
 import type { Product } from '@shared/api';
 
@@ -104,6 +105,7 @@ export default function BarcodePrintDialog({
 }) {
   const money = useMoneyFormatter();
   const queryClient = useQueryClient();
+  const { can } = useAuth();
   const [currentProduct, setCurrentProduct] = useState<Product>(product);
   const [count, setCount] = useState<number>(1);
   const [isPrinting, setIsPrinting] = useState<boolean>(false);
@@ -386,15 +388,18 @@ export default function BarcodePrintDialog({
                   <Typography variant="body2" color="warning.main" sx={{ fontStyle: 'italic' }}>
                     No barcode assigned
                   </Typography>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<AutoFixHighIcon fontSize="small" />}
-                    onClick={() => assignBarcode.mutate()}
-                    disabled={assignBarcode.isPending}
-                  >
-                    Generate & Assign
-                  </Button>
+                  {/* Assigning changes the product, so it is an edit. */}
+                  {can('products.edit') && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<AutoFixHighIcon fontSize="small" />}
+                      onClick={() => assignBarcode.mutate()}
+                      disabled={assignBarcode.isPending}
+                    >
+                      Generate & Assign
+                    </Button>
+                  )}
                 </Stack>
               )}
             </Stack>

@@ -24,31 +24,38 @@ import ShopAccountSelect from "./ShopAccountSelect";
 import { useMoneyFormatter } from "../hooks/useSettings";
 import { PosApiError } from "@shared/errors";
 import { nowLocalDateTime } from "@shared/datetime";
-import type { ShopBankAccount } from "@shared/api";
+import type { BankAdvance, ShopBankAccount } from "@shared/api";
 import { OLD_RECORD } from "@shared/domain";
 import HistoryIcon from "@mui/icons-material/History";
 
 export default function CustomerAdvanceDialog({
   shopAccounts,
   cashInHandAmount,
+  parent,
   onClose,
   onSaved,
 }: {
   shopAccounts: ShopBankAccount[];
   cashInHandAmount: number;
+  /** Receive more on this advance instead of starting a new one. */
+  parent?: BankAdvance;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const money = useMoneyFormatter();
 
-  const [customerName, setCustomerName] = useState("");
+  // Receiving more: start from the same customer and account as the advance.
+  const parentFromAccount = Boolean(parent?.toAccountId);
+  const [customerName, setCustomerName] = useState(parent?.fromName ?? "");
   const [customerPhone, setCustomerPhone] = useState("");
-  const [fromType, setFromType] = useState<"ACCOUNT" | "CASH">("ACCOUNT");
-  const [fromBankId, setFromBankId] = useState("");
-  const [fromAccountNumber, setFromAccountNumber] = useState("");
-  const [fromAccountName, setFromAccountName] = useState("");
+  const [fromType, setFromType] = useState<"ACCOUNT" | "CASH">(parent && !parentFromAccount ? "CASH" : "ACCOUNT");
+  const [fromBankId, setFromBankId] = useState(parent?.fromAccountId ?? "");
+  const [fromAccountNumber, setFromAccountNumber] = useState(parentFromAccount ? parent?.fromAccountNumber ?? "" : "");
+  const [fromAccountName, setFromAccountName] = useState(parentFromAccount ? parent?.fromName ?? "" : "");
 
-  const [toType, setToType] = useState<"SHOP_ACCOUNT" | "CASH" | "OLD">("SHOP_ACCOUNT");
+  const [toType, setToType] = useState<"SHOP_ACCOUNT" | "CASH" | "OLD">(
+    parent && !parentFromAccount ? "CASH" : "SHOP_ACCOUNT",
+  );
   const [toShopAccountId, setToShopAccountId] = useState(
     shopAccounts[0]?.id ?? "",
   );
@@ -104,6 +111,7 @@ export default function CustomerAdvanceDialog({
         depositMethod: isOld ? "old" : isCashDeposit ? "cash" : "account",
         customerPhone: customerPhone.trim() || undefined,
         notes: combinedNotes || undefined,
+        advanceId: parent?.id,
       });
     },
     onSuccess: onSaved,
@@ -127,8 +135,8 @@ export default function CustomerAdvanceDialog({
 
   return (
     <MovementDialog
-      title="New Customer Advance"
-      subtitle="Money a customer leaves with the shop"
+      title={parent ? `Receive More · ${parent.transactionNumber}` : "New Customer Advance"}
+      subtitle={parent ? "More money from the same customer, added to this advance" : "Money a customer leaves with the shop"}
       icon={<PaymentsOutlinedIcon />}
       onClose={save.isPending ? undefined : onClose}
     >
@@ -136,6 +144,12 @@ export default function CustomerAdvanceDialog({
       <DialogContent>
         <Stack spacing={2.5} sx={{ pt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
+          {parent && (
+            <Alert severity="info">
+              Adding to <strong>{parent.fromName}</strong>&apos;s advance. Received {money(parent.received)} so far,{" "}
+              {money(parent.remaining)} left to collect.
+            </Alert>
+          )}
 
           {/* Date & Time */}
           <TextField
@@ -380,7 +394,7 @@ export default function CustomerAdvanceDialog({
           onClick={() => save.mutate()}
           disabled={!canSave || save.isPending}
         >
-          {save.isPending ? "Recording…" : "Record Advance"}
+          {save.isPending ? "Recording…" : parent ? "Receive More" : "Record Advance"}
         </Button>
       </DialogActions>
     </MovementDialog>

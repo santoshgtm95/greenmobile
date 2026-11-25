@@ -45,7 +45,7 @@ import {
   lowStock,
 } from '../services/inventory.service';
 import { getShopSettings } from '../services/settings.service';
-import { requireUser } from '../session';
+import { requirePermission, requireUser } from '../session';
 import { z } from 'zod';
 
 const zSerialQuery = z.object({
@@ -81,7 +81,7 @@ export function registerCatalogIpc(): void {
 
   handle(
     CHANNELS.products.update,
-    { access: 'permission', permission: 'products.manage' },
+    { access: 'permission', permission: 'products.edit' },
     zUpdateProduct,
     (input) => updateProduct(input, requireUser()),
   );
@@ -162,7 +162,11 @@ export function registerCatalogIpc(): void {
     CHANNELS.categories.save,
     { access: 'permission', permission: 'products.manage' },
     zSaveCategory,
-    (input) => saveCategory(input, requireUser()),
+    (input) => {
+      // Adding needs products.manage; renaming an existing one is an edit.
+      if (input.id) requirePermission('products.edit');
+      return saveCategory(input, requireUser());
+    },
   );
 
   handle(
@@ -183,6 +187,9 @@ export function registerCatalogIpc(): void {
     CHANNELS.brands.save,
     { access: 'permission', permission: 'products.manage' },
     zSaveLookup,
-    (input) => saveBrand(input, requireUser()),
+    (input) => {
+      if (input.id) requirePermission('products.edit');
+      return saveBrand(input, requireUser());
+    },
   );
 }

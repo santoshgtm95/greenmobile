@@ -542,7 +542,7 @@ export type ShopAdvancePayment = Pick<
   ShopAdvance,
   | 'id' | 'advanceNumber' | 'advanceDate' | 'fromType' | 'fromBankName' | 'fromAccountNumber'
   | 'fromAccountName' | 'toType' | 'toBankName' | 'toAccountNumber' | 'toAccountName'
-  | 'amount' | 'bankCharges' | 'notes' | 'parentId' | 'isDeleted' | 'deletedReason'
+  | 'amount' | 'bankCharges' | 'notes' | 'parentId' | 'isDeleted' | 'deletedReason' | 'createdByName'
 >;
 
 export interface ShopAdvanceDetailResult {
@@ -747,6 +747,8 @@ export interface BankTransaction {
  * a customer is owed.
  */
 export interface BankAdvance extends BankTransaction {
+  /** The first deposit plus every "receive more". */
+  received: number;
   withdrawn: number;
   remaining: number;
   withdrawalCount: number;
@@ -758,6 +760,8 @@ export interface BankAdvanceDetail {
   advance: BankAdvance;
   /** Oldest first — the order they happened in. */
   withdrawals: BankTransaction[];
+  /** "Receive more" deposits, oldest first. */
+  topUps: BankTransaction[];
 }
 
 /** One row of the per-account strip at the top of the Banking screen. */

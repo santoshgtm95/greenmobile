@@ -173,7 +173,7 @@ export default function StocksPage() {
   /** Shared by the list rows and the product detail. */
   const actions = (product: Product) => (
     <>
-      {can('products.manage') && (
+      {can('products.edit') && (
         <Tooltip title="Edit">
           <IconButton size="small" onClick={() => setEditing(product)}>
             <EditIcon fontSize="small" />

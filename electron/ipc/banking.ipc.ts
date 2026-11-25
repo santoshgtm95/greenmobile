@@ -5,7 +5,8 @@
  * carry very different weight:
  *
  *   banking.view    read the ledger and the balances
- *   banking.manage  record a movement, register or retire an account
+ *   banking.manage  record a movement, register an account
+ *   banking.edit    change an account, set balances or the cash count
  *   banking.delete  remove a recorded movement — ADMIN only (see ROLE_PERMISSIONS)
  *
  * Deleting is separated for the same reason it is on expenses: it changes what a
@@ -73,7 +74,7 @@ import {
   saveShopBankAccount,
   withdrawFromBankAdvance,
 } from '../services/banking.service';
-import { requireUser } from '../session';
+import { requirePermission, requireUser } from '../session';
 
 export function registerBankingIpc(): void {
   handle(CHANNELS.banking.overview, { access: 'permission', permission: 'banking.view' }, zDayRange, (range) =>
@@ -91,7 +92,11 @@ export function registerBankingIpc(): void {
     CHANNELS.banking.saveAccount,
     { access: 'permission', permission: 'banking.manage' },
     zSaveBankAccount,
-    (input) => saveBankAccount(input, requireUser()),
+    (input) => {
+      // Registering needs banking.manage; changing an existing one is an edit.
+      if (input.id) requirePermission('banking.edit');
+      return saveBankAccount(input, requireUser());
+    },
   );
 
   handle(
@@ -112,7 +117,10 @@ export function registerBankingIpc(): void {
     CHANNELS.banking.saveShopAccount,
     { access: 'permission', permission: 'banking.manage' },
     zSaveShopBankAccount,
-    (input) => saveShopBankAccount(input, requireUser()),
+    (input) => {
+      if (input.id) requirePermission('banking.edit');
+      return saveShopBankAccount(input, requireUser());
+    },
   );
 
   handle(
@@ -185,16 +193,17 @@ export function registerBankingIpc(): void {
     (input) => withdrawFromBankAdvance(input, requireUser()),
   );
 
+  // Overwrites the cash-in-hand figure, so it is an edit.
   handle(
     CHANNELS.banking.saveCashCount,
-    { access: 'permission', permission: 'banking.manage' },
+    { access: 'permission', permission: 'banking.edit' },
     zSaveCashCount,
     (input) => saveCashCount(input, requireUser()),
   );
 
   handle(
     CHANNELS.banking.saveBankBalances,
-    { access: 'permission', permission: 'banking.manage' },
+    { access: 'permission', permission: 'banking.edit' },
     zSaveBankBalances,
     (input) => saveBankBalances(input, requireUser()),
   );

@@ -76,9 +76,125 @@ export default function ShopAdvanceDetailDialog({
   const canManage = can('banking.manage') && !isDeleted;
   const canDelete = can('banking.delete') && !isDeleted;
 
+  const rows = [
+    ...payments.map((p) => ({ kind: 'given' as const, p, date: p.advanceDate })),
+    ...settlements.map((s) => ({ kind: 'received' as const, s, date: s.settlementDate })),
+  ].sort((a, b) => b.date.localeCompare(a.date));
+
+  const paymentRow = (p: ShopAdvancePayment) => (
+    <TableRow key={p.id} sx={p.isDeleted ? deletedRowSx : undefined}>
+      <TableCell sx={{ whiteSpace: 'nowrap' }}>{p.createdByName ?? '—'}</TableCell>
+      <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>
+        {p.advanceNumber}
+        {p.isDeleted === 1 && <DeletedChip reason={p.deletedReason} />}
+      </TableCell>
+      <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatInstant(p.advanceDate)}</TableCell>
+      <TableCell>
+        <Chip size="small" variant="outlined" color="error" label="Given" />
+      </TableCell>
+      <TableCell>
+        {p.fromType === 'OLD' ? 'Old record' : p.fromType === 'CASH' ? 'Cash in Hand' : `${p.fromBankName} (${p.fromAccountNumber})`}
+      </TableCell>
+      <TableCell>
+        {p.fromType === 'OLD' ? (
+          '—'
+        ) : p.toType === 'CASH' ? (
+          'Cash'
+        ) : (
+          <>
+            {p.toBankName ? `${p.toBankName} · ` : ''}No. {p.toAccountNumber || '—'}
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+              {p.toAccountName || '—'}
+            </Typography>
+          </>
+        )}
+      </TableCell>
+      <TableCell align="right" sx={{ fontWeight: 700, color: 'error.main' }}>
+        {money(p.amount)}
+        {p.bankCharges > 0 && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            + {money(p.bankCharges)} bank charges
+          </Typography>
+        )}
+      </TableCell>
+      <TableCell>{p.notes || '—'}</TableCell>
+      {canDelete && (
+        <TableCell align="right">
+          {!p.isDeleted && (
+            // The first payment is the advance itself; the server refuses while later rows are live.
+            <Tooltip title={p.parentId ? 'Delete payment' : 'Delete advance'}>
+              <IconButton
+                size="small"
+                color="error"
+                onClick={() => (p.parentId ? setDeletingPayment(p) : setDeletingAdvance(true))}
+              >
+                <DeleteOutlinedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+        </TableCell>
+      )}
+    </TableRow>
+  );
+
+  const settlementRow = (s: ShopAdvanceSettlement) => (
+    <TableRow key={s.id} sx={s.isDeleted ? deletedRowSx : undefined}>
+      <TableCell sx={{ whiteSpace: 'nowrap' }}>{s.createdByName ?? '—'}</TableCell>
+      <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>
+        {s.settlementNumber}
+        {s.isDeleted === 1 && <DeletedChip reason={s.deletedReason} />}
+      </TableCell>
+      <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatInstant(s.settlementDate)}</TableCell>
+      <TableCell>
+        <Chip size="small" variant="outlined" color="success" label="Repaid" />
+      </TableCell>
+      <TableCell>
+        {s.fromAccountNumber
+          ? `${s.fromBankName ? `${s.fromBankName} · ` : ''}${s.fromAccountNumber}${s.fromAccountName ? ` (${s.fromAccountName})` : ''}`
+          : '—'}
+      </TableCell>
+      <TableCell>
+        {s.toType === 'CASH' ? (
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+            <LocalAtmIcon fontSize="small" color="action" />
+            <span>Cash in Hand</span>
+          </Stack>
+        ) : (
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+            <AccountBalanceIcon fontSize="small" color="primary" />
+            <span>
+              {s.toBankName} ({s.toAccountNumber})
+            </span>
+          </Stack>
+        )}
+      </TableCell>
+      <TableCell align="right" sx={{ fontWeight: 700, color: 'success.main' }}>
+        {money(s.amount)}
+        {s.feeAmount > 0 && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            {s.feeDirection === 'RECEIVE' ? '+' : '-'}
+            {money(s.feeAmount)} ({s.feeDirection === 'RECEIVE' ? 'Recv' : 'Pay'}) · Actual {money(s.actualAmount || s.amount)}
+          </Typography>
+        )}
+      </TableCell>
+      <TableCell>{s.notes || '—'}</TableCell>
+      {canDelete && (
+        <TableCell align="right">
+          {!s.isDeleted && (
+            <Tooltip title="Delete repayment">
+              <IconButton size="small" color="error" onClick={() => setDeletingSettlement(s)}>
+                <DeleteOutlinedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+        </TableCell>
+      )}
+    </TableRow>
+  );
+
   return (
     <>
-      <Dialog open fullWidth maxWidth="md" onClose={onClose}>
+      <Dialog open fullWidth maxWidth="lg" onClose={onClose}>
         <DialogTitle>
           <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
             <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
@@ -241,30 +357,45 @@ export default function ShopAdvanceDetailDialog({
                   </Paper>
                 </Stack>
 
-                {/* Payments Given */}
+                {/* Payments given and repayments received, newest first */}
                 <Box>
                   <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                     <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                      Payments Given ({livePayments})
+                      Transactions ({livePayments + liveSettlements})
                     </Typography>
-                    {canManage && !advance.isDeleted && (
-                      <Button
-                        size="small"
-                        variant="contained"
-                        startIcon={<AddIcon />}
-                        onClick={() => onPayMore(advance)}
-                      >
-                        Pay More
-                      </Button>
+                    {canManage && (
+                      <Stack direction="row" spacing={1}>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          startIcon={<AddIcon />}
+                          onClick={() => onPayMore(advance)}
+                        >
+                          Pay More
+                        </Button>
+                        {advance.remaining > 0 && (
+                          <Button
+                            size="small"
+                            variant="contained"
+                            color="success"
+                            startIcon={<CallReceivedIcon />}
+                            onClick={() => onReceive(advance)}
+                          >
+                            Receive Repayment
+                          </Button>
+                        )}
+                      </Stack>
                     )}
                   </Stack>
 
-                  <TableContainer component={Paper} sx={historyTableSx}>
+                  <TableContainer component={Paper} sx={[historyTableSx, { overflowX: 'auto' }]}>
                     <Table size="small">
                       <TableHead>
                         <TableRow>
-                          <TableCell>Payment #</TableCell>
+                          <TableCell>Recorded by</TableCell>
+                          <TableCell>Number</TableCell>
                           <TableCell>Date & Time</TableCell>
+                          <TableCell>Type</TableCell>
                           <TableCell>From</TableCell>
                           <TableCell>To</TableCell>
                           <TableCell align="right">Amount</TableCell>
@@ -273,154 +404,7 @@ export default function ShopAdvanceDetailDialog({
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {payments.map((p) => (
-                          <TableRow key={p.id} sx={p.isDeleted ? deletedRowSx : undefined}>
-                            <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>
-                              {p.advanceNumber}
-                              {p.isDeleted === 1 && <DeletedChip reason={p.deletedReason} />}
-                            </TableCell>
-                            <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatInstant(p.advanceDate)}</TableCell>
-                            <TableCell>
-                              {p.fromType === 'OLD' ? 'Old record' : p.fromType === 'CASH' ? 'Cash in Hand' : `${p.fromBankName} (${p.fromAccountNumber})`}
-                            </TableCell>
-                            <TableCell>
-                              {p.fromType === 'OLD' ? (
-                                '—'
-                              ) : p.toType === 'CASH' ? (
-                                'Cash'
-                              ) : (
-                                <>
-                                  {p.toBankName ? `${p.toBankName} · ` : ''}No. {p.toAccountNumber || '—'}
-                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                                    {p.toAccountName || '—'}
-                                  </Typography>
-                                </>
-                              )}
-                            </TableCell>
-                            <TableCell align="right" sx={{ fontWeight: 700 }}>
-                              {money(p.amount)}
-                              {p.bankCharges > 0 && (
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                                  + {money(p.bankCharges)} bank charges
-                                </Typography>
-                              )}
-                            </TableCell>
-                            <TableCell>{p.notes || '—'}</TableCell>
-                            {canDelete && (
-                              <TableCell align="right">
-                                {p.parentId && !p.isDeleted && (
-                                  <Tooltip title="Delete payment">
-                                    <IconButton size="small" color="error" onClick={() => setDeletingPayment(p)}>
-                                      <DeleteOutlinedIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
-                                )}
-                              </TableCell>
-                            )}
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                </Box>
-
-                {/* Repayments History */}
-                <Box>
-                  <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                      Repayments Received ({liveSettlements})
-                    </Typography>
-                    {canManage && advance.remaining > 0 && (
-                      <Button
-                        size="small"
-                        variant="contained"
-                        color="success"
-                        startIcon={<CallReceivedIcon />}
-                        onClick={() => onReceive(advance)}
-                      >
-                        Receive Repayment
-                      </Button>
-                    )}
-                  </Stack>
-
-                  <TableContainer component={Paper} sx={historyTableSx}>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>Repayment #</TableCell>
-                          <TableCell>Date & Time</TableCell>
-                          <TableCell>Received Into</TableCell>
-                          <TableCell align="right">Amount</TableCell>
-                          <TableCell>Notes</TableCell>
-                          {canDelete && <TableCell align="right">Actions</TableCell>}
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {settlements.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={canDelete ? 6 : 5} align="center" sx={{ py: 3, color: 'text.secondary' }}>
-                              No repayments recorded yet.
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          settlements.map((s) => (
-                            <TableRow key={s.id} sx={s.isDeleted ? deletedRowSx : undefined}>
-                              <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>
-                                {s.settlementNumber}
-                                {s.isDeleted === 1 && <DeletedChip reason={s.deletedReason} />}
-                              </TableCell>
-                              <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                                {formatInstant(s.settlementDate)}
-                              </TableCell>
-                              <TableCell>
-                                {s.toType === 'CASH' ? (
-                                  <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-                                    <LocalAtmIcon fontSize="small" color="action" />
-                                    <span>Cash in Hand</span>
-                                  </Stack>
-                                ) : (
-                                  <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-                                    <AccountBalanceIcon fontSize="small" color="primary" />
-                                    <span>
-                                      {s.toBankName} ({s.toAccountNumber})
-                                      {s.fromAccountNumber && (
-                                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                                          from {s.fromBankName ? `${s.fromBankName} · ` : ''}
-                                          {s.fromAccountNumber}
-                                          {s.fromAccountName ? ` (${s.fromAccountName})` : ''}
-                                        </Typography>
-                                      )}
-                                    </span>
-                                  </Stack>
-                                )}
-                              </TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 700, color: 'success.main' }}>
-                                {money(s.amount)}
-                                {s.feeAmount > 0 && (
-                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                                    {s.feeDirection === 'RECEIVE' ? '+' : '-'}{money(s.feeAmount)} ({s.feeDirection === 'RECEIVE' ? 'Recv' : 'Pay'}) · Actual {money(s.actualAmount || s.amount)}
-                                  </Typography>
-                                )}
-                              </TableCell>
-                              <TableCell>{s.notes || '—'}</TableCell>
-                              {canDelete && (
-                                <TableCell align="right">
-                                  {!s.isDeleted && (
-                                    <Tooltip title="Delete repayment">
-                                      <IconButton
-                                        size="small"
-                                        color="error"
-                                        onClick={() => setDeletingSettlement(s)}
-                                      >
-                                        <DeleteOutlinedIcon fontSize="small" />
-                                      </IconButton>
-                                    </Tooltip>
-                                  )}
-                                </TableCell>
-                              )}
-                            </TableRow>
-                          ))
-                        )}
+                        {rows.map((row) => (row.kind === 'given' ? paymentRow(row.p) : settlementRow(row.s)))}
                       </TableBody>
                     </Table>
                   </TableContainer>

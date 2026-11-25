@@ -1450,7 +1450,29 @@ export function deleteBankTransaction(
     // would then be paying out of nothing, and what the customer is owed would
     // read as negative. Deleting a WITHDRAWAL is always allowed — its money
     // simply goes back on the advance, which is worked out on read.
-    if (before.advanceRole === 'DEPOSIT') {
+    if (before.advanceRole === 'DEPOSIT' && before.advanceDepositId) {
+      // A "receive more": refused while withdrawals already pay out of it.
+      const { advance } = getBankAdvance(before.advanceDepositId, db);
+      if (advance.remaining < before.amount) {
+        throw errors.invalidState(
+          `Withdrawals from ${advance.transactionNumber} already use part of ${before.transactionNumber}. ` +
+            'Delete a withdrawal first.',
+        );
+      }
+    } else if (before.advanceRole === 'DEPOSIT') {
+      const topUps = (
+        db
+          .prepare(
+            `SELECT COUNT(*) AS n FROM "BankTransaction"
+              WHERE advanceDepositId = ? AND advanceRole = 'DEPOSIT' AND isDeleted = 0`,
+          )
+          .get(id) as { n: number }
+      ).n;
+      if (topUps > 0) {
+        throw errors.invalidState(
+          `${before.transactionNumber} has ${topUps} later receipt${topUps === 1 ? '' : 's'} on it. Delete ${topUps === 1 ? 'that' : 'those'} first.`,
+        );
+      }
       const live = liveWithdrawalCount(id, db);
       if (live > 0) {
         const one = live === 1;
@@ -1521,9 +1543,11 @@ export function deleteBankTransaction(
  * customer is owed depend on a percentage typed on a different day.
  */
 export interface BankAdvanceRow extends BankTransactionRow {
+  /** This deposit plus every live "receive more" on it. */
+  received: number;
   /** Live withdrawals, added up. */
   withdrawn: number;
-  /** amount - withdrawn. What the shop still holds for this customer. */
+  /** received - withdrawn. What the shop still holds for this customer. */
   remaining: number;
   withdrawalCount: number;
   lastWithdrawalDate: string | null;
@@ -1540,9 +1564,13 @@ export interface BankAdvanceRow extends BankTransactionRow {
  * filters it out.
  */
 const BANK_ADVANCE_SELECT = `
-  SELECT a.*, a.amount - a.withdrawn AS remaining
+  SELECT a.*, a.received - a.withdrawn AS remaining
     FROM (
       SELECT d.*,
+             -- "Receive more": later deposits pointing at this one add to the same advance.
+             d.amount + COALESCE((SELECT SUM(m.amount) FROM "BankTransaction" m
+                                   WHERE m.advanceDepositId = d.id AND m.advanceRole = 'DEPOSIT'
+                                     AND m.isDeleted = 0), 0) AS received,
              COALESCE((SELECT SUM(w.amount) FROM "BankTransaction" w
                         WHERE w.advanceDepositId = d.id AND w.advanceRole = 'WITHDRAWAL'
                           AND w.isDeleted = 0), 0) AS withdrawn,
@@ -1553,7 +1581,7 @@ const BANK_ADVANCE_SELECT = `
                WHERE w.advanceDepositId = d.id AND w.advanceRole = 'WITHDRAWAL'
                  AND w.isDeleted = 0) AS lastWithdrawalDate
         FROM (${BANK_TRANSACTION_SELECT}
-               WHERE t.advanceRole = 'DEPOSIT') d
+               WHERE t.advanceRole = 'DEPOSIT' AND t.advanceDepositId IS NULL) d
     ) a
 `;
 
@@ -1643,21 +1671,22 @@ export function listBankAdvances(
 export function getBankAdvance(
   id: string,
   db: Db = getDatabase(),
-): { advance: BankAdvanceRow; withdrawals: BankTransactionRow[] } {
+): { advance: BankAdvanceRow; withdrawals: BankTransactionRow[]; topUps: BankTransactionRow[] } {
   const row = db.prepare(`SELECT * FROM (${BANK_ADVANCE_SELECT}) a WHERE a.id = ?`).get(id) as
     | Omit<BankAdvanceRow, 'status'>
     | undefined;
   if (!row) throw errors.notFound('advance');
 
-  const withdrawals = db
-    .prepare(
-      `${BANK_TRANSACTION_SELECT}
-        WHERE t.advanceDepositId = ? AND t.advanceRole = 'WITHDRAWAL'
-        ORDER BY t.transactionDate ASC, t.createdAt ASC`,
-    )
-    .all(id) as BankTransactionRow[];
+  const linked = (role: BankAdvanceRole) =>
+    db
+      .prepare(
+        `${BANK_TRANSACTION_SELECT}
+          WHERE t.advanceDepositId = ? AND t.advanceRole = ?
+          ORDER BY t.transactionDate ASC, t.createdAt ASC`,
+      )
+      .all(id, role) as BankTransactionRow[];
 
-  return { advance: withStatus(row), withdrawals };
+  return { advance: withStatus(row), withdrawals: linked('WITHDRAWAL'), topUps: linked('DEPOSIT') };
 }
 
 /**
@@ -1695,9 +1724,23 @@ export function openBankAdvance(
       otherFees: input.otherFees ?? 0,
     };
 
+    // "Receive more": the customer adds to an advance they already have.
+    let parent: BankTransactionRow | null = null;
+    if (input.advanceId) {
+      parent = getBankTransaction(input.advanceId, db);
+      if (parent.advanceRole !== 'DEPOSIT' || parent.advanceDepositId || parent.isDeleted) {
+        throw errors.invalidState('Receive more on an advance that is still recorded.');
+      }
+      if (localDateTimeToInstant(input.transactionAt) < parent.transactionDate) {
+        throw errors.validation('Receiving more cannot be dated before the advance itself.', {
+          transactionAt: 'Before the advance',
+        });
+      }
+    }
+
     const deposit = insertMovement(
       depositInput,
-      { role: 'DEPOSIT', depositId: null },
+      { role: 'DEPOSIT', depositId: parent?.id ?? null, depositNumber: parent?.transactionNumber },
       actor,
       db,
     );
@@ -1706,7 +1749,7 @@ export function openBankAdvance(
       adjustCashInHand(actual, 'Customer advance', `Advance deposit (Cash) · ${deposit.transactionNumber}`, actor.id, db);
     }
 
-    return getBankAdvance(deposit.id, db).advance;
+    return getBankAdvance(parent?.id ?? deposit.id, db).advance;
   }, db);
 }
 
@@ -1723,12 +1766,12 @@ export function withdrawFromBankAdvance(
   input: WithdrawBankAdvanceInput,
   actor: SessionUser,
   db: Db = getDatabase(),
-): { advance: BankAdvanceRow; withdrawals: BankTransactionRow[] } {
+): ReturnType<typeof getBankAdvance> {
   return transaction(() => {
     const { advanceId, ...movement } = input;
 
     const deposit = getBankTransaction(advanceId, db);
-    if (deposit.advanceRole !== 'DEPOSIT') {
+    if (deposit.advanceRole !== 'DEPOSIT' || deposit.advanceDepositId) {
       throw errors.invalidState(`${deposit.transactionNumber} is not an advance.`);
     }
     if (deposit.isDeleted) {
@@ -1737,7 +1780,7 @@ export function withdrawFromBankAdvance(
       );
     }
 
-    const remaining = deposit.amount - withdrawnFrom(deposit.id, db);
+    const { remaining } = getBankAdvance(deposit.id, db).advance;
     if (remaining <= 0) {
       throw errors.invalidState(
         `${deposit.transactionNumber} is settled — the whole amount has already been withdrawn.`,
@@ -1808,17 +1851,6 @@ export function withdrawFromBankAdvance(
 
     return getBankAdvance(deposit.id, db);
   }, db);
-}
-
-function withdrawnFrom(depositId: string, db: Db): number {
-  return (
-    db
-      .prepare(
-        `SELECT COALESCE(SUM(amount), 0) AS n FROM "BankTransaction"
-          WHERE advanceDepositId = ? AND advanceRole = 'WITHDRAWAL' AND isDeleted = 0`,
-      )
-      .get(depositId) as { n: number }
-  ).n;
 }
 
 // -----------------------------------------------------------------------------
@@ -1998,11 +2030,14 @@ export function dailyPositionHistory(range: DayRangeInput, db: Db = getDatabase(
                          ORDER BY c.countedAt DESC, c.createdAt DESC, c.rowid DESC LIMIT 1), 0) AS cash,
               (SELECT COALESCE(SUM(amount), 0) FROM "BankTransaction"
                 WHERE advanceRole = 'DEPOSIT' AND isDeleted = 0 AND transactionDay = d.day) AS customerAdvanceIn,
-              (SELECT COALESCE(SUM(MAX(0, dep.amount - COALESCE((SELECT SUM(w.amount) FROM "BankTransaction" w
-                         WHERE w.advanceDepositId = dep.id AND w.advanceRole = 'WITHDRAWAL'
+              -- Per advance: its deposit, plus "receive more", less withdrawals, all up to that day.
+              (SELECT COALESCE(SUM(MAX(0, dep.amount + COALESCE((SELECT SUM(CASE WHEN w.advanceRole = 'DEPOSIT' THEN w.amount ELSE -w.amount END)
+                         FROM "BankTransaction" w
+                         WHERE w.advanceDepositId = dep.id
                            AND w.isDeleted = 0 AND w.transactionDay <= d.day), 0))), 0)
                  FROM "BankTransaction" dep
-                WHERE dep.advanceRole = 'DEPOSIT' AND dep.isDeleted = 0 AND dep.transactionDay <= d.day) AS customerAdvanceHeld,
+                WHERE dep.advanceRole = 'DEPOSIT' AND dep.advanceDepositId IS NULL AND dep.isDeleted = 0
+                  AND dep.transactionDay <= d.day) AS customerAdvanceHeld,
               (SELECT COALESCE(SUM(amount), 0) FROM "ShopAdvance"
                 WHERE isDeleted = 0 AND advanceDay = d.day) AS shopAdvanceOut,
               (SELECT COALESCE(SUM(MAX(0, sa.amount
@@ -3050,7 +3085,7 @@ export type ShopAdvancePaymentRow = Pick<
   ShopAdvanceRow,
   | 'id' | 'advanceNumber' | 'advanceDate' | 'fromType' | 'fromBankName' | 'fromAccountNumber'
   | 'fromAccountName' | 'toType' | 'toBankName' | 'toAccountNumber' | 'toAccountName'
-  | 'amount' | 'bankCharges' | 'notes' | 'parentId' | 'isDeleted' | 'deletedReason'
+  | 'amount' | 'bankCharges' | 'notes' | 'parentId' | 'isDeleted' | 'deletedReason' | 'createdByName'
 >;
 
 /** Deleted payments and repayments are included (flagged isDeleted) so they can be checked. */
@@ -3067,7 +3102,8 @@ export function getShopAdvance(
     .prepare(
       `SELECT id, advanceNumber, advanceDate, fromType, fromBankName, fromAccountNumber,
               fromAccountName, toType, toBankName, toAccountNumber, toAccountName,
-              amount, bankCharges, notes, parentId, isDeleted, deletedReason
+              amount, bankCharges, notes, parentId, isDeleted, deletedReason,
+              (SELECT u.fullName FROM "User" u WHERE u.id = "ShopAdvance".createdBy) AS createdByName
          FROM "ShopAdvance"
         WHERE id = ? OR parentId = ?
         ORDER BY advanceDate DESC, createdAt DESC`,

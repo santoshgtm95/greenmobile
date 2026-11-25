@@ -25,6 +25,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useMoneyFormatter } from '../hooks/useSettings';
+import { useAuth } from '../hooks/useAuth';
 import { PosApiError } from '@shared/errors';
 
 /**
@@ -42,6 +43,7 @@ export default function ExpenseCategoriesDialog({
 }) {
   const money = useMoneyFormatter();
   const queryClient = useQueryClient();
+  const { can } = useAuth();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -166,19 +168,21 @@ export default function ExpenseCategoriesDialog({
                     )}
                   </TableCell>
                   <TableCell align="right">
-                    <Tooltip title="Edit">
-                      <IconButton
-                        size="small"
-                        onClick={() => {
-                          setEditingId(category.id);
-                          setName(category.name);
-                          setDescription(category.description ?? '');
-                          setIsActive(category.isActive === 1);
-                        }}
-                      >
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
+                    {can('expenses.edit') && (
+                      <Tooltip title="Edit">
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            setEditingId(category.id);
+                            setName(category.name);
+                            setDescription(category.description ?? '');
+                            setIsActive(category.isActive === 1);
+                          }}
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

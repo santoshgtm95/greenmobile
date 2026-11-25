@@ -35,7 +35,7 @@ const zExportRequest = zReportRequest.extend({
 });
 
 export function registerReportsIpc(): void {
-  handle(CHANNELS.reports.dashboard, { access: 'permission', permission: 'sales.view' }, zDayRange, (range) =>
+  handle(CHANNELS.reports.dashboard, { access: 'permission', permission: 'dashboard.view' }, zDayRange, (range) =>
     dashboard(range),
   );
 

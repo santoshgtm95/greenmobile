@@ -1491,6 +1491,52 @@ describe('customer advances', () => {
     expect(done.advance.withdrawalCount).toBe(2);
   });
 
+  it('receives more on the same advance, and withdraws across every receipt at once', () => {
+    const opened = openAdvance(MILLION, { day: '2026-10-03' });
+    const more = (amount: number, day: string) =>
+      openBankAdvance(
+        {
+          advanceId: opened.id,
+          transactionAt: at(day),
+          fromAccountNumber: '09-555-0001',
+          fromName: 'U Aung',
+          toAccountId: kpay,
+          toAccountNumber: '001-22-3333',
+          toName: 'Green Mobile',
+          amount,
+        },
+        actor,
+        ctx.db,
+      );
+
+    // Before the advance itself is refused.
+    expect(captureError(() => more(MILLION, '2026-10-01')).code).toBe('VALIDATION');
+    const added = more(2 * MILLION, '2026-10-05');
+    expect(added.id).toBe(opened.id);
+    expect(added).toMatchObject({ amount: MILLION, received: 3 * MILLION, remaining: 3 * MILLION });
+    // Still one advance in the list, holding all of it.
+    const listed = listBankAdvances({ page: 0, pageSize: 50 }, ctx.db);
+    expect(listed.total).toBe(1);
+    expect(listed.heldTotal).toBe(3 * MILLION);
+
+    // One withdrawal takes more than the first deposit alone.
+    const done = withdraw(opened.id, 2.5 * MILLION, { day: '2026-10-06' });
+    expect(done.advance.remaining).toBe(0.5 * MILLION);
+    expect(done.topUps).toHaveLength(1);
+    const topUpId = done.topUps[0]!.id;
+
+    // The extra receipt is in use, so it cannot go; nor can the first deposit while it exists.
+    expect(captureError(() => deleteBankTransaction(topUpId, 'x', actor, ctx.db)).code).toBe('INVALID_STATE');
+    deleteBankTransaction(done.withdrawals[0]!.id, 'Wrong amount', actor, ctx.db);
+    expect(captureError(() => deleteBankTransaction(opened.id, 'x', actor, ctx.db)).code).toBe('INVALID_STATE');
+    deleteBankTransaction(topUpId, 'Wrong customer', actor, ctx.db);
+    expect(getBankAdvance(opened.id, ctx.db).advance.remaining).toBe(MILLION);
+
+    // Net position history counts the advance once, with its receipts.
+    const [day] = dailyPositionHistory({ from: '2026-10-05', to: '2026-10-05' }, ctx.db);
+    expect(day!.customerAdvanceHeld).toBe(MILLION);
+  });
+
   it('supports withdrawal in cash without an account number, and saves to the database', () => {
     const opened = openAdvance(MILLION, { day: '2026-10-10' });
     const withdrawn = withdrawFromBankAdvance(

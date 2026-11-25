@@ -274,7 +274,7 @@ export default function PurchaseInvoiceDetailDialog({
             Delete
           </Button>
         )}
-        {invoice && manage && (
+        {invoice && can('products.edit') && (
           <Button startIcon={<EditIcon />} onClick={() => setEditing(true)}>
             Edit
           </Button>

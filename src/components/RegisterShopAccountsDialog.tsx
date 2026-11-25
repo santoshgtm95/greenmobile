@@ -376,22 +376,24 @@ export default function RegisterShopAccountsDialog({
                         </IconButton>
                       </Tooltip>
 
-                      <Tooltip title="Edit account details or switch off">
-                        <IconButton
-                          size="small"
-                          onClick={() => {
-                            setError(null);
-                            setFieldErrors({});
-                            setEditing(account);
-                            setBankAccountId(account.bankAccountId);
-                            setAccountNumber(account.accountNumber);
-                            setAccountName(account.accountName);
-                            setIsActive(account.isActive === 1);
-                          }}
-                        >
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
+                      {can('banking.edit') && (
+                        <Tooltip title="Edit account details or switch off">
+                          <IconButton
+                            size="small"
+                            onClick={() => {
+                              setError(null);
+                              setFieldErrors({});
+                              setEditing(account);
+                              setBankAccountId(account.bankAccountId);
+                              setAccountNumber(account.accountNumber);
+                              setAccountName(account.accountName);
+                              setIsActive(account.isActive === 1);
+                            }}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
 
                       {can('banking.delete') && (
                       <Tooltip title="Delete registered shop account">

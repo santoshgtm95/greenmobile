@@ -381,7 +381,7 @@ export default function BankingPage() {
                   <HistoryIcon fontSize="small" />
                 </IconButton>
               </Tooltip>
-              {can("banking.manage") && (
+              {can("banking.edit") && (
                 <Tooltip title="Update bank balances">
                   <IconButton
                     size="small"
@@ -414,7 +414,7 @@ export default function BankingPage() {
                   <HistoryIcon fontSize="small" />
                 </IconButton>
               </Tooltip>
-              {can("banking.manage") && cash && (
+              {can("banking.edit") && cash && (
                 <Tooltip
                   title={
                     cash.recorded

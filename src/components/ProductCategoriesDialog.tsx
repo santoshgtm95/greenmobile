@@ -183,20 +183,22 @@ export default function ProductCategoriesDialog({ onClose }: { onClose: () => vo
                 </IconButton>
               </Tooltip>
             )}
-            <Tooltip title="Edit">
-              <IconButton
-                size="small"
-                aria-label={`Edit ${category.path}`}
-                onClick={() => {
-                  setEditingId(category.id);
-                  setParentId(category.parentId ?? '');
-                  setName(category.name);
-                  setIsActive(category.isActive === 1);
-                }}
-              >
-                <EditIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
+            {can('products.edit') && (
+              <Tooltip title="Edit">
+                <IconButton
+                  size="small"
+                  aria-label={`Edit ${category.path}`}
+                  onClick={() => {
+                    setEditingId(category.id);
+                    setParentId(category.parentId ?? '');
+                    setName(category.name);
+                    setIsActive(category.isActive === 1);
+                  }}
+                >
+                  <EditIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
             {can('products.delete') && (
               <Tooltip title="Delete">
                 <IconButton

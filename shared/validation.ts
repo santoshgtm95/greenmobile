@@ -826,6 +826,8 @@ export const zOpenBankAdvance = z
     customerPhone: zOptionalText,
     /** old: entered from old records, no money moves. */
     depositMethod: z.enum(['cash', 'account', 'old']).optional(),
+    /** "Receive more": the advance this adds to. */
+    advanceId: zId.optional(),
   })
   .refine(
     (v) =>

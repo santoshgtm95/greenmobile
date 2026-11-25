@@ -62,7 +62,7 @@ export function registerSalesIpc(): void {
 
   handle(
     CHANNELS.customers.update,
-    { access: 'permission', permission: 'customers.manage' },
+    { access: 'permission', permission: 'customers.edit' },
     zUpdateCustomer,
     (input) => updateCustomer(input, requireUser()),
   );

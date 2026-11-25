@@ -364,7 +364,7 @@ export default function ExpensesPage() {
                   </TableCell>
                   <TableCell align="right">
                     <Stack direction="row" spacing={0.5} sx={{ justifyContent: 'flex-end' }}>
-                      {can('expenses.manage') && (
+                      {can('expenses.edit') && (
                         <Tooltip title="Edit">
                           <IconButton size="small" onClick={() => setEditing(expense)}>
                             <EditIcon fontSize="small" />

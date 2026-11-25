@@ -79,7 +79,7 @@ export function registerServicesIpc(): void {
 
   handle(
     CHANNELS.services.update,
-    { access: 'permission', permission: 'services.manage' },
+    { access: 'permission', permission: 'services.edit' },
     zUpdateServiceOrder,
     (input) => updateServiceOrder(input, requireUser()),
   );
@@ -93,7 +93,7 @@ export function registerServicesIpc(): void {
 
   handle(
     CHANNELS.services.removeItem,
-    { access: 'permission', permission: 'services.manage' },
+    { access: 'permission', permission: 'services.edit' },
     zIdOnly,
     ({ id }) => removeServiceItem(id, requireUser()),
   );

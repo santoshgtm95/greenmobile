@@ -67,7 +67,7 @@ interface NavItem {
 
 /** Main navigation (spec §71). */
 const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard", to: "/", icon: <DashboardIcon />, permission: "sales.view" },
+  { label: "Dashboard", to: "/", icon: <DashboardIcon />, permission: "dashboard.view" },
   { label: "POS", to: "/pos", icon: <PointOfSaleIcon />, permission: "pos.sell" },
   { label: "Sales", to: "/sales", icon: <ReceiptLongIcon />, permission: "sales.view", section: "Operations" },
   { label: "Stocks", to: "/stocks", icon: <Inventory2Icon />, permission: "products.view" },

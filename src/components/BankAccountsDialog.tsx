@@ -262,21 +262,23 @@ export default function BankAccountsDialog({
                   </TableCell>
                   <TableCell align="right">
                     <Stack direction="row" spacing={0.5} sx={{ justifyContent: 'flex-end' }}>
-                      <Tooltip title="Rename, describe or switch off">
-                        <IconButton
-                          size="small"
-                          onClick={() => {
-                            setError(null);
-                            setFieldErrors({});
-                            setEditing(account);
-                            setName(account.name);
-                            setDescription(account.description ?? '');
-                            setIsActive(account.isActive === 1);
-                          }}
-                        >
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
+                      {can('banking.edit') && (
+                        <Tooltip title="Rename, describe or switch off">
+                          <IconButton
+                            size="small"
+                            onClick={() => {
+                              setError(null);
+                              setFieldErrors({});
+                              setEditing(account);
+                              setName(account.name);
+                              setDescription(account.description ?? '');
+                              setIsActive(account.isActive === 1);
+                            }}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
 
                       {/* Gone once the key has been used — see the file comment. */}
                       {!can('banking.delete') ? null : account.canDelete ? (

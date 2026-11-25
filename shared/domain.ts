@@ -25,26 +25,33 @@ export const USER_ROLE_LABELS: Record<UserRole, string> = {
  * every IPC call — the renderer's copy is only used to hide controls.
  */
 export const PERMISSIONS = [
+  "dashboard.view",
   "pos.sell",
   "pos.discount",
   "sales.view",
   "sales.cancel",
   "sales.refund",
   "products.view",
+  /** *.manage adds new records; *.edit changes existing ones. */
   "products.manage",
+  "products.edit",
   "products.delete",
   "products.import",
   "inventory.view",
   "inventory.adjust",
   "customers.view",
   "customers.manage",
+  "customers.edit",
   "services.view",
   "services.manage",
+  "services.edit",
   "expenses.view",
   "expenses.manage",
+  "expenses.edit",
   "expenses.delete",
   "banking.view",
   "banking.manage",
+  "banking.edit",
   "banking.delete",
   "reports.view",
   "users.view",
@@ -60,12 +67,14 @@ export type Permission = (typeof PERMISSIONS)[number];
 /**
  * Role capabilities.
  *
- * CASHIER  — can run the till, look things up and record banking; cannot
- *            change money history or delete anything.
- * SALES    — sells and registers/edits products, stock, customers, services
- *            and expenses, sees reports; cannot delete anything.
- * MANAGER  — full shop operation including refunds and stock, but not users,
- *            settings, backups or the audit log.
+ * CASHIER  — starts on the POS; sees POS, Sales, Stocks, Purchase Invoice,
+ *            Customers, Services, Expenses and Banking. Adds customers,
+ *            services, expenses and banking movements; cannot edit or delete.
+ * SALES    — starts on the POS; sells and adds new products, stock, customers,
+ *            services and expenses. No dashboard or reports, and cannot edit
+ *            or delete anything already recorded.
+ * MANAGER  — every screen except Users and Settings; adds and edits, but
+ *            cannot delete anything.
  * ADMIN    — everything.
  */
 export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
@@ -78,6 +87,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     "customers.manage",
     "services.view",
     "services.manage",
+    "expenses.view",
+    "expenses.manage",
     "banking.view",
     "banking.manage",
   ],
@@ -86,7 +97,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     "sales.view",
     "products.view",
     "products.manage",
-    "products.import",
     "inventory.view",
     "inventory.adjust",
     "customers.view",
@@ -95,9 +105,13 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     "services.manage",
     "expenses.view",
     "expenses.manage",
-    "reports.view",
   ],
   MANAGER: [
+    "dashboard.view",
+    "products.edit",
+    "customers.edit",
+    "services.edit",
+    "expenses.edit",
     "pos.sell",
     "pos.discount",
     "sales.view",
@@ -105,7 +119,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     "sales.refund",
     "products.view",
     "products.manage",
-    "products.delete",
     "products.import",
     "inventory.view",
     "inventory.adjust",
@@ -117,9 +130,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     "expenses.manage",
     "banking.view",
     "banking.manage",
+    "banking.edit",
     "reports.view",
-    "users.view",
-    "settings.view",
   ],
   ADMIN: PERMISSIONS,
 };
