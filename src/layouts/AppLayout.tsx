@@ -104,10 +104,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       <Stack direction="row" spacing={1.25} sx={{ px: 2, height: 60, alignItems: "center", flexShrink: 0 }}>
         <Logo size={28} />
         <Box sx={{ minWidth: 0 }}>
-          <Typography noWrap sx={{ fontWeight: 650, fontSize: 14.5, letterSpacing: "-0.01em", lineHeight: 1.25 }}>
+          <Typography noWrap sx={{ fontWeight: 650, fontSize: 13.5, letterSpacing: "-0.01em", lineHeight: 1.25 }}>
             {shopName}
           </Typography>
-          <Typography noWrap sx={{ fontSize: 12, color: "text.secondary", lineHeight: 1.3 }}>
+          <Typography noWrap sx={{ fontSize: 11, color: "text.secondary", lineHeight: 1.3 }}>
             Point of Sale
           </Typography>
         </Box>
@@ -118,7 +118,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           <Box key={item.to}>
             {item.section && (
               <Typography
-                sx={{ px: 1.25, pt: 2, pb: 0.75, fontSize: 11.5, fontWeight: 600, color: "text.disabled", letterSpacing: "0.04em", textTransform: "uppercase" }}
+                sx={{ px: 1.25, pt: 1.75, pb: 0.5, fontSize: 10.5, fontWeight: 600, color: "text.disabled", letterSpacing: "0.04em", textTransform: "uppercase" }}
               >
                 {item.section}
               </Typography>
@@ -130,12 +130,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               onClick={() => setNavOpen(false)}
               sx={{
                 mb: 0.25,
-                py: 0.6,
+                py: 0.45,
                 px: 1.25,
                 color: "text.secondary",
                 transition: "background-color 150ms, color 150ms",
-                "& .MuiListItemIcon-root": { color: "text.disabled", minWidth: 32, transition: "color 150ms" },
-                "& .MuiSvgIcon-root": { fontSize: 19 },
+                "& .MuiListItemIcon-root": { color: "text.disabled", minWidth: 30, transition: "color 150ms" },
+                "& .MuiSvgIcon-root": { fontSize: 17 },
                 "&:hover": { bgcolor: alpha(theme.palette.text.primary, 0.05), color: "text.primary" },
                 "&:hover .MuiListItemIcon-root": { color: "text.secondary" },
                 "&.active": {
@@ -149,14 +149,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               }}
             >
               <ListItemIcon>{item.icon}</ListItemIcon>
-              <ListItemText primary={item.label} slotProps={{ primary: { sx: { fontSize: 14, fontWeight: 500 } } }} />
+              <ListItemText primary={item.label} slotProps={{ primary: { sx: { fontSize: 12.5, fontWeight: 500 } } }} />
             </ListItemButton>
           </Box>
         ))}
       </List>
 
       <Tooltip title="This POS stores all data on this computer and needs no internet connection." placement="top">
-        <Stack direction="row" spacing={1} sx={{ m: 1.5, px: 1.25, py: 1, alignItems: "center", borderRadius: 2, color: "text.secondary", fontSize: 12.5 }}>
+        <Stack direction="row" spacing={1} sx={{ m: 1.5, px: 1.25, py: 1, alignItems: "center", borderRadius: 2, color: "text.secondary", fontSize: 11.5 }}>
           <Box sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: "#22c55e", animation: `${pulse} 2.4s infinite` }} />
           <span>Offline · data on this PC</span>
         </Stack>
@@ -221,11 +221,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               spacing={1}
               sx={{ flexGrow: 1, minWidth: 0, alignItems: "center", animation: `${fade} 250ms ease-out both` }}
             >
-              <Typography noWrap sx={{ color: "text.secondary", fontSize: 14, display: { xs: "none", sm: "block" } }}>
+              <Typography noWrap sx={{ color: "text.secondary", fontSize: 12.5, display: { xs: "none", sm: "block" } }}>
                 {shopName}
               </Typography>
               <Typography sx={{ color: "text.disabled", display: { xs: "none", sm: "block" } }}>/</Typography>
-              <Typography noWrap sx={{ fontWeight: 600, fontSize: 15, letterSpacing: "-0.01em" }}>
+              <Typography noWrap sx={{ fontWeight: 600, fontSize: 13.5, letterSpacing: "-0.01em" }}>
                 {currentLabel}
               </Typography>
             </Stack>

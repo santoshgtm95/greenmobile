@@ -24,7 +24,7 @@ export const historyTableSx = (theme: Theme) => {
       backgroundColor: theme.palette.background.paper,
       backgroundImage: `linear-gradient(180deg, ${alpha(primary, 0.1)}, ${alpha(primary, 0.04)})`,
       color: theme.palette.text.secondary,
-      fontSize: 11.5,
+      fontSize: 10.5,
       fontWeight: 700,
       letterSpacing: "0.05em",
       textTransform: "uppercase",

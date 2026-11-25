@@ -36,6 +36,7 @@ import { useDebounced } from '../hooks/useDebounced';
 import BankingTabs from '../components/BankingTabs';
 import SummaryCard from '../components/SummaryCard';
 import { historyTableSx } from '../components/historyTableSx';
+import { compactFiltersSx, compactToolbarSx } from '../components/compactSx';
 import { DeletedChip, deletedRowSx } from '../components/DeletedMark';
 import ShopAdvanceDialog from '../components/ShopAdvanceDialog';
 import ShopAdvanceReceiveDialog from '../components/ShopAdvanceReceiveDialog';
@@ -107,7 +108,7 @@ export default function ShopAdvancesPage() {
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+      <Stack direction="row" spacing={2} sx={{ alignItems: 'center', flexWrap: 'wrap', ...compactToolbarSx }}>
         <Box sx={{ flexGrow: 1 }} />
         <Button
           variant="outlined"
@@ -141,7 +142,7 @@ export default function ShopAdvancesPage() {
       <Box
         sx={{
           display: 'grid',
-          gap: 2,
+          gap: 1.5,
           gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' },
         }}
       >
@@ -174,9 +175,10 @@ export default function ShopAdvancesPage() {
       </Box>
 
       {/* Filter and Search Bar */}
-      <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ alignItems: 'center' }}>
+      <Paper sx={{ p: 1.5, border: '1px solid', borderColor: 'divider', ...compactFiltersSx }}>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ alignItems: 'center' }}>
           <TextField
+            size="small"
             placeholder="Search recipient, number, bank or note"
             value={search}
             onChange={(e) => {
@@ -192,18 +194,19 @@ export default function ShopAdvancesPage() {
                 ),
               },
             }}
-            sx={{ width: { xs: '100%', md: 340 } }}
+            sx={{ width: { xs: '100%', md: 300 } }}
           />
 
           <TextField
             select
+            size="small"
             label="Status"
             value={status}
             onChange={(e) => {
               setStatus(e.target.value as StatusFilter);
               setPage(0);
             }}
-            sx={{ width: { xs: '100%', md: 180 } }}
+            sx={{ width: { xs: '100%', md: 150 } }}
           >
             <MenuItem value="OPEN">Open (Outstanding)</MenuItem>
             <MenuItem value="SETTLED">Settled</MenuItem>

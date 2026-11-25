@@ -31,6 +31,7 @@ import { useDebounced } from "../hooks/useDebounced";
 import BankingTabs from "../components/BankingTabs";
 import SummaryCard from "../components/SummaryCard";
 import { historyTableSx } from "../components/historyTableSx";
+import { compactFiltersSx, compactToolbarSx } from "../components/compactSx";
 import InternalTransferDialog from "../components/InternalTransferDialog";
 import DeleteReasonDialog from "../components/DeleteReasonDialog";
 import { DeletedChip, deletedRowSx } from "../components/DeletedMark";
@@ -95,7 +96,7 @@ export default function InternalTransfersPage() {
       <Stack
         direction="row"
         spacing={2}
-        sx={{ alignItems: "center", flexWrap: "wrap" }}
+        sx={{ alignItems: "center", flexWrap: "wrap", ...compactToolbarSx }}
       >
         <Box sx={{ flexGrow: 1 }} />
         {canManage && (
@@ -148,16 +149,18 @@ export default function InternalTransfersPage() {
 
       <Paper
         sx={{
-          p: 2,
+          p: 1.5,
           border: "1px solid",
           borderColor: "divider",
           display: "flex",
           flexWrap: "wrap",
-          gap: 2,
+          gap: 1.5,
           alignItems: "center",
+          ...compactFiltersSx,
         }}
       >
         <TextField
+          size="small"
           placeholder="Search account, number or notes"
           value={search}
           onChange={(e) => {
@@ -173,11 +176,12 @@ export default function InternalTransfersPage() {
               ),
             },
           }}
-          sx={{ width: 320 }}
+          sx={{ width: 280 }}
         />
         <FormControlLabel
           control={
             <Switch
+              size="small"
               checked={showDeleted}
               onChange={(e) => {
                 setShowDeleted(e.target.checked);

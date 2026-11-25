@@ -31,6 +31,7 @@ import { useDebounced } from '../hooks/useDebounced';
 import BankingTabs from '../components/BankingTabs';
 import SummaryCard from '../components/SummaryCard';
 import { historyTableSx } from '../components/historyTableSx';
+import { compactFiltersSx, compactToolbarSx } from '../components/compactSx';
 import AccountSide from '../components/AccountSide';
 import { DeletedChip, deletedRowSx } from '../components/DeletedMark';
 import AdvanceDetailDialog from '../components/AdvanceDetailDialog';
@@ -122,7 +123,7 @@ export default function AdvancesPage() {
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+      <Stack direction="row" spacing={2} sx={{ alignItems: 'center', flexWrap: 'wrap', ...compactToolbarSx }}>
         <Box sx={{ flexGrow: 1 }} />
         <Button variant="outlined" startIcon={<PendingActionsOutlinedIcon />} onClick={() => setPayableOpen(true)}>
           Payable
@@ -148,7 +149,7 @@ export default function AdvancesPage() {
       <Box
         sx={{
           display: 'grid',
-          gap: 2,
+          gap: 1.5,
           gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' },
         }}
       >
@@ -167,11 +168,12 @@ export default function AdvancesPage() {
         />
       </Box>
 
-      <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
+      <Paper sx={{ p: 1.5, border: '1px solid', borderColor: 'divider', ...compactFiltersSx }}>
         {/* Fixed widths, as on the Transactions tab: left to flex, the select
             stretched across the whole row and the search was clipped. */}
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ alignItems: 'center' }}>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ alignItems: 'center' }}>
           <TextField
+            size="small"
             placeholder="Search customer, number or note"
             value={search}
             onChange={(e) => {
@@ -187,17 +189,18 @@ export default function AdvancesPage() {
                 ),
               },
             }}
-            sx={{ width: 320 }}
+            sx={{ width: 280 }}
           />
           <TextField
             select
+            size="small"
             label="Status"
             value={status}
             onChange={(e) => {
               setStatus(e.target.value as StatusFilter);
               setPage(0);
             }}
-            sx={{ width: 180 }}
+            sx={{ width: 150 }}
           >
             <MenuItem value="OPEN">{BANK_ADVANCE_STATUS_LABELS.OPEN}</MenuItem>
             <MenuItem value="SETTLED">{BANK_ADVANCE_STATUS_LABELS.SETTLED}</MenuItem>

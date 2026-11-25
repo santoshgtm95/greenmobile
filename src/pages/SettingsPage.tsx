@@ -1,16 +1,17 @@
-import { Paper, Stack, Tab, Tabs, Typography } from '@mui/material';
-import { useNavigate, useParams } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
-import SystemInfoPage from './SystemInfoPage';
-import BackupPanel from './BackupPanel';
-import ShopPanel from './settings/ShopPanel';
-import MoneyPanel from './settings/MoneyPanel';
-import DocumentsPanel from './settings/DocumentsPanel';
-import PrintingPanel from './settings/PrintingPanel';
-import StockPanel from './settings/StockPanel';
-import DataControlPanel from './settings/DataControlPanel';
-import NetworkPanel from './settings/NetworkPanel';
-import type { Permission } from '@shared/domain';
+import { Paper, Stack, Tab, Tabs, Typography } from "@mui/material";
+import { useNavigate, useParams } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth";
+import { compactPageSx } from "../components/compactSx";
+import SystemInfoPage from "./SystemInfoPage";
+import BackupPanel from "./BackupPanel";
+import ShopPanel from "./settings/ShopPanel";
+import MoneyPanel from "./settings/MoneyPanel";
+import DocumentsPanel from "./settings/DocumentsPanel";
+import PrintingPanel from "./settings/PrintingPanel";
+import StockPanel from "./settings/StockPanel";
+import DataControlPanel from "./settings/DataControlPanel";
+import NetworkPanel from "./settings/NetworkPanel";
+import type { Permission } from "@shared/domain";
 
 /**
  * Settings (spec §58–§62, §67).
@@ -26,18 +27,22 @@ import type { Permission } from '@shared/domain';
  * all come back blank is hidden instead of shown empty.
  */
 const TABS = [
-  { value: 'shop', label: 'Shop', permission: 'settings.view' },
-  { value: 'money', label: 'Currency & Tax', permission: 'settings.view' },
-  { value: 'stock', label: 'Stock', permission: 'settings.view' },
-  { value: 'printing', label: 'Printing', permission: 'settings.manage' },
-  { value: 'documents', label: 'Numbering', permission: 'settings.manage' },
-  { value: 'network', label: 'Other Devices', permission: 'settings.manage' },
-  { value: 'backup', label: 'Backup & Restore', permission: 'backup.manage' },
-  { value: 'data', label: 'Data Control', permission: 'backup.manage' },
-  { value: 'system', label: 'System', permission: 'settings.view' },
-] as const satisfies ReadonlyArray<{ value: string; label: string; permission: Permission }>;
+  { value: "shop", label: "Shop", permission: "settings.view" },
+  { value: "money", label: "Currency & Tax", permission: "settings.view" },
+  { value: "stock", label: "Stock", permission: "settings.view" },
+  { value: "printing", label: "Printing", permission: "settings.manage" },
+  { value: "documents", label: "Numbering", permission: "settings.manage" },
+  { value: "network", label: "Other Devices", permission: "settings.manage" },
+  { value: "backup", label: "Backup & Restore", permission: "backup.manage" },
+  //{ value: 'data', label: 'Data Control', permission: 'backup.manage' },
+  { value: "system", label: "System", permission: "settings.view" },
+] as const satisfies ReadonlyArray<{
+  value: string;
+  label: string;
+  permission: Permission;
+}>;
 
-type TabValue = (typeof TABS)[number]['value'];
+type TabValue = (typeof TABS)[number]["value"];
 
 export default function SettingsPage() {
   const { can } = useAuth();
@@ -47,11 +52,11 @@ export default function SettingsPage() {
   const visible = TABS.filter((entry) => can(entry.permission));
   const active: TabValue = visible.some((entry) => entry.value === tab)
     ? (tab as TabValue)
-    : (visible[0]?.value ?? 'system');
+    : (visible[0]?.value ?? "system");
 
   return (
-    <Stack spacing={2}>
-      <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
+    <Stack spacing={2} sx={compactPageSx}>
+      <Paper sx={{ border: "1px solid", borderColor: "divider" }}>
         <Tabs
           value={active}
           onChange={(_e, next) => navigate(`/settings/${next as TabValue}`)}
@@ -65,15 +70,15 @@ export default function SettingsPage() {
         </Tabs>
       </Paper>
 
-      {active === 'shop' && <ShopPanel />}
-      {active === 'money' && <MoneyPanel />}
-      {active === 'stock' && <StockPanel />}
-      {active === 'printing' && <PrintingPanel />}
-      {active === 'documents' && <DocumentsPanel />}
-      {active === 'network' && <NetworkPanel />}
-      {active === 'backup' && <BackupPanel />}
-      {active === 'data' && <DataControlPanel />}
-      {active === 'system' && <SystemInfoPage />}
+      {active === "shop" && <ShopPanel />}
+      {active === "money" && <MoneyPanel />}
+      {active === "stock" && <StockPanel />}
+      {active === "printing" && <PrintingPanel />}
+      {active === "documents" && <DocumentsPanel />}
+      {active === "network" && <NetworkPanel />}
+      {active === "backup" && <BackupPanel />}
+      {/* {active === "data" && <DataControlPanel />} */}
+      {active === "system" && <SystemInfoPage />}
     </Stack>
   );
 }

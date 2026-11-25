@@ -53,6 +53,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useMoneyFormatter } from "../hooks/useSettings";
 import ChartCard from "../components/charts/ChartCard";
+import { compactFiltersSx } from "../components/compactSx";
 import MoneyTooltip from "../components/charts/MoneyTooltip";
 import {
   CHART_COLORS,
@@ -208,7 +209,15 @@ export default function DashboardPage() {
   const lowStockCount = cards?.lowStockCount ?? 0;
 
   return (
-    <Stack spacing={2.5}>
+    <Stack
+      spacing={2}
+      // Smaller text for the whole page: filter bar, section and chart titles, lists.
+      sx={{
+        ...compactFiltersSx,
+        "& .MuiTypography-body2": { fontSize: "0.78rem" },
+        "& .MuiTypography-subtitle2": { fontSize: "0.78rem" },
+      }}
+    >
       {/* One filter bar above everything it scopes — never per chart. */}
       <Paper
         sx={{
@@ -468,7 +477,7 @@ export default function DashboardPage() {
                   />
                   <Legend
                     iconType="plainline"
-                    wrapperStyle={{ fontSize: 12 }}
+                    wrapperStyle={{ fontSize: 11 }}
                   />
                   {(
                     [
@@ -572,7 +581,7 @@ export default function DashboardPage() {
                     )}
                     cursor={{ fill: alpha(CHART_COLORS.series1, 0.06) }}
                   />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
                   <Bar
                     name="Revenue"
                     dataKey="revenue"
@@ -1020,7 +1029,7 @@ function StatTile({
       sx={{
         position: "relative",
         overflow: "hidden",
-        p: 2.25,
+        p: 1.5,
         border: "1px solid",
         borderColor: "divider",
         "&&:hover": { borderColor: alpha(accent, 0.45) },
@@ -1033,7 +1042,7 @@ function StatTile({
         <Typography
           variant="caption"
           color="text.secondary"
-          sx={{ fontWeight: 600 }}
+          sx={{ fontWeight: 600, fontSize: "0.68rem" }}
         >
           {label}
         </Typography>
@@ -1042,7 +1051,7 @@ function StatTile({
       <Typography
         variant="h5"
         aria-label={`${label}: ${format(value)}`}
-        sx={{ fontWeight: 700, letterSpacing: "-0.02em", color, mt: 0.75 }}
+        sx={{ fontWeight: 700, letterSpacing: "-0.02em", color, mt: 0.5, fontSize: "1.05rem" }}
       >
         {format(shown)}
       </Typography>
@@ -1057,8 +1066,8 @@ function StatTile({
             zIndex: 1,
           }}
         >
-          {ToneIcon && <ToneIcon sx={{ fontSize: 14, color }} />}
-          <Typography variant="caption" color="text.secondary">
+          {ToneIcon && <ToneIcon sx={{ fontSize: 13, color }} />}
+          <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.65rem" }}>
             {hint}
           </Typography>
         </Stack>

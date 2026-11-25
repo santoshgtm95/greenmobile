@@ -50,12 +50,12 @@ export const theme = createTheme({
   shadows,
   typography: {
     fontFamily: '"Inter Variable", "Segoe UI", system-ui, -apple-system, "Noto Sans Thai", sans-serif',
-    // Slightly larger base than the MUI default: this runs on a shop monitor,
-    // often viewed standing up.
-    fontSize: 14.5,
-    h4: { fontWeight: 650, letterSpacing: '-0.02em' },
-    h5: { fontWeight: 650, letterSpacing: '-0.02em' },
-    h6: { fontWeight: 600, letterSpacing: '-0.015em' },
+    // One knob for the whole app: every MUI text style scales from this (MUI default 14).
+    fontSize: 13,
+    // Headings a step smaller than the MUI defaults, to match the smaller base.
+    h4: { fontWeight: 650, letterSpacing: '-0.02em', fontSize: '1.5rem' },
+    h5: { fontWeight: 650, letterSpacing: '-0.02em', fontSize: '1.25rem' },
+    h6: { fontWeight: 600, letterSpacing: '-0.015em', fontSize: '1.05rem' },
     subtitle1: { fontWeight: 600, letterSpacing: '-0.01em' },
     subtitle2: { fontWeight: 600, letterSpacing: '-0.005em' },
     overline: { fontWeight: 600, letterSpacing: '0.08em' },
@@ -66,6 +66,15 @@ export const theme = createTheme({
     duration: { shortest: 80, shorter: 120, short: 150, standard: 180 },
   },
   components: {
+    // Every table in the app: smaller text than the page around it, so more fits.
+    MuiTable: {
+      styleOverrides: {
+        root: {
+          '& td, & td .MuiTypography-body1, & td .MuiTypography-body2': { fontSize: '0.75rem' },
+          '& td .MuiTypography-caption, & td .MuiChip-label': { fontSize: '0.68rem' },
+        },
+      },
+    },
     MuiCssBaseline: {
       styleOverrides: {
         body: {
@@ -89,7 +98,8 @@ export const theme = createTheme({
       defaultProps: { disableElevation: true },
       styleOverrides: {
         root: {
-          minHeight: 38,
+          minHeight: 34,
+          fontSize: '0.8rem',
           borderRadius: 8,
           paddingInline: 14,
           transition: `background-color 150ms, border-color 150ms, box-shadow 150ms, transform 120ms ${EASE}`,
@@ -162,7 +172,7 @@ export const theme = createTheme({
         root: { borderColor: LINE },
         head: {
           fontWeight: 600,
-          fontSize: 12.5,
+          fontSize: 11.5,
           color: MUTED,
           whiteSpace: 'nowrap',
           backgroundColor: '#fafbfc',
@@ -180,7 +190,14 @@ export const theme = createTheme({
         },
       },
     },
-    MuiTablePagination: { styleOverrides: { root: { borderTop: `1px solid ${LINE}` } } },
+    MuiTablePagination: {
+      styleOverrides: {
+        root: { borderTop: `1px solid ${LINE}`, fontSize: '0.75rem' },
+        selectLabel: { fontSize: '0.75rem' },
+        displayedRows: { fontSize: '0.75rem' },
+        input: { fontSize: '0.75rem' },
+      },
+    },
     // Filled chips read as soft tinted badges (Stripe-style), not solid blocks.
     MuiChip: {
       styleOverrides: {
@@ -272,6 +289,19 @@ export const theme = createTheme({
             border: `1px solid ${alpha(INK, 0.08)}`,
             animation: `${dialogIn} 220ms ${EASE} both`,
           },
+          // Smaller text in every dialog: body text, form fields and the action buttons.
+          '& .MuiDialogContent-root .MuiTypography-body1, & .MuiDialogContent-root .MuiTypography-body2, & .MuiDialogContent-root .MuiInputBase-root, & .MuiDialogContent-root .MuiInputLabel-root, & .MuiDialogContent-root .MuiFormControlLabel-label, & .MuiDialogContent-root .MuiButton-root, & .MuiDialogActions-root .MuiButton-root':
+            { fontSize: '0.8rem' },
+          '& .MuiDialogContent-root .MuiFormHelperText-root, & .MuiDialogContent-root .MuiTypography-caption': { fontSize: '0.7rem' },
+          // Headings and totals inside dialogs.
+          '& .MuiDialogContent-root .MuiTypography-h4': { fontSize: '1.35rem' },
+          '& .MuiDialogContent-root .MuiTypography-h5': { fontSize: '1.15rem' },
+          '& .MuiDialogContent-root .MuiTypography-h6': { fontSize: '1rem' },
+          '& .MuiDialogContent-root .MuiTypography-subtitle1': { fontSize: '0.85rem' },
+          '& .MuiDialogContent-root .MuiTypography-subtitle2': { fontSize: '0.78rem' },
+          '& .MuiDialogContent-root .MuiTypography-overline': { fontSize: '0.65rem' },
+          // Keep table cells at the table size set on MuiTable.
+          '& .MuiDialogContent-root td .MuiTypography-body1, & .MuiDialogContent-root td .MuiTypography-body2': { fontSize: '0.75rem' },
           '& .MuiDialogContent-root': {
             borderTop: 0,
             '& > .MuiStack-root > *': {
@@ -297,7 +327,7 @@ export const theme = createTheme({
     MuiDialogTitle: {
       styleOverrides: {
         root: ({ theme }) => ({
-          fontSize: 17,
+          fontSize: 15,
           fontWeight: 600,
           letterSpacing: '-0.015em',
           color: INK,

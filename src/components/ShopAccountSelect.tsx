@@ -24,6 +24,7 @@ export default function ShopAccountSelect({
   required = true,
   placeholder,
   sx,
+  size,
 }: {
   value: string;
   onChange: (shopAccountId: string) => void;
@@ -36,6 +37,7 @@ export default function ShopAccountSelect({
   required?: boolean;
   placeholder?: string;
   sx?: SxProps<Theme>;
+  size?: 'small' | 'medium';
 }) {
   const money = useMoneyFormatter();
   const touch = useMediaQuery('(pointer: coarse)');
@@ -50,6 +52,7 @@ export default function ShopAccountSelect({
 
   return (
     <Autocomplete
+      size={size}
       options={rows}
       value={chosen}
       onChange={(_, account) => onChange(account?.id ?? '')}

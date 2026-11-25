@@ -26,6 +26,7 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
+import { compactPageSx } from '../components/compactSx';
 import { useMoneyFormatter } from '../hooks/useSettings';
 import { PosApiError } from '@shared/errors';
 import {
@@ -103,7 +104,10 @@ export default function ReportsPage() {
   const data = report.data;
 
   return (
-    <Stack spacing={2}>
+    <Stack
+      spacing={2}
+      sx={compactPageSx}
+    >
       {error && (
         <Alert severity="error" onClose={() => setError(null)}>
           {error}
@@ -134,14 +138,15 @@ export default function ReportsPage() {
           direction='row'
           spacing={2}
           useFlexGap
-          sx={{ p: 2, alignItems: 'center', flexWrap: 'wrap' }}
+          sx={{ p: 1.5, alignItems: 'center', flexWrap: 'wrap' }}
         >
           <TextField
             select
+            size="small"
             label="Period"
             value={preset}
             onChange={(e) => setPreset(e.target.value as DatePreset)}
-            sx={{ width: 190 }}
+            sx={{ width: 160 }}
           >
             {DATE_PRESETS.map((option) => (
               <MenuItem key={option} value={option}>
@@ -153,20 +158,22 @@ export default function ReportsPage() {
           {preset === 'CUSTOM' && (
             <>
               <TextField
+                size="small"
                 label="From"
                 type="date"
                 value={customFrom}
                 onChange={(e) => setCustomFrom(e.target.value)}
                 slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ width: 170 }}
+                sx={{ width: 150 }}
               />
               <TextField
+                size="small"
                 label="To"
                 type="date"
                 value={customTo}
                 onChange={(e) => setCustomTo(e.target.value)}
                 slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ width: 170 }}
+                sx={{ width: 150 }}
               />
             </>
           )}
@@ -232,15 +239,15 @@ export default function ReportsPage() {
           <Box
             sx={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
-              gap: 2,
+              gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+              gap: 1.5,
             }}
           >
             {data.figures.map((figure) => (
               <Paper
                 key={figure.label}
                 sx={{
-                  p: 2,
+                  p: 1.5,
                   border: figure.emphasis ? '2px solid' : '1px solid',
                   borderColor: figure.emphasis ? 'primary.main' : 'divider',
                 }}

@@ -25,7 +25,7 @@ export default function ChartCard({
   action?: ReactNode;
 }) {
   return (
-    <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider', height: '100%' }}>
+    <Paper sx={{ p: 1.5, border: '1px solid', borderColor: 'divider', height: '100%' }}>
       <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start', mb: 1.5 }}>
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
@@ -49,7 +49,7 @@ export default function ChartCard({
               display: 'grid',
               placeItems: 'center',
               color: 'text.secondary',
-              fontSize: 13,
+              fontSize: 12,
             }}
           >
             Nothing recorded in this period.

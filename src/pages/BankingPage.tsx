@@ -59,6 +59,7 @@ import NetPositionHistoryDialog from "../components/NetPositionHistoryDialog";
 import BankBalanceDialog from "../components/BankBalanceDialog";
 import SummaryCard from "../components/SummaryCard";
 import { historyTableSx } from "../components/historyTableSx";
+import { compactFiltersSx, compactToolbarSx } from "../components/compactSx";
 import DeleteReasonDialog from "../components/DeleteReasonDialog";
 import BankingTabs from "../components/BankingTabs";
 import AccountSide from "../components/AccountSide";
@@ -234,7 +235,11 @@ export default function BankingPage() {
       <Stack
         direction="row"
         spacing={2}
-        sx={{ alignItems: "center", flexWrap: "wrap" }}
+        sx={{
+          alignItems: "center",
+          flexWrap: "wrap",
+          ...compactToolbarSx,
+        }}
       >
         <Box sx={{ flexGrow: 1 }} />
         <ExportMenu target={{ dataset: "BANK_TRANSACTION_LIST", query }} />
@@ -290,24 +295,14 @@ export default function BankingPage() {
       {/*
         Period totals and what the shop holds.
 
-        A grid rather than a wrapping row. With seven cards a flex row wraps by
-        whatever happens to fit — it landed as five and then two cards stretched
-        to half the screen each, which read as more important than the five above
-        them. Fixed columns keep every card the same size and leave the gap at
-        the end, where it says nothing.
+        A fixed grid so every card is the same size. Three rows of three on a
+        desktop: what moved this period, the fees on it, and what the shop holds.
       */}
       <Box
         sx={{
           display: "grid",
-          gap: 2,
-          gridTemplateColumns: {
-            xs: "1fr",
-            sm: "repeat(2, 1fr)",
-            // 20 tracks: five cards of 4 on the first row, four of 5 on the second.
-            lg: "repeat(20, 1fr)",
-          },
-          "& > *": { gridColumn: { lg: "span 5" } },
-          "& > :nth-child(-n + 5)": { gridColumn: { lg: "span 4" } },
+          gap: 1.5,
+          gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "repeat(3, 1fr)" },
         }}
       >
         <SummaryCard
@@ -323,6 +318,24 @@ export default function BankingPage() {
           caption={`${overview.data?.totals.count ?? 0} transaction(s) in this period`}
           icon={<CallReceivedIcon fontSize="small" />}
           tone="success"
+        />
+        <SummaryCard
+          label="Sales"
+          value={money(sales.data?.totals.total ?? 0)}
+          caption={
+            sales.data
+              ? `Cash ${money(sales.data.totals.cash)} · Bank ${money(sales.data.totals.bank)}` +
+                (sales.data.totals.unpaid > 0 ? ` · Unpaid ${money(sales.data.totals.unpaid)}` : "")
+              : `${formatBusinessDay(range.from)} to ${formatBusinessDay(range.to)}`
+          }
+          icon={<PointOfSaleIcon fontSize="small" />}
+          action={
+            <Tooltip title="History: every sale in this period">
+              <IconButton size="small" aria-label="Sales history" onClick={() => setSalesHistoryOpen(true)}>
+                <HistoryIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          }
         />
         {/*
           Fees are split by the direction of the FEE, not by the type of the
@@ -431,24 +444,6 @@ export default function BankingPage() {
           }
         />
         <SummaryCard
-          label="Sales"
-          value={money(sales.data?.totals.total ?? 0)}
-          caption={
-            sales.data
-              ? `Cash ${money(sales.data.totals.cash)} · Bank ${money(sales.data.totals.bank)}` +
-                (sales.data.totals.unpaid > 0 ? ` · Unpaid ${money(sales.data.totals.unpaid)}` : "")
-              : `${formatBusinessDay(range.from)} to ${formatBusinessDay(range.to)}`
-          }
-          icon={<PointOfSaleIcon fontSize="small" />}
-          action={
-            <Tooltip title="History: every sale in this period">
-              <IconButton size="small" aria-label="Sales history" onClick={() => setSalesHistoryOpen(true)}>
-                <HistoryIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          }
-        />
-        <SummaryCard
           label="Net position"
           value={signed(
             (overview.data?.bankBalance ?? 0) +
@@ -544,14 +539,23 @@ export default function BankingPage() {
       )}
 
       {/* Filters. */}
-      <Paper sx={{ p: 2, border: "1px solid", borderColor: "divider" }}>
+      <Paper
+        sx={{
+          p: 1.5,
+          border: "1px solid",
+          borderColor: "divider",
+          ...compactFiltersSx,
+        }}
+      >
         <Stack
           direction="row"
-          spacing={2}
+          spacing={1.5}
           useFlexGap
-          sx={{ alignItems: "center", flexWrap: "wrap" }}
+          // One row on a desktop; wraps only on a narrow screen.
+          sx={{ alignItems: "center", flexWrap: { xs: "wrap", lg: "nowrap" } }}
         >
           <TextField
+            size="small"
             // Kept short enough not to be clipped at this width; the fuller
             // description is in the header of each column it searches.
             placeholder="Search number, name or note"
@@ -569,17 +573,18 @@ export default function BankingPage() {
                 ),
               },
             }}
-            sx={{ flex: "1 1 260px" }}
+            sx={{ flex: "1 1 180px", minWidth: 160 }}
           />
           <TextField
             select
+            size="small"
             label="Period"
             value={preset}
             onChange={(e) => {
               setPreset(e.target.value as DatePreset);
               setPage(0);
             }}
-            sx={{ width: 170 }}
+            sx={{ width: 140, flexShrink: 0 }}
           >
             {DATE_PRESETS.map((option) => (
               <MenuItem key={option} value={option}>
@@ -591,33 +596,36 @@ export default function BankingPage() {
           {preset === "CUSTOM" && (
             <>
               <TextField
+                size="small"
                 label="From"
                 type="date"
                 value={customFrom}
                 onChange={(e) => setCustomFrom(e.target.value)}
                 slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ width: 170 }}
+                sx={{ width: 145, flexShrink: 0 }}
               />
               <TextField
+                size="small"
                 label="To"
                 type="date"
                 value={customTo}
                 onChange={(e) => setCustomTo(e.target.value)}
                 slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ width: 170 }}
+                sx={{ width: 145, flexShrink: 0 }}
               />
             </>
           )}
 
           <TextField
             select
+            size="small"
             label="Type"
             value={type}
             onChange={(e) => {
               setType(e.target.value);
               setPage(0);
             }}
-            sx={{ width: 160 }}
+            sx={{ width: 120, flexShrink: 0 }}
           >
             <MenuItem value="">Both</MenuItem>
             {BANK_TRANSACTION_TYPES.map((option) => (
@@ -629,13 +637,14 @@ export default function BankingPage() {
 
           <TextField
             select
+            size="small"
             label="Account"
             value={accountId}
             onChange={(e) => {
               setAccountId(e.target.value);
               setPage(0);
             }}
-            sx={{ width: 220 }}
+            sx={{ width: 170, flexShrink: 0 }}
           >
             <MenuItem value="">All accounts</MenuItem>
             {positions.map((account) => (
@@ -654,12 +663,15 @@ export default function BankingPage() {
               setShopAccountId(id);
               setPage(0);
             }}
-            sx={{ width: 240 }}
+            size="small"
+            sx={{ width: 190, flexShrink: 0 }}
           />
 
           <FormControlLabel
+            sx={{ flexShrink: 0, mr: 0, whiteSpace: "nowrap" }}
             control={
               <Switch
+                size="small"
                 checked={showDeleted}
                 onChange={(e) => {
                   setShowDeleted(e.target.checked);

@@ -63,8 +63,8 @@ export default function SummaryCard({
         return {
           position: "relative",
           overflow: "hidden",
-          px: 1.75,
-          py: 1.25,
+          px: 1.5,
+          py: 0.75,
           border: "1px solid",
           borderColor: "divider",
           borderRadius: 2.5,
@@ -104,7 +104,13 @@ export default function SummaryCard({
       <Stack
         direction="row"
         spacing={1}
-        sx={{ alignItems: "center", height: 28 }}
+        sx={{
+          alignItems: "center",
+          height: 24,
+          // Covers the page's own action buttons too, so every header matches.
+          "& .MuiIconButton-root": { p: 0.375 },
+          "& .MuiIconButton-root svg": { fontSize: 17 },
+        }}
       >
         <Box
           sx={(theme) => {
@@ -114,13 +120,13 @@ export default function SummaryCard({
             return {
               color: accent,
               bgcolor: alpha(accent, 0.12),
-              width: 26,
-              height: 26,
+              width: 22,
+              height: 22,
               borderRadius: 1.5,
               display: "grid",
               placeItems: "center",
               flexShrink: 0,
-              "& svg": { fontSize: 16 },
+              "& svg": { fontSize: 14 },
             };
           }}
         >
@@ -130,7 +136,7 @@ export default function SummaryCard({
           variant="caption"
           color="text.secondary"
           noWrap
-          sx={{ flexGrow: 1, fontWeight: 600 }}
+          sx={{ flexGrow: 1, fontWeight: 600, fontSize: "0.68rem" }}
         >
           {label}
         </Typography>
@@ -153,6 +159,7 @@ export default function SummaryCard({
           fontWeight: 700,
           fontVariantNumeric: "tabular-nums",
           color: tone ? `${tone}.main` : "text.primary",
+          fontSize: "0.95rem",
           mt: 0.25,
           lineHeight: 1.3,
           animation: `${rise} 260ms ease-out both`,
@@ -166,7 +173,7 @@ export default function SummaryCard({
         color="text.secondary"
         noWrap
         title={caption}
-        sx={{ display: "block" }}
+        sx={{ display: "block", fontSize: "0.65rem" }}
       >
         {caption}
       </Typography>
