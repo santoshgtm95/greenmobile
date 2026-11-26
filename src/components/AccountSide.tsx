@@ -33,7 +33,7 @@ export default function AccountSide({
             size="small"
             variant="outlined"
             label={accountKey}
-            sx={{ fontFamily: 'monospace', height: 20, fontSize: 11 }}
+            sx={{ fontFamily: 'monospace', height: 20, fontSize: "0.6875rem" }}
           />
         )}
       </Stack>

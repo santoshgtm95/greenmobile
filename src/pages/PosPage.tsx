@@ -321,7 +321,7 @@ export default function PosPage() {
                     <SearchIcon />
                   </InputAdornment>
                 ),
-                sx: { fontSize: 14, py: 0.25 },
+                sx: { fontSize: "0.875rem", py: 0.25 },
               },
             }}
           />
@@ -434,7 +434,7 @@ export default function PosPage() {
                   >
                     {/* 200px basis: on narrow screens (tablet) price and stock wrap below instead of crushing the name. */}
                     <Box sx={{ flex: '1 1 200px', minWidth: 0 }}>
-                      <Typography sx={{ fontWeight: 600, fontSize: 13, lineHeight: 1.3, wordBreak: 'break-word' }}>
+                      <Typography sx={{ fontWeight: 600, fontSize: "0.8125rem", lineHeight: 1.3, wordBreak: 'break-word' }}>
                         {product.name}
                       </Typography>
                       <Typography variant="caption" color="text.secondary" component="div" sx={{ wordBreak: 'break-word' }}>
@@ -443,13 +443,13 @@ export default function PosPage() {
                     </Box>
                     <Stack direction="row" spacing={1.5} sx={{ flexShrink: 0, alignItems: 'center', ml: 'auto' }}>
                       {inCart > 0 && <Chip size="small" color="primary" label={`×${inCart} in cart`} />}
-                      <Typography sx={{ minWidth: 90, textAlign: 'right', fontWeight: 700, fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>
+                      <Typography sx={{ minWidth: 90, textAlign: 'right', fontWeight: 700, fontSize: "0.875rem", fontVariantNumeric: 'tabular-nums' }}>
                         {money(product.sellingPrice)}
                       </Typography>
                       {product.isSerialized === 1 ? (
                         <Chip
                           size="small"
-                          icon={<SmartphoneIcon sx={{ fontSize: 14 }} />}
+                          icon={<SmartphoneIcon sx={{ fontSize: "0.875rem" }} />}
                           label={`${product.availableSerials} units`}
                           color="info"
                           sx={{ minWidth: 104 }}
@@ -642,7 +642,7 @@ export default function PosPage() {
               variant="contained"
               disabled={cart.length === 0 || quote.isFetching}
               onClick={checkout}
-              sx={{ mt: 1.25, py: 1, fontSize: 14 }}
+              sx={{ mt: 1.25, py: 1, fontSize: "0.875rem" }}
             >
               Complete Sale — F8
             </Button>

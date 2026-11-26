@@ -317,7 +317,7 @@ export default function BackupPanel() {
               <TableBody>
                 {data?.backups.map((file) => (
                   <TableRow key={file.path} hover>
-                    <TableCell sx={{ fontFamily: 'monospace', fontSize: 12.5 }}>
+                    <TableCell sx={{ fontFamily: 'monospace', fontSize: "0.7813rem" }}>
                       {file.name}
                     </TableCell>
                     <TableCell>{formatInstant(file.createdAt)}</TableCell>
@@ -383,7 +383,7 @@ export default function BackupPanel() {
         <DialogTitle>Delete this backup?</DialogTitle>
         <DialogContent>
           <DialogContentText component="div">
-            <Box sx={{ fontFamily: 'monospace', fontSize: 13, mb: 1 }}>{pendingDelete?.name}</Box>
+            <Box sx={{ fontFamily: 'monospace', fontSize: "0.8125rem", mb: 1 }}>{pendingDelete?.name}</Box>
             The file is removed from disk. Your current data is not affected.
           </DialogContentText>
         </DialogContent>
@@ -465,7 +465,7 @@ function RestoreDialog({
       </DialogTitle>
       <DialogContent>
         <Stack spacing={2}>
-          <Box sx={{ fontFamily: 'monospace', fontSize: 13 }}>{file?.name}</Box>
+          <Box sx={{ fontFamily: 'monospace', fontSize: "0.8125rem" }}>{file?.name}</Box>
 
           {!usable && <Alert severity="error">{inspection?.problem}</Alert>}
 

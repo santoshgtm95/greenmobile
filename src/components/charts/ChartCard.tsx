@@ -49,7 +49,7 @@ export default function ChartCard({
               display: 'grid',
               placeItems: 'center',
               color: 'text.secondary',
-              fontSize: 12,
+              fontSize: "0.75rem",
             }}
           >
             Nothing recorded in this period.

@@ -3,7 +3,7 @@
 /** The button row above the tabs; also reaches buttons nested in ExportMenu. */
 export const compactToolbarSx = {
   '& .MuiButton-root': { fontSize: '0.8rem', py: 0.5 },
-  '& .MuiButton-startIcon svg': { fontSize: 18 },
+  '& .MuiButton-startIcon svg': { fontSize: "1.125rem" },
 } as const;
 
 /** The filter bar: inputs, their labels and switch labels. */

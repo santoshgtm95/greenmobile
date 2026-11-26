@@ -146,7 +146,7 @@ export default function CustomerDetailDialog({
                               {purchase.productSummary}
                             </Typography>
                           </TableCell>
-                          <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>
+                          <TableCell sx={{ fontFamily: 'monospace', fontSize: "0.75rem" }}>
                             {purchase.serials ?? '—'}
                           </TableCell>
                           <TableCell
@@ -160,7 +160,7 @@ export default function CustomerDetailDialog({
                               </Typography>
                             )}
                           </TableCell>
-                          <TableCell sx={{ color: 'text.secondary', fontSize: 12 }}>
+                          <TableCell sx={{ color: 'text.secondary', fontSize: "0.75rem" }}>
                             {purchase.paymentMethods?.replace(/_/g, ' ') ?? '—'}
                           </TableCell>
                           <TableCell>
@@ -209,7 +209,7 @@ export default function CustomerDetailDialog({
                           <TableCell>
                             {job.deviceBrand} {job.deviceModel}
                           </TableCell>
-                          <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>
+                          <TableCell sx={{ fontFamily: 'monospace', fontSize: "0.75rem" }}>
                             {job.imei ?? '—'}
                           </TableCell>
                           <TableCell sx={{ whiteSpace: 'nowrap' }}>

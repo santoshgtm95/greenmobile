@@ -109,7 +109,7 @@ export default function SummaryCard({
           height: 24,
           // Covers the page's own action buttons too, so every header matches.
           "& .MuiIconButton-root": { p: 0.375 },
-          "& .MuiIconButton-root svg": { fontSize: 17 },
+          "& .MuiIconButton-root svg": { fontSize: "1.0625rem" },
         }}
       >
         <Box
@@ -126,7 +126,7 @@ export default function SummaryCard({
               display: "grid",
               placeItems: "center",
               flexShrink: 0,
-              "& svg": { fontSize: 14 },
+              "& svg": { fontSize: "0.875rem" },
             };
           }}
         >

@@ -191,7 +191,7 @@ export default function FeeHistoryDialog({
                       <TableCell>
                         <Chip size="small" variant="outlined" color="primary" label={row.kind} />
                       </TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>
+                      <TableCell sx={{ fontFamily: 'monospace', fontSize: "0.75rem", whiteSpace: 'nowrap' }}>
                         {row.reference}
                       </TableCell>
                       <TableCell>{row.party ?? '—'}</TableCell>

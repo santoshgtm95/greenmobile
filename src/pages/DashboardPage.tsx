@@ -1066,7 +1066,7 @@ function StatTile({
             zIndex: 1,
           }}
         >
-          {ToneIcon && <ToneIcon sx={{ fontSize: 13, color }} />}
+          {ToneIcon && <ToneIcon sx={{ fontSize: "0.8125rem", color }} />}
           <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.65rem" }}>
             {hint}
           </Typography>
@@ -1184,7 +1184,7 @@ function HorizontalBars({
             position="right"
             formatter={(value: unknown) => money(Number(value ?? 0))}
             style={{
-              fontSize: 11,
+              fontSize: "0.6875rem",
               fill: CHART_COLORS.muted,
               fontVariantNumeric: "tabular-nums",
             }}

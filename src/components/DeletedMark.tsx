@@ -4,7 +4,7 @@ import { Chip, Tooltip } from '@mui/material';
 export function DeletedChip({ reason }: { reason: string | null }) {
   return (
     <Tooltip title={reason ? `Reason: ${reason}` : 'No reason recorded'}>
-      <Chip size="small" color="error" variant="outlined" label="Deleted" sx={{ height: 20, fontSize: 11, ml: 0.5 }} />
+      <Chip size="small" color="error" variant="outlined" label="Deleted" sx={{ height: 20, fontSize: "0.6875rem", ml: 0.5 }} />
     </Tooltip>
   );
 }

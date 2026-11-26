@@ -54,7 +54,9 @@ type Line = {
   description: string;
   unitCost: number;
   sellingPrice: number;
+  /** Paid units; free ones are extra. */
   quantity: number;
+  freeQty: number;
 };
 
 let nextKey = 0;
@@ -70,6 +72,7 @@ const emptyLine = (): Line => ({
   unitCost: 0,
   sellingPrice: 0,
   quantity: 1,
+  freeQty: 0,
 });
 const isFilled = (l: Line) => Boolean(l.productId || l.name.trim());
 
@@ -106,10 +109,14 @@ export default function PurchaseInvoiceDialog({
           description: i.description ?? '',
           unitCost: i.unitCost,
           sellingPrice: i.sellingPrice,
-          quantity: i.quantity,
+          quantity: i.quantity - i.freeQty,
+          freeQty: i.freeQty,
         }))
       : [emptyLine()],
   );
+  const [discount, setDiscount] = useState(invoice?.discount ?? 0);
+  // While set, the discount follows the subtotal at this percentage.
+  const [discountPct, setDiscountPct] = useState<string | null>(null);
   const [addingSupplier, setAddingSupplier] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -125,7 +132,9 @@ export default function PurchaseInvoiceDialog({
     setLines((all) => all.map((l) => (l.key === key ? { ...l, ...patch } : l)));
 
   const filled = lines.filter(isFilled);
-  const total = filled.reduce((sum, l) => sum + l.quantity * l.unitCost, 0);
+  const subtotal = filled.reduce((sum, l) => sum + l.quantity * l.unitCost, 0);
+  const discountAmount = discountPct !== null ? Math.round((subtotal * (Number(discountPct) || 0)) / 100) : discount;
+  const total = subtotal - discountAmount;
 
   const save = useMutation({
     mutationFn: () => {
@@ -135,8 +144,14 @@ export default function PurchaseInvoiceDialog({
         invoiceAt,
         paymentMethod,
         remark: remark.trim() || undefined,
+        discount: discountAmount,
         items: filled.map((l) => {
-          const prices = { quantity: l.quantity, unitCost: l.unitCost, sellingPrice: l.sellingPrice };
+          const prices = {
+            quantity: l.quantity + l.freeQty,
+            freeQty: l.freeQty,
+            unitCost: l.unitCost,
+            sellingPrice: l.sellingPrice,
+          };
           if (l.productId) return { productId: l.productId, ...prices };
           return {
             newProduct: {
@@ -165,6 +180,7 @@ export default function PurchaseInvoiceDialog({
     supplierId &&
     invoiceAt &&
     filled.length > 0 &&
+    total >= 0 &&
     filled.every((l) => l.quantity > 0 && (l.productId || l.sku.trim()));
 
   return (
@@ -260,6 +276,7 @@ export default function PurchaseInvoiceDialog({
                   <TableCell sx={{ minWidth: 120 }}>Purchase price</TableCell>
                   <TableCell sx={{ minWidth: 120 }}>Selling price</TableCell>
                   <TableCell sx={{ minWidth: 80 }}>Qty</TableCell>
+                  <TableCell sx={{ minWidth: 70 }}>Free</TableCell>
                   <TableCell align="right" sx={{ minWidth: 100 }}>
                     Amount
                   </TableCell>
@@ -281,13 +298,13 @@ export default function PurchaseInvoiceDialog({
                   />
                 ))}
                 <TableRow>
-                  <TableCell colSpan={8}>
+                  <TableCell colSpan={9}>
                     <Button size="small" startIcon={<AddIcon />} disabled={linesLocked} onClick={() => setLines((all) => [...all, emptyLine()])}>
                       Add product
                     </Button>
                   </TableCell>
                   <TableCell align="right" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', pt: 1.5 }}>
-                    {money(total)}
+                    {money(subtotal)}
                   </TableCell>
                   <TableCell colSpan={2} />
                 </TableRow>
@@ -295,6 +312,44 @@ export default function PurchaseInvoiceDialog({
             </Table>
           </Box>
           {fieldErrors.items && <Alert severity="error">{fieldErrors.items}</Alert>}
+
+          <Stack spacing={1} sx={{ alignSelf: 'flex-end', width: 360, maxWidth: '100%' }}>
+            <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
+              <Typography variant="body2">Subtotal</Typography>
+              <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                {money(subtotal)}
+              </Typography>
+            </Stack>
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+              <TextField
+                label="Discount %"
+                type="number"
+                size="small"
+                sx={{ width: 110 }}
+                value={discountPct ?? (subtotal && discount ? String(Math.round((discount / subtotal) * 10000) / 100) : '')}
+                onChange={(e) => setDiscountPct(e.target.value)}
+                slotProps={{ htmlInput: { min: 0, max: 100, step: 0.5 } }}
+              />
+              <MoneyField
+                label="Discount amount"
+                size="small"
+                fullWidth
+                value={discountAmount}
+                onChange={(v) => {
+                  setDiscountPct(null);
+                  setDiscount(v);
+                }}
+                error={total < 0 || Boolean(fieldErrors.discount)}
+                helperText={total < 0 ? 'More than the subtotal' : fieldErrors.discount}
+              />
+            </Stack>
+            <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <Typography variant="subtitle2">Total</Typography>
+              <Typography variant="h6" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                {money(total)}
+              </Typography>
+            </Stack>
+          </Stack>
 
           <TextField label="Remark" multiline minRows={2} value={remark} onChange={(e) => setRemark(e.target.value)} />
         </Stack>
@@ -475,6 +530,16 @@ function ProductRow({
           value={line.quantity}
           onChange={(e) => onChange({ quantity: Math.max(1, Math.floor(Number(e.target.value)) || 1) })}
           slotProps={{ htmlInput: { min: 1, style: { textAlign: 'right' } } }}
+        />
+      </TableCell>
+      <TableCell>
+        <TextField
+          type="number"
+          size="small"
+          disabled={locked}
+          value={line.freeQty}
+          onChange={(e) => onChange({ freeQty: Math.max(0, Math.floor(Number(e.target.value)) || 0) })}
+          slotProps={{ htmlInput: { min: 0, style: { textAlign: 'right' } } }}
         />
       </TableCell>
       <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', pt: 1.5 }}>

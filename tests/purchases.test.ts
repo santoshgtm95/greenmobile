@@ -87,10 +87,10 @@ describe('purchase invoices', () => {
         invoiceNo: 'INV-1',
         supplierId: supplier.id,
         invoiceAt: '2026-11-13T10:00',
-        paymentMethod: 'COD',
+        paymentMethod: 'COD', discount: 0,
         items: [
-          { productId: cable.id, quantity: 10, unitCost: 1000 },
-          { productId: phone.id, quantity: 2, unitCost: 50000 },
+          { productId: cable.id, freeQty: 0, quantity: 10, unitCost: 1000 },
+          { productId: phone.id, freeQty: 0, quantity: 2, unitCost: 50000 },
         ],
       },
       actor,
@@ -123,7 +123,7 @@ describe('purchase invoices', () => {
     // Lines are fixed once something arrived.
     expect(() =>
       updatePurchaseInvoice(
-        { id: invoice.id, invoiceNo: 'INV-1', supplierId: supplier.id, invoiceAt: '2026-11-13T10:00', paymentMethod: 'COD', items: [{ productId: cable.id, quantity: 1, unitCost: 1 }] },
+        { id: invoice.id, invoiceNo: 'INV-1', supplierId: supplier.id, invoiceAt: '2026-11-13T10:00', paymentMethod: 'COD', discount: 0, items: [{ productId: cable.id, freeQty: 0, quantity: 1, unitCost: 1 }] },
         actor,
         ctx.db,
       ),
@@ -173,10 +173,10 @@ describe('purchase invoices', () => {
       {
         supplierId: supplier.id,
         invoiceAt: '2026-11-13T10:00',
-        paymentMethod: 'COD',
+        paymentMethod: 'COD', discount: 0,
         items: [
-          { productId: cable.id, quantity: 5, unitCost: 1000 },
-          { productId: case_.id, quantity: 2, unitCost: 300 },
+          { productId: cable.id, freeQty: 0, quantity: 5, unitCost: 1000 },
+          { productId: case_.id, freeQty: 0, quantity: 2, unitCost: 300 },
         ],
       },
       actor,
@@ -215,7 +215,8 @@ describe('purchase invoices', () => {
         supplierId: supplier.id,
         invoiceAt: '2026-11-13T10:00',
         paymentMethod: 'BANK',
-        items: [{ newProduct, quantity: 5, unitCost: 400 }],
+        discount: 0,
+        items: [{ newProduct, freeQty: 0, quantity: 5, unitCost: 400 }],
       },
       actor,
       ctx.db,
@@ -227,7 +228,7 @@ describe('purchase invoices', () => {
     // The same SKU cannot be ordered as new twice.
     expect(() =>
       createPurchaseInvoice(
-        { supplierId: supplier.id, invoiceAt: '2026-11-13T10:00', paymentMethod: 'COD', items: [{ newProduct, quantity: 1, unitCost: 1 }] },
+        { supplierId: supplier.id, invoiceAt: '2026-11-13T10:00', paymentMethod: 'COD', discount: 0, items: [{ newProduct, freeQty: 0, quantity: 1, unitCost: 1 }] },
         actor,
         ctx.db,
       ),
@@ -243,8 +244,8 @@ describe('purchase invoices', () => {
       {
         supplierId: supplier.id,
         invoiceAt: '2026-11-13T11:00',
-        paymentMethod: 'COD',
-        items: [{ productId: created.id, quantity: 1, unitCost: 450, sellingPrice: 990 }],
+        paymentMethod: 'COD', discount: 0,
+        items: [{ productId: created.id, freeQty: 0, quantity: 1, unitCost: 450, sellingPrice: 990 }],
       },
       actor,
       ctx.db,
@@ -257,5 +258,25 @@ describe('purchase invoices', () => {
     // The rest arrives against the same product.
     receivePurchaseItems({ invoiceId: invoice.id, items: [{ itemId: invoice.items[0].id, quantity: 2 }] }, actor, ctx.db);
     expect(getProduct(created.id, ctx.db).stockQuantity).toBe(6);
+  });
+
+  it('does not charge free units and takes the discount off the total', () => {
+    const supplier = saveSupplier({ name: 'Acme', address: undefined, phone: undefined, isActive: true }, actor, ctx.db);
+    const cable = product('CBL');
+    const input = {
+      supplierId: supplier.id,
+      invoiceAt: '2026-11-13T10:00',
+      paymentMethod: 'COD' as const,
+      discount: 500,
+      // Buy 10, get 2 free.
+      items: [{ productId: cable.id, quantity: 12, freeQty: 2, unitCost: 1000 }],
+    };
+    let invoice = createPurchaseInvoice(input, actor, ctx.db);
+    expect(invoice).toMatchObject({ subtotal: 10000, discount: 500, total: 9500, remaining: 9500, pendingQty: 12 });
+
+    invoice = receivePurchaseItems({ invoiceId: invoice.id, items: [{ itemId: invoice.items[0].id, quantity: 12 }] }, actor, ctx.db);
+    expect(getProduct(cable.id, ctx.db)).toMatchObject({ stockQuantity: 12, supplierName: 'Acme' });
+
+    expect(() => createPurchaseInvoice({ ...input, discount: 10001 }, actor, ctx.db)).toThrow(AppError);
   });
 });

@@ -83,7 +83,7 @@ export default function AdvanceDetailDialog({
     : [];
 
   return (
-    <Dialog open fullWidth maxWidth="lg" onClose={onClose}>
+    <Dialog open fullWidth maxWidth="xl" onClose={onClose}>
       <DialogTitle>
         <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
           <span>Advance {advance?.transactionNumber ?? ''}</span>
@@ -253,9 +253,12 @@ function MovementTable({
             <TableCell>Number</TableCell>
             <TableCell>Date & Time</TableCell>
             <TableCell>Type</TableCell>
-            <TableCell>Received into / Paid to</TableCell>
+            <TableCell>Paid from</TableCell>
+            <TableCell>Received into</TableCell>
+            <TableCell>Cash / Bank</TableCell>
             <TableCell align="right">Amount</TableCell>
             <TableCell align="right">Fee</TableCell>
+            <TableCell sx={{ minWidth: 160 }}>Notes</TableCell>
             {onDelete && <TableCell />}
           </TableRow>
         </TableHead>
@@ -263,10 +266,13 @@ function MovementTable({
           {rows.map(({ m, out }) => {
               const deleted = m.isDeleted === 1;
               const tone = out ? 'error.main' : 'success.main';
+              // The shop's side is the To of a receipt and the From of a withdrawal; cash is stored as "-".
+              const shopNumber = out ? m.fromAccountNumber : m.toAccountNumber;
+              const isCash = shopNumber === '-' || (out ? m.fromName : m.toName) === 'Cash in hand';
               return (
                 <TableRow key={m.id} sx={deleted ? deletedRowSx : undefined}>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>{m.createdByName ?? '—'}</TableCell>
-                  <TableCell sx={{ fontFamily: 'monospace', fontSize: 12.5, whiteSpace: 'nowrap' }}>
+                  <TableCell sx={{ fontFamily: 'monospace', fontSize: "0.7813rem", whiteSpace: 'nowrap' }}>
                     {m.transactionNumber}
                     {deleted && <DeletedChip reason={m.deletedReason} />}
                   </TableCell>
@@ -279,19 +285,24 @@ function MovementTable({
                       label={out ? 'Withdrawn' : 'Received'}
                     />
                   </TableCell>
+                  <TableCell sx={{ minWidth: 150 }}>
+                    <AccountSide
+                      accountName={m.fromAccountName}
+                      accountKey={m.fromAccountKey}
+                      accountNumber={m.fromAccountNumber === '-' ? null : m.fromAccountNumber}
+                      typedName={m.fromName}
+                    />
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 150 }}>
+                    <AccountSide
+                      accountName={m.toAccountName}
+                      accountKey={m.toAccountKey}
+                      accountNumber={m.toAccountNumber === '-' ? null : m.toAccountNumber}
+                      typedName={m.toName}
+                    />
+                  </TableCell>
                   <TableCell>
-                    <Typography variant="body2">
-                      {[m.toName ?? '—', m.toAccountNumber].filter((v) => v && v !== '-').join(' · ')}
-                    </Typography>
-                    {m.notes && (
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ display: 'block', whiteSpace: 'pre-line', fontStyle: 'italic' }}
-                      >
-                        {m.notes}
-                      </Typography>
-                    )}
+                    <Chip size="small" variant="outlined" color={isCash ? 'default' : 'info'} label={isCash ? 'Cash' : 'Bank'} />
                   </TableCell>
                   <TableCell
                     align="right"
@@ -308,6 +319,9 @@ function MovementTable({
                     }}
                   >
                     {m.feeAmount === 0 ? '—' : `${money(m.feeAmount)} (${formatRate(m.feeBasisPoints)})`}
+                  </TableCell>
+                  <TableCell sx={{ whiteSpace: 'pre-line', color: m.notes ? 'text.primary' : 'text.disabled' }}>
+                    {m.notes ?? '—'}
                   </TableCell>
                   {onDelete && (
                     <TableCell align="right" sx={{ width: 48 }}>

@@ -699,8 +699,8 @@ export default function BankingPage() {
             stickyHeader
             sx={{
               "& th, & td": { px: 0.75 },
-              "& tbody td": { py: 0.5, fontSize: 12.5 },
-              "& tbody .MuiTypography-root": { fontSize: 12.5 },
+              "& tbody td": { py: 0.5, fontSize: "0.7813rem" },
+              "& tbody .MuiTypography-root": { fontSize: "0.7813rem" },
             }}
           >
             <TableHead>
@@ -754,7 +754,7 @@ export default function BankingPage() {
                     sx={{
                       fontFamily: "monospace",
                       whiteSpace: "nowrap",
-                      fontSize: 12,
+                      fontSize: "0.75rem",
                     }}
                   >
                     {row.transactionNumber}
@@ -774,9 +774,9 @@ export default function BankingPage() {
                         color={row.type === "RECEIVE" ? "success" : "error"}
                         icon={
                           row.type === "RECEIVE" ? (
-                            <CallReceivedIcon sx={{ fontSize: 14 }} />
+                            <CallReceivedIcon sx={{ fontSize: "0.875rem" }} />
                           ) : (
-                            <CallMadeIcon sx={{ fontSize: 14 }} />
+                            <CallMadeIcon sx={{ fontSize: "0.875rem" }} />
                           )
                         }
                         label={
@@ -897,7 +897,7 @@ export default function BankingPage() {
                       color: row.notes ? "text.primary" : "text.disabled",
                       maxWidth: 260,
                       whiteSpace: "pre-line",
-                      fontSize: 13,
+                      fontSize: "0.8125rem",
                     }}
                   >
                     {row.notes ?? "—"}

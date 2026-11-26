@@ -419,7 +419,7 @@ export default function StocksPage() {
                               onClick={() => select({ ...selection, productId: product.id })}
                               sx={{ cursor: 'pointer' }}
                             >
-                              <TableCell sx={{ fontFamily: 'monospace', fontSize: 12.5 }}>{product.sku}</TableCell>
+                              <TableCell sx={{ fontFamily: 'monospace', fontSize: "0.7813rem" }}>{product.sku}</TableCell>
                               <TableCell>
                                 <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                                   <span>{product.name}</span>
@@ -427,7 +427,7 @@ export default function StocksPage() {
                                     <Tooltip title={`${product.availableSerials} IMEI/serial available`}>
                                       <Chip
                                         size="small"
-                                        icon={<SmartphoneIcon sx={{ fontSize: 14 }} />}
+                                        icon={<SmartphoneIcon sx={{ fontSize: "0.875rem" }} />}
                                         label={product.availableSerials}
                                         variant="outlined"
                                       />

@@ -105,6 +105,9 @@ export default function PurchaseInvoiceDetailDialog({
         {invoice && (
           <Stack spacing={2}>
             <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', alignItems: 'center' }}>
+              {invoice.discount > 0 && (
+                <Chip variant="outlined" label={`Subtotal ${money(invoice.subtotal)} · Discount −${money(invoice.discount)}`} />
+              )}
               <Chip label={`Total ${money(invoice.total)}`} />
               <Chip color="success" variant="outlined" label={`Paid ${money(invoice.paid)}`} />
               <Chip
@@ -138,11 +141,13 @@ export default function PurchaseInvoiceDetailDialog({
                 </>
               )}
             </Stack>
-            <Table size="small">
+            {/* Scrolls sideways on a narrow screen instead of squeezing the product name. */}
+            <Box sx={{ overflowX: 'auto' }}>
+            <Table size="small" sx={{ '& th': { whiteSpace: 'nowrap' } }}>
               <TableHead>
                 <TableRow>
                   <TableCell padding="checkbox" />
-                  <TableCell>Product</TableCell>
+                  <TableCell sx={{ minWidth: 220 }}>Product</TableCell>
                   <TableCell align="right">Ordered</TableCell>
                   <TableCell align="right">Arrived</TableCell>
                   <TableCell align="right">Refunded</TableCell>
@@ -179,7 +184,14 @@ export default function PurchaseInvoiceDetailDialog({
                           {item.replacedQty > 0 && ` · ${item.replacedQty} sent back for replacement`}
                         </Typography>
                       </TableCell>
-                      <TableCell align="right">{item.quantity}</TableCell>
+                      <TableCell align="right">
+                        {item.quantity}
+                        {item.freeQty > 0 && (
+                          <Typography variant="caption" color="success.main" sx={{ display: 'block' }}>
+                            incl. {item.freeQty} free
+                          </Typography>
+                        )}
+                      </TableCell>
                       <TableCell align="right">{item.receivedQty}</TableCell>
                       <TableCell align="right">{item.refundedQty || ''}</TableCell>
                       <TableCell align="right" sx={{ fontWeight: item.pendingQty ? 700 : undefined }}>
@@ -188,7 +200,7 @@ export default function PurchaseInvoiceDetailDialog({
                       <TableCell align="right">{money(item.unitCost)}</TableCell>
                       <TableCell align="right">{money(item.sellingPrice)}</TableCell>
                       <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                        {money((item.quantity - item.refundedQty) * item.unitCost)}
+                        {money(Math.max(item.quantity - item.freeQty - item.refundedQty, 0) * item.unitCost)}
                       </TableCell>
                       <TableCell>
                         <Chip size="small" color={status.color} label={status.label} />
@@ -215,6 +227,7 @@ export default function PurchaseInvoiceDetailDialog({
                 })}
               </TableBody>
             </Table>
+            </Box>
 
             <Stack direction="row" spacing={1} sx={{ alignItems: 'center', pt: 1 }}>
               <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>

@@ -269,7 +269,7 @@ export default function ServicesPage() {
                   <TableCell>
                     {job.deviceBrand} {job.deviceModel}
                   </TableCell>
-                  <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>
+                  <TableCell sx={{ fontFamily: 'monospace', fontSize: "0.75rem" }}>
                     {job.imei ?? '—'}
                   </TableCell>
                   <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>

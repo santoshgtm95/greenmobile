@@ -339,7 +339,7 @@ export default function LoginPage() {
           animation: `${rise} 600ms 700ms ease-out both`,
         }}
       >
-        <WifiOffIcon sx={{ fontSize: 15 }} />
+        <WifiOffIcon sx={{ fontSize: "0.9375rem" }} />
         <Typography variant="caption">
           Offline Point of Sale · your data stays on this computer
         </Typography>

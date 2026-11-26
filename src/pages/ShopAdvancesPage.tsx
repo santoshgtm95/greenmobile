@@ -258,7 +258,7 @@ export default function ShopAdvancesPage() {
                   onClick={() => setViewingId(row.id)}
                   sx={{ cursor: 'pointer', ...(row.isDeleted ? deletedRowSx : {}) }}
                 >
-                  <TableCell sx={{ fontFamily: 'monospace', fontSize: 12.5, whiteSpace: 'nowrap' }}>
+                  <TableCell sx={{ fontFamily: 'monospace', fontSize: "0.7813rem", whiteSpace: 'nowrap' }}>
                     {row.advanceNumber}
                     {row.isDeleted === 1 && <DeletedChip reason={row.deletedReason} />}
                   </TableCell>

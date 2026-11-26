@@ -37,9 +37,11 @@ export default function CashCountDialog({
 }) {
   const money = useMoneyFormatter();
 
-  const [amount, setAmount] = useState(current.amount);
+  // The current count is fixed; the user enters only the change (+ added, − taken out).
+  const [adjustment, setAdjustment] = useState(0);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const amount = current.amount + adjustment;
 
   const save = useMutation({
     mutationFn: () => api.banking.saveCashCount({ amount, notes: notes.trim() || undefined }),
@@ -48,7 +50,7 @@ export default function CashCountDialog({
       setError(err instanceof PosApiError ? err.message : 'Unable to save that count.'),
   });
 
-  const difference = amount - current.amount;
+  const difference = adjustment;
 
   return (
     <Dialog open fullWidth maxWidth="xs" onClose={onClose}>
@@ -62,7 +64,28 @@ export default function CashCountDialog({
             not worked out from sales or from the transactions on this screen.
           </Typography>
 
-          <MoneyField label="Counted amount" required autoFocus value={amount} onChange={setAmount} />
+          <MoneyField
+            label="Current counted amount"
+            value={current.amount}
+            onChange={() => {}}
+            slotProps={{ input: { readOnly: true } }}
+          />
+          <MoneyField
+            label="Adjustment"
+            autoFocus
+            value={adjustment}
+            onChange={setAdjustment}
+            helperText="Amount to add; use − to take out, e.g. -500"
+          />
+          <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <Typography variant="subtitle2">Total</Typography>
+            <Typography
+              variant="h6"
+              sx={{ fontWeight: 700, color: amount < 0 ? 'error.main' : 'text.primary' }}
+            >
+              {money(amount)}
+            </Typography>
+          </Stack>
 
           {current.recorded && (
             <Alert severity={difference === 0 ? 'info' : 'warning'} variant="outlined">
@@ -100,7 +123,7 @@ export default function CashCountDialog({
             setError(null);
             save.mutate();
           }}
-          disabled={save.isPending}
+          disabled={save.isPending || amount < 0}
         >
           {save.isPending ? 'Saving…' : 'Save count'}
         </Button>

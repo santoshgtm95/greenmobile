@@ -197,7 +197,7 @@ export default function ProductDialog({
                       <Button
                         size="small"
                         onClick={() => set('barcode', generateEan13Candidate())}
-                        sx={{ fontSize: 11, minWidth: 'auto', px: 1 }}
+                        sx={{ fontSize: "0.6875rem", minWidth: 'auto', px: 1 }}
                       >
                         Generate
                       </Button>

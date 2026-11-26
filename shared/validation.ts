@@ -591,19 +591,25 @@ const purchaseInvoiceFields = {
   invoiceAt: zLocalDateTime,
   paymentMethod: z.enum(PURCHASE_PAYMENT_METHODS),
   remark: zOptionalText,
+  /** Minor units off the sum of the lines. */
+  discount: zMinor.default(0),
   items: z
     .array(
       z
         .object({
           productId: zId.optional(),
           newProduct: zNewPurchaseProduct.optional(),
+          /** All units, free ones included. */
           quantity: zQuantity,
+          /** Units in quantity that are not charged. */
+          freeQty: z.number().int().min(0).default(0),
           /** Becomes the product's purchase price on delivery. */
           unitCost: zMinor,
           /** Becomes the product's selling price on delivery. */
           sellingPrice: zMinor.optional(),
         })
-        .refine((i) => Boolean(i.productId) !== Boolean(i.newProduct), 'Choose a product or enter a new one'),
+        .refine((i) => Boolean(i.productId) !== Boolean(i.newProduct), 'Choose a product or enter a new one')
+        .refine((i) => i.freeQty < i.quantity, 'Free quantity must be less than the total quantity'),
     )
     .min(1, 'Add at least one product'),
 };

@@ -368,9 +368,9 @@ export function MovementLedger({ lockedProductId }: { lockedProductId?: string }
                       sx={{ alignItems: 'center', justifyContent: 'flex-end' }}
                     >
                       {incoming ? (
-                        <NorthEastIcon sx={{ fontSize: 14 }} />
+                        <NorthEastIcon sx={{ fontSize: "0.875rem" }} />
                       ) : (
-                        <SouthWestIcon sx={{ fontSize: 14 }} />
+                        <SouthWestIcon sx={{ fontSize: "0.875rem" }} />
                       )}
                       <span>
                         {incoming ? '+' : ''}
@@ -475,7 +475,7 @@ export function LowStock({ items, loading }: { items: LowStockItem[]; loading: b
                 const short = Math.max(0, minimum - item.stockQuantity);
                 return (
                   <TableRow key={item.id} hover>
-                    <TableCell sx={{ fontFamily: 'monospace', fontSize: 12.5 }}>
+                    <TableCell sx={{ fontFamily: 'monospace', fontSize: "0.7813rem" }}>
                       {item.sku}
                     </TableCell>
                     <TableCell>{item.name}</TableCell>

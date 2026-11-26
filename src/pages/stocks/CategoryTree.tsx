@@ -134,7 +134,7 @@ function CategoryNode({
           label={product.stockQuantity}
           color={product.stockQuantity <= 0 ? 'error' : 'default'}
           variant="outlined"
-          sx={{ height: 20, fontSize: 11 }}
+          sx={{ height: 20, fontSize: "0.6875rem" }}
         />
       }
       selected={selection.productId === product.id}

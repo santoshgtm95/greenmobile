@@ -31,11 +31,25 @@ import { api } from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
 import { useMoneyFormatter } from '../hooks/useSettings';
 import DeleteReasonDialog from './DeleteReasonDialog';
+import AccountSide from './AccountSide';
 import { historyTableSx } from './historyTableSx';
 import { DeletedChip, deletedRowSx } from './DeletedMark';
 import { PosApiError } from '@shared/errors';
 import { formatInstant } from '@shared/datetime';
 import type { ShopAdvance, ShopAdvancePayment, ShopAdvanceSettlement } from '@shared/api';
+
+/** One side of a row: holder name, bank key and number, bank name — as on Customer Advance Details. */
+const side = (name: string | null, bankName: string | null, number: string | null, bankKey: string | null = null) => (
+  <AccountSide accountName={bankName} accountKey={bankKey} accountNumber={number || null} typedName={name || null} />
+);
+
+/** The shop's side of the movement: cash in hand, a bank account, or an old record. */
+const methodChip = (type: string) =>
+  type === 'OLD' ? (
+    <Chip size="small" variant="outlined" label="Old" />
+  ) : (
+    <Chip size="small" variant="outlined" color={type === 'CASH' ? 'default' : 'info'} label={type === 'CASH' ? 'Cash' : 'Bank'} />
+  );
 
 export default function ShopAdvanceDetailDialog({
   advanceId,
@@ -84,7 +98,7 @@ export default function ShopAdvanceDetailDialog({
   const paymentRow = (p: ShopAdvancePayment) => (
     <TableRow key={p.id} sx={p.isDeleted ? deletedRowSx : undefined}>
       <TableCell sx={{ whiteSpace: 'nowrap' }}>{p.createdByName ?? '—'}</TableCell>
-      <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>
+      <TableCell sx={{ fontFamily: 'monospace', fontSize: "0.75rem" }}>
         {p.advanceNumber}
         {p.isDeleted === 1 && <DeletedChip reason={p.deletedReason} />}
       </TableCell>
@@ -92,32 +106,26 @@ export default function ShopAdvanceDetailDialog({
       <TableCell>
         <Chip size="small" variant="outlined" color="error" label="Given" />
       </TableCell>
-      <TableCell>
-        {p.fromType === 'OLD' ? 'Old record' : p.fromType === 'CASH' ? 'Cash in Hand' : `${p.fromBankName} (${p.fromAccountNumber})`}
+      <TableCell sx={{ minWidth: 150 }}>
+        {p.fromType === 'SHOP_ACCOUNT'
+          ? side(p.fromAccountName, p.fromBankName, p.fromAccountNumber)
+          : side(p.fromType === 'OLD' ? 'Old record' : 'Cash in hand', null, null)}
       </TableCell>
-      <TableCell>
-        {p.fromType === 'OLD' ? (
-          '—'
-        ) : p.toType === 'CASH' ? (
-          'Cash'
-        ) : (
-          <>
-            {p.toBankName ? `${p.toBankName} · ` : ''}No. {p.toAccountNumber || '—'}
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-              {p.toAccountName || '—'}
-            </Typography>
-          </>
-        )}
+      <TableCell sx={{ minWidth: 150 }}>
+        {p.fromType === 'OLD'
+          ? side(advance?.recipientName ?? null, null, null)
+          : p.toType === 'CASH'
+            ? side(`${advance?.recipientName ?? '—'} (cash)`, null, null)
+            : side(p.toAccountName || (advance?.recipientName ?? null), p.toBankName, p.toAccountNumber)}
       </TableCell>
-      <TableCell align="right" sx={{ fontWeight: 700, color: 'error.main' }}>
+      <TableCell>{methodChip(p.fromType)}</TableCell>
+      <TableCell align="right" sx={{ fontWeight: 700, color: 'error.main', whiteSpace: 'nowrap' }}>
         {money(p.amount)}
-        {p.bankCharges > 0 && (
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            + {money(p.bankCharges)} bank charges
-          </Typography>
-        )}
       </TableCell>
-      <TableCell>{p.notes || '—'}</TableCell>
+      <TableCell align="right" sx={{ whiteSpace: 'nowrap', color: p.bankCharges ? 'text.secondary' : 'text.disabled' }}>
+        {p.bankCharges > 0 ? `${money(p.bankCharges)} bank charges` : '—'}
+      </TableCell>
+      <TableCell sx={{ whiteSpace: 'pre-line' }}>{p.notes || '—'}</TableCell>
       {canDelete && (
         <TableCell align="right">
           {!p.isDeleted && (
@@ -140,7 +148,7 @@ export default function ShopAdvanceDetailDialog({
   const settlementRow = (s: ShopAdvanceSettlement) => (
     <TableRow key={s.id} sx={s.isDeleted ? deletedRowSx : undefined}>
       <TableCell sx={{ whiteSpace: 'nowrap' }}>{s.createdByName ?? '—'}</TableCell>
-      <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>
+      <TableCell sx={{ fontFamily: 'monospace', fontSize: "0.75rem" }}>
         {s.settlementNumber}
         {s.isDeleted === 1 && <DeletedChip reason={s.deletedReason} />}
       </TableCell>
@@ -148,36 +156,34 @@ export default function ShopAdvanceDetailDialog({
       <TableCell>
         <Chip size="small" variant="outlined" color="success" label="Repaid" />
       </TableCell>
-      <TableCell>
-        {s.fromAccountNumber
-          ? `${s.fromBankName ? `${s.fromBankName} · ` : ''}${s.fromAccountNumber}${s.fromAccountName ? ` (${s.fromAccountName})` : ''}`
-          : '—'}
+      <TableCell sx={{ minWidth: 150 }}>
+        {s.toType === 'CASH' && !s.fromAccountNumber
+          ? side(`${advance?.recipientName ?? '—'} (cash)`, null, null)
+          : side(s.fromAccountName || (advance?.recipientName ?? null), s.fromBankName, s.fromAccountNumber, s.fromBankKey)}
       </TableCell>
-      <TableCell>
-        {s.toType === 'CASH' ? (
-          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-            <LocalAtmIcon fontSize="small" color="action" />
-            <span>Cash in Hand</span>
-          </Stack>
-        ) : (
-          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-            <AccountBalanceIcon fontSize="small" color="primary" />
-            <span>
-              {s.toBankName} ({s.toAccountNumber})
-            </span>
-          </Stack>
-        )}
+      <TableCell sx={{ minWidth: 150 }}>
+        {s.toType === 'CASH'
+          ? side('Cash in hand', null, null)
+          : side(s.toAccountName, s.toBankName, s.toAccountNumber, s.toBankKey)}
       </TableCell>
-      <TableCell align="right" sx={{ fontWeight: 700, color: 'success.main' }}>
+      <TableCell>{methodChip(s.toType)}</TableCell>
+      <TableCell align="right" sx={{ fontWeight: 700, color: 'success.main', whiteSpace: 'nowrap' }}>
         {money(s.amount)}
-        {s.feeAmount > 0 && (
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            {s.feeDirection === 'RECEIVE' ? '+' : '-'}
-            {money(s.feeAmount)} ({s.feeDirection === 'RECEIVE' ? 'Recv' : 'Pay'}) · Actual {money(s.actualAmount || s.amount)}
-          </Typography>
+      </TableCell>
+      <TableCell align="right" sx={{ whiteSpace: 'nowrap', color: s.feeAmount ? 'text.secondary' : 'text.disabled' }}>
+        {s.feeAmount > 0 ? (
+          <>
+            {s.feeDirection === 'RECEIVE' ? '+' : '−'}
+            {money(s.feeAmount)} ({s.feeDirection === 'RECEIVE' ? 'received' : 'paid'})
+            <Typography variant="caption" sx={{ display: 'block' }}>
+              Actual {money(s.actualAmount || s.amount)}
+            </Typography>
+          </>
+        ) : (
+          '—'
         )}
       </TableCell>
-      <TableCell>{s.notes || '—'}</TableCell>
+      <TableCell sx={{ whiteSpace: 'pre-line' }}>{s.notes || '—'}</TableCell>
       {canDelete && (
         <TableCell align="right">
           {!s.isDeleted && (
@@ -194,7 +200,7 @@ export default function ShopAdvanceDetailDialog({
 
   return (
     <>
-      <Dialog open fullWidth maxWidth="lg" onClose={onClose}>
+      <Dialog open fullWidth maxWidth="xl" onClose={onClose}>
         <DialogTitle>
           <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
             <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
@@ -396,10 +402,12 @@ export default function ShopAdvanceDetailDialog({
                           <TableCell>Number</TableCell>
                           <TableCell>Date & Time</TableCell>
                           <TableCell>Type</TableCell>
-                          <TableCell>From</TableCell>
-                          <TableCell>To</TableCell>
+                          <TableCell>Paid from</TableCell>
+                          <TableCell>Received into</TableCell>
+                          <TableCell>Cash / Bank</TableCell>
                           <TableCell align="right">Amount</TableCell>
-                          <TableCell>Notes</TableCell>
+                          <TableCell align="right">Fee</TableCell>
+                          <TableCell sx={{ minWidth: 160 }}>Notes</TableCell>
                           {canDelete && <TableCell align="right">Actions</TableCell>}
                         </TableRow>
                       </TableHead>

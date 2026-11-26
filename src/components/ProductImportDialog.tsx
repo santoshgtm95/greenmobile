@@ -336,7 +336,7 @@ function PreviewRow({ row, money }: { row: ImportRow; money: (minor: number) => 
           variant={skipped ? 'outlined' : 'filled'}
         />
       </TableCell>
-      <TableCell sx={{ fontFamily: 'monospace', fontSize: 12.5 }}>{row.sku || '—'}</TableCell>
+      <TableCell sx={{ fontFamily: 'monospace', fontSize: "0.7813rem" }}>{row.sku || '—'}</TableCell>
       <TableCell>{row.name || '—'}</TableCell>
       <TableCell>{row.category ?? '—'}</TableCell>
       <TableCell>{row.brand ?? '—'}</TableCell>
@@ -356,7 +356,7 @@ function PreviewRow({ row, money }: { row: ImportRow; money: (minor: number) => 
         <Stack spacing={0.5}>
           {row.errors.map((message) => (
             <Stack key={message} direction="row" spacing={0.5} sx={{ alignItems: 'flex-start' }}>
-              <ErrorOutlineIcon color="error" sx={{ fontSize: 16, mt: '2px' }} />
+              <ErrorOutlineIcon color="error" sx={{ fontSize: "1rem", mt: '2px' }} />
               <Typography variant="caption" color="error.main">
                 {message}
               </Typography>
@@ -365,7 +365,7 @@ function PreviewRow({ row, money }: { row: ImportRow; money: (minor: number) => 
           {row.warnings.map((message) => (
             <Stack key={message} direction="row" spacing={0.5} sx={{ alignItems: 'flex-start' }}>
               <Tooltip title="This row will still be imported">
-                <WarningAmberIcon color="warning" sx={{ fontSize: 16, mt: '2px' }} />
+                <WarningAmberIcon color="warning" sx={{ fontSize: "1rem", mt: '2px' }} />
               </Tooltip>
               <Typography variant="caption" color="text.secondary">
                 {message}

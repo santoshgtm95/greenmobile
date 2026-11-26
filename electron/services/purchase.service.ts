@@ -5,8 +5,9 @@
  * for money and is no longer owed, and everything else (quantity − received −
  * refunded) is still awaited — including units sent back to be replaced.
  *
- * What the shop owes = Σ (quantity − refundedQty) × unitCost − Σ payments, where
- * a refund the supplier gave back is a negative payment.
+ * What the shop owes = Σ (quantity − freeQty − refundedQty) × unitCost − discount
+ * − Σ payments, where a refund the supplier gave back is a negative payment.
+ * Free units arrive like any other but are never charged.
  */
 import type { Database as Db } from 'better-sqlite3';
 import { getDatabase, transaction } from '../database/connection';
@@ -106,21 +107,22 @@ export function saveSupplier(input: SaveSupplierInput, actor: SessionUser, db: D
 /** One row per invoice with its money and delivery figures. */
 const INVOICE_FIGURES = `
   SELECT i.id, i.invoiceNo, i.supplierId, s.name AS supplierName, i.invoiceDate, i.invoiceDay,
-         i.paymentMethod, i.remark, i.isDeleted, i.createdBy, u.fullName AS createdByName, i.createdAt,
+         i.paymentMethod, i.remark, i.discount, i.isDeleted, i.createdBy, u.fullName AS createdByName, i.createdAt,
          COALESCE(it.itemCount, 0) AS itemCount,
          COALESCE(it.quantity, 0) AS quantity,
          COALESCE(it.received, 0) AS receivedQty,
          COALESCE(it.refunded, 0) AS refundedQty,
          COALESCE(it.quantity, 0) - COALESCE(it.received, 0) - COALESCE(it.refunded, 0) AS pendingQty,
-         COALESCE(it.total, 0) AS total,
+         COALESCE(it.total, 0) AS subtotal,
+         MAX(COALESCE(it.total, 0) - i.discount, 0) AS total,
          COALESCE(p.paid, 0) AS paid,
-         COALESCE(it.total, 0) - COALESCE(p.paid, 0) AS remaining
+         MAX(COALESCE(it.total, 0) - i.discount, 0) - COALESCE(p.paid, 0) AS remaining
     FROM "PurchaseInvoice" i
     JOIN "Supplier" s ON s.id = i.supplierId
     LEFT JOIN "User" u ON u.id = i.createdBy
     LEFT JOIN (SELECT invoiceId, COUNT(*) AS itemCount, SUM(quantity) AS quantity,
                       SUM(receivedQty) AS received, SUM(refundedQty) AS refunded,
-                      SUM((quantity - refundedQty) * unitCost) AS total
+                      SUM(MAX(quantity - freeQty - refundedQty, 0) * unitCost) AS total
                  FROM "PurchaseInvoiceItem" GROUP BY invoiceId) it ON it.invoiceId = i.id
     LEFT JOIN (SELECT invoiceId, SUM(amount) AS paid FROM "SupplierPayment" GROUP BY invoiceId) p
            ON p.invoiceId = i.id
@@ -144,6 +146,9 @@ export interface PurchaseInvoiceRow {
   receivedQty: number;
   refundedQty: number;
   pendingQty: number;
+  discount: number;
+  /** Sum of the lines, before the discount. */
+  subtotal: number;
   total: number;
   paid: number;
   remaining: number;
@@ -165,6 +170,7 @@ export interface PurchaseInvoiceItemRow {
   description: string | null;
   isSerialized: number;
   quantity: number;
+  freeQty: number;
   unitCost: number;
   /** Set on this line, else the product's own. */
   sellingPrice: number;
@@ -238,7 +244,7 @@ export function getPurchaseInvoice(id: string, db: Db = getDatabase()): Purchase
               COALESCE(br.name, json_extract(it.newProduct, '$.brandName')) AS brandName,
               COALESCE(p.description, json_extract(it.newProduct, '$.description')) AS description,
               COALESCE(it.sellingPrice, json_extract(it.newProduct, '$.sellingPrice'), p.sellingPrice, 0) AS sellingPrice,
-              COALESCE(p.isSerialized, 0) AS isSerialized, it.quantity, it.unitCost,
+              COALESCE(p.isSerialized, 0) AS isSerialized, it.quantity, it.freeQty, it.unitCost,
               it.receivedQty, it.refundedQty, it.replacedQty,
               it.quantity - it.receivedQty - it.refundedQty AS pendingQty
          FROM "PurchaseInvoiceItem" it
@@ -328,8 +334,8 @@ function prepareDraft(p: NewPurchaseProduct, invoiceId: string, actor: SessionUs
 
 function insertItems(invoiceId: string, items: CreatePurchaseInvoiceInput['items'], actor: SessionUser, db: Db): void {
   const insert = db.prepare(
-    `INSERT INTO "PurchaseInvoiceItem" (id, invoiceId, productId, newProduct, quantity, unitCost, sellingPrice, sortOrder)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO "PurchaseInvoiceItem" (id, invoiceId, productId, newProduct, quantity, freeQty, unitCost, sellingPrice, sortOrder)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const product = db.prepare(`SELECT id FROM "Product" WHERE id = ?`);
   const skus = new Set<string>();
@@ -348,11 +354,20 @@ function insertItems(invoiceId: string, items: CreatePurchaseInvoiceInput['items
       item.productId ?? null,
       draft && JSON.stringify(draft),
       item.quantity,
+      item.freeQty,
       item.unitCost,
       item.sellingPrice ?? draft?.sellingPrice ?? null,
       index,
     );
   });
+}
+
+/** The discount cannot be more than the lines add up to. */
+function assertDiscount(input: CreatePurchaseInvoiceInput): void {
+  const subtotal = input.items.reduce((sum, i) => sum + (i.quantity - i.freeQty) * i.unitCost, 0);
+  if (input.discount > subtotal) {
+    throw errors.validation('The discount is more than the invoice total.', { discount: 'More than the total' });
+  }
 }
 
 /** PI-YYYYMM-0001, continuing from the highest number used this month. */
@@ -372,13 +387,14 @@ export function createPurchaseInvoice(
 ): PurchaseInvoiceDetail {
   return transaction(() => {
     assertSupplier(input.supplierId, db);
+    assertDiscount(input);
     const id = newId();
     const now = nowInstant();
     const invoiceNo = input.invoiceNo ?? nextInvoiceNo(db);
     db.prepare(
       `INSERT INTO "PurchaseInvoice" (id, invoiceNo, supplierId, invoiceDate, invoiceDay, paymentMethod,
-         remark, isDeleted, createdBy, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+         remark, discount, isDeleted, createdBy, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
     ).run(
       id,
       invoiceNo,
@@ -387,6 +403,7 @@ export function createPurchaseInvoice(
       localDateTimeToDay(input.invoiceAt),
       input.paymentMethod,
       input.remark ?? null,
+      input.discount,
       actor.id,
       now,
       now,
@@ -417,11 +434,12 @@ export function updatePurchaseInvoice(
   return transaction(() => {
     const before = activeInvoice(input.id, db);
     assertSupplier(input.supplierId, db);
+    assertDiscount(input);
 
     db.prepare(
       `UPDATE "PurchaseInvoice"
           SET invoiceNo = ?, supplierId = ?, invoiceDate = ?, invoiceDay = ?, paymentMethod = ?, remark = ?,
-              updatedAt = ?
+              discount = ?, updatedAt = ?
         WHERE id = ?`,
     ).run(
       input.invoiceNo ?? before.invoiceNo,
@@ -430,6 +448,7 @@ export function updatePurchaseInvoice(
       localDateTimeToDay(input.invoiceAt),
       input.paymentMethod,
       input.remark ?? null,
+      input.discount,
       nowInstant(),
       input.id,
     );
@@ -442,6 +461,7 @@ export function updatePurchaseInvoice(
             ? Boolean(input.items[i].newProduct) && draftKey(b.newProduct) === draftKey(input.items[i].newProduct!)
             : b.productId === input.items[i].productId) &&
           b.quantity === input.items[i].quantity &&
+          b.freeQty === input.items[i].freeQty &&
           b.unitCost === input.items[i].unitCost &&
           b.sellingPrice === (input.items[i].sellingPrice ?? input.items[i].newProduct?.sellingPrice ?? b.sellingPrice),
       );

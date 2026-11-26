@@ -49,7 +49,7 @@ export const MARK = {
 
 /** Recharts axis styling. Ticks use tabular figures so a column of them aligns. */
 export const AXIS_TICK = {
-  fontSize: 10.5,
+  fontSize: "0.6563rem",
   fill: CHART_COLORS.muted,
   fontVariantNumeric: 'tabular-nums',
 } as const;

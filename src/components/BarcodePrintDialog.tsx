@@ -378,7 +378,7 @@ export default function BarcodePrintDialog({
                   variant="outlined"
                   sx={{
                     fontFamily: 'monospace',
-                    fontSize: 14,
+                    fontSize: "0.875rem",
                     fontWeight: 700,
                     letterSpacing: 1,
                   }}

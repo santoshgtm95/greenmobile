@@ -50,6 +50,7 @@ export default function ProductDetail({
     ['Barcode', <Box component="span" sx={{ fontFamily: 'monospace' }}>{product.barcode ?? '—'}</Box>],
     ['Category', product.categoryName ?? '—'],
     ['Brand', product.brandName ?? '—'],
+    ['Supplier', product.supplierName ?? '—'],
     ['Purchase price', money(product.purchasePrice)],
     ['Selling price', money(product.sellingPrice)],
     ['Tax rate', product.taxRateOverride ? formatRate(product.taxRate) : 'Shop default'],

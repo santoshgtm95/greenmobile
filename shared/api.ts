@@ -154,6 +154,8 @@ export interface Product {
   warrantyMonths: number;
   isActive: SqliteBool;
   availableSerials: number;
+  /** Suppliers on its purchase invoices, most recent first. */
+  supplierName: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1052,6 +1054,10 @@ export interface PurchaseInvoice {
   refundedQty: number;
   /** Still awaited, including units sent back to be replaced. */
   pendingQty: number;
+  /** Minor units off the sum of the lines. */
+  discount: number;
+  /** Sum of the lines, before the discount. */
+  subtotal: number;
   total: number;
   paid: number;
   remaining: number;
@@ -1070,7 +1076,10 @@ export interface PurchaseInvoiceItem {
   brandName: string | null;
   description: string | null;
   isSerialized: SqliteBool;
+  /** All units, free ones included. */
   quantity: number;
+  /** Units in quantity that are not charged. */
+  freeQty: number;
   unitCost: number;
   /** Becomes the product's selling price on delivery. */
   sellingPrice: number;

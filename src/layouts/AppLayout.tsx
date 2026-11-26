@@ -104,10 +104,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       <Stack direction="row" spacing={1.25} sx={{ px: 2, height: 60, alignItems: "center", flexShrink: 0 }}>
         <Logo size={28} />
         <Box sx={{ minWidth: 0 }}>
-          <Typography noWrap sx={{ fontWeight: 650, fontSize: 13.5, letterSpacing: "-0.01em", lineHeight: 1.25 }}>
+          <Typography noWrap sx={{ fontWeight: 650, fontSize: "0.8438rem", letterSpacing: "-0.01em", lineHeight: 1.25 }}>
             {shopName}
           </Typography>
-          <Typography noWrap sx={{ fontSize: 11, color: "text.secondary", lineHeight: 1.3 }}>
+          <Typography noWrap sx={{ fontSize: "0.6875rem", color: "text.secondary", lineHeight: 1.3 }}>
             Point of Sale
           </Typography>
         </Box>
@@ -118,7 +118,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           <Box key={item.to}>
             {item.section && (
               <Typography
-                sx={{ px: 1.25, pt: 1.75, pb: 0.5, fontSize: 10.5, fontWeight: 600, color: "text.disabled", letterSpacing: "0.04em", textTransform: "uppercase" }}
+                sx={{ px: 1.25, pt: 1.75, pb: 0.5, fontSize: "0.6563rem", fontWeight: 600, color: "text.disabled", letterSpacing: "0.04em", textTransform: "uppercase" }}
               >
                 {item.section}
               </Typography>
@@ -135,7 +135,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 color: "text.secondary",
                 transition: "background-color 150ms, color 150ms",
                 "& .MuiListItemIcon-root": { color: "text.disabled", minWidth: 30, transition: "color 150ms" },
-                "& .MuiSvgIcon-root": { fontSize: 17 },
+                "& .MuiSvgIcon-root": { fontSize: "1.0625rem" },
                 "&:hover": { bgcolor: alpha(theme.palette.text.primary, 0.05), color: "text.primary" },
                 "&:hover .MuiListItemIcon-root": { color: "text.secondary" },
                 "&.active": {
@@ -149,14 +149,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               }}
             >
               <ListItemIcon>{item.icon}</ListItemIcon>
-              <ListItemText primary={item.label} slotProps={{ primary: { sx: { fontSize: 12.5, fontWeight: 500 } } }} />
+              <ListItemText primary={item.label} slotProps={{ primary: { sx: { fontSize: "0.7813rem", fontWeight: 500 } } }} />
             </ListItemButton>
           </Box>
         ))}
       </List>
 
       <Tooltip title="This POS stores all data on this computer and needs no internet connection." placement="top">
-        <Stack direction="row" spacing={1} sx={{ m: 1.5, px: 1.25, py: 1, alignItems: "center", borderRadius: 2, color: "text.secondary", fontSize: 11.5 }}>
+        <Stack direction="row" spacing={1} sx={{ m: 1.5, px: 1.25, py: 1, alignItems: "center", borderRadius: 2, color: "text.secondary", fontSize: "0.7188rem" }}>
           <Box sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: "#22c55e", animation: `${pulse} 2.4s infinite` }} />
           <span>Offline · data on this PC</span>
         </Stack>
@@ -221,11 +221,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               spacing={1}
               sx={{ flexGrow: 1, minWidth: 0, alignItems: "center", animation: `${fade} 250ms ease-out both` }}
             >
-              <Typography noWrap sx={{ color: "text.secondary", fontSize: 12.5, display: { xs: "none", sm: "block" } }}>
+              <Typography noWrap sx={{ color: "text.secondary", fontSize: "0.7813rem", display: { xs: "none", sm: "block" } }}>
                 {shopName}
               </Typography>
               <Typography sx={{ color: "text.disabled", display: { xs: "none", sm: "block" } }}>/</Typography>
-              <Typography noWrap sx={{ fontWeight: 600, fontSize: 13.5, letterSpacing: "-0.01em" }}>
+              <Typography noWrap sx={{ fontWeight: 600, fontSize: "0.8438rem", letterSpacing: "-0.01em" }}>
                 {currentLabel}
               </Typography>
             </Stack>
@@ -258,7 +258,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                     sx={{
                       width: 30,
                       height: 30,
-                      fontSize: 13,
+                      fontSize: "0.8125rem",
                       fontWeight: 600,
                       color: "primary.dark",
                       bgcolor: alpha(theme.palette.primary.main, 0.12),
@@ -267,12 +267,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                     {user.fullName.trim().charAt(0).toUpperCase()}
                   </Avatar>
                   <Box sx={{ textAlign: "left", display: { xs: "none", sm: "block" } }}>
-                    <Typography sx={{ fontWeight: 600, fontSize: 13.5, lineHeight: 1.2 }}>{user.fullName}</Typography>
-                    <Typography sx={{ fontSize: 12, color: "text.secondary", lineHeight: 1.2 }}>
+                    <Typography sx={{ fontWeight: 600, fontSize: "0.8438rem", lineHeight: 1.2 }}>{user.fullName}</Typography>
+                    <Typography sx={{ fontSize: "0.75rem", color: "text.secondary", lineHeight: 1.2 }}>
                       {USER_ROLE_LABELS[user.role]}
                     </Typography>
                   </Box>
-                  <UnfoldMoreIcon sx={{ fontSize: 16, color: "text.disabled", display: { xs: "none", sm: "block" } }} />
+                  <UnfoldMoreIcon sx={{ fontSize: "1rem", color: "text.disabled", display: { xs: "none", sm: "block" } }} />
                 </Box>
                 <Menu
                   anchorEl={menuAnchor}

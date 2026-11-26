@@ -161,7 +161,7 @@ export const theme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 6,
-          fontSize: 14,
+          fontSize: "0.875rem",
           minHeight: 34,
           '&.Mui-selected': { backgroundColor: alpha('#4f46e5', 0.08) },
         },
@@ -172,7 +172,7 @@ export const theme = createTheme({
         root: { borderColor: LINE },
         head: {
           fontWeight: 600,
-          fontSize: 11.5,
+          fontSize: "0.7188rem",
           color: MUTED,
           whiteSpace: 'nowrap',
           backgroundColor: '#fafbfc',
@@ -211,7 +211,7 @@ export const theme = createTheme({
             ...(ownerState.variant === 'outlined' && !tone && { borderColor: LINE_STRONG }),
           };
         },
-        sizeSmall: { height: 22, fontSize: 12 },
+        sizeSmall: { height: 22, fontSize: "0.75rem" },
       },
     },
     MuiAlert: {
@@ -227,7 +227,7 @@ export const theme = createTheme({
     MuiTooltip: {
       defaultProps: { enterDelay: 400, arrow: true },
       styleOverrides: {
-        tooltip: { backgroundColor: INK, fontSize: 12, fontWeight: 500, borderRadius: 6, padding: '6px 10px' },
+        tooltip: { backgroundColor: INK, fontSize: "0.75rem", fontWeight: 500, borderRadius: 6, padding: '6px 10px' },
         arrow: { color: INK },
       },
     },
@@ -327,7 +327,7 @@ export const theme = createTheme({
     MuiDialogTitle: {
       styleOverrides: {
         root: ({ theme }) => ({
-          fontSize: 15,
+          fontSize: "0.9375rem",
           fontWeight: 600,
           letterSpacing: '-0.015em',
           color: INK,

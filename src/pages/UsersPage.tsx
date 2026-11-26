@@ -175,7 +175,7 @@ export default function UsersPage() {
                             sx={{
                               width: 30,
                               height: 30,
-                              fontSize: 13,
+                              fontSize: "0.8125rem",
                               bgcolor: inactive ? 'action.disabled' : 'primary.main',
                             }}
                           >
@@ -193,7 +193,7 @@ export default function UsersPage() {
                           </Box>
                         </Stack>
                       </TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace', fontSize: 12.5 }}>
+                      <TableCell sx={{ fontFamily: 'monospace', fontSize: "0.7813rem" }}>
                         {row.username}
                       </TableCell>
                       <TableCell>
@@ -206,7 +206,7 @@ export default function UsersPage() {
                           />
                           {loadBearing && (
                             <Tooltip title="The only administrator who can sign in. Their role and access are locked until there is another.">
-                              <ShieldIcon color="warning" sx={{ fontSize: 17 }} />
+                              <ShieldIcon color="warning" sx={{ fontSize: "1.0625rem" }} />
                             </Tooltip>
                           )}
                         </Stack>

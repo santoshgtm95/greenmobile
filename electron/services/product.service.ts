@@ -46,6 +46,8 @@ export interface ProductRow {
   warrantyMonths: number;
   isActive: number;
   availableSerials: number;
+  /** Suppliers on its purchase invoices, most recent first. */
+  supplierName: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -59,7 +61,14 @@ const PRODUCT_SELECT = `
          p.stockQuantity, p.minimumStock, p.unit, p.isSerialized, p.warrantyMonths,
          p.isActive, p.createdAt, p.updatedAt,
          (SELECT COUNT(*) FROM "ProductSerial" s
-           WHERE s.productId = p.id AND s.status = 'AVAILABLE') AS availableSerials
+           WHERE s.productId = p.id AND s.status = 'AVAILABLE') AS availableSerials,
+         -- Every supplier it was bought from, most recent first.
+         (SELECT GROUP_CONCAT(name, ', ') FROM (
+            SELECT sp.name FROM "PurchaseInvoiceItem" pi
+              JOIN "PurchaseInvoice" pinv ON pinv.id = pi.invoiceId AND pinv.isDeleted = 0
+              JOIN "Supplier" sp ON sp.id = pinv.supplierId
+             WHERE pi.productId = p.id
+             GROUP BY sp.id ORDER BY MAX(pinv.invoiceDate) DESC)) AS supplierName
     FROM "Product" p
     LEFT JOIN "Category" c ON c.id = p.categoryId
     LEFT JOIN "Category" c1 ON c1.id = c.parentId

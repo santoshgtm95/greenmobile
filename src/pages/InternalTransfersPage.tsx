@@ -238,7 +238,7 @@ export default function InternalTransfersPage() {
                   <TableCell
                     sx={{
                       fontFamily: "monospace",
-                      fontSize: 12.5,
+                      fontSize: "0.7813rem",
                       whiteSpace: "nowrap",
                     }}
                   >
