@@ -39,8 +39,8 @@ const STATUS_COLOR = {
 /**
  * IMEI / serial management (spec §13).
  *
- * Each unit is one item of stock, so adding numbers here is what puts
- * serialized products on the shelf.
+ * Names units already in stock — one IMEI per unit that has none — without
+ * moving stock. New phones arrive (with their IMEIs) on a purchase invoice.
  */
 export default function SerialsDialog({
   product,
@@ -67,6 +67,10 @@ export default function SerialsDialog({
     .map((line) => line.split(/[\s,]+/).filter(Boolean))
     .filter((codes) => codes.length > 0);
   const tooMany = parsed.some((codes) => codes.length > 2);
+  // IMEIs name units already in stock: one per unit that has none yet.
+  const tagged = (serials.data ?? []).filter((s) => s.status === 'AVAILABLE' || s.status === 'RESERVED').length;
+  const untagged = serials.isLoading ? 0 : Math.max(product.stockQuantity - tagged, 0);
+  const overLimit = parsed.length > untagged;
 
   const add = useMutation({
     mutationFn: () =>
@@ -104,19 +108,28 @@ export default function SerialsDialog({
         <Stack spacing={2.5} sx={{ pt: 1 }}>
           {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
 
+          <Alert severity={untagged ? 'info' : 'success'} variant="outlined">
+            {untagged
+              ? `${untagged} unit(s) in stock have no IMEI yet — you can add up to ${untagged}. Stock does not change.`
+              : 'Every unit in stock has an IMEI. New phones come in through a purchase invoice.'}
+          </Alert>
+
           <TextField
             label="Add IMEI or serial numbers"
             multiline
             minRows={3}
+            disabled={untagged === 0}
             value={bulk}
             onChange={(e) => setBulk(e.target.value)}
             placeholder={'354121080000001 354121080000019\n354121080000027'}
-            error={tooMany}
+            error={tooMany || overLimit}
             helperText={
               tooMany
                 ? 'A phone has at most two IMEIs — put each phone on its own line.'
+                : overLimit
+                ? `Only ${untagged} unit(s) need an IMEI — remove ${parsed.length - untagged} line(s).`
                 : parsed.length > 0
-                ? `${parsed.length} phone(s) ready — each becomes one unit of stock`
+                ? `${parsed.length} of ${untagged} phone(s) ready`
                 : 'One phone per line; put a second IMEI on the same line after a space. Scanning works too.'
             }
           />
@@ -128,9 +141,9 @@ export default function SerialsDialog({
                 setError(null);
                 add.mutate();
               }}
-              disabled={add.isPending || parsed.length === 0 || tooMany}
+              disabled={add.isPending || parsed.length === 0 || tooMany || overLimit}
             >
-              {add.isPending ? 'Adding…' : `Add ${parsed.length || ''} to stock`}
+              {add.isPending ? 'Adding…' : `Add ${parsed.length || ''} IMEI`}
             </Button>
           </Stack>
 

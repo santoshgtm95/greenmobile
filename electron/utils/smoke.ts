@@ -810,11 +810,9 @@ const SCRIPT = `
     sku: 'SMOKE-PHONE', name: 'iPhone 15',
     purchasePrice: 2500000, sellingPrice: 3000000, taxRate: 0, taxRateOverride: false,
     minimumStock: 0, unit: 'pcs', isSerialized: true, warrantyMonths: 12, initialStock: 0,
+    serials: [{ imei1: '354121080000001' }],
   }));
-  const withImei = ok(await b.serials.add({
-    productId: phone.id, serials: [{ imei1: '354121080000001' }],
-  }));
-  add('adding an IMEI adds one unit of stock', withImei?.stockQuantity === 1);
+  add('receiving a phone with its IMEI adds one unit of stock', phone?.stockQuantity === 1);
 
   const dupImei = err(await b.serials.add({
     productId: phone.id, serials: [{ imei1: '354121080000001' }],

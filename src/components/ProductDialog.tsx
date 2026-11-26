@@ -81,6 +81,8 @@ export default function ProductDialog({
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const money = useMoneyFormatter();
+  // Editing: IMEIs go on units already in stock, one per unit that has none yet.
+  const untagged = isEdit ? Math.max(product.stockQuantity - product.availableSerials, 0) : Infinity;
   const openingUnits = form.isSerialized ? serials.length : form.initialStock;
   const paysForStock = !isEdit && openingUnits > 0;
   const stockCost = paysForStock ? multiplyMoney(form.purchasePrice, openingUnits) : 0;
@@ -95,7 +97,7 @@ export default function ProductDialog({
     const inputs = [...document.querySelectorAll<HTMLInputElement>('[data-imei] input')];
     const next = inputs[inputs.indexOf(event.target as HTMLInputElement) + 1];
     if (next) next.focus();
-    else setPhones((rows) => [...rows, { imei1: '', imei2: '' }]);
+    else setPhones((rows) => (rows.length < untagged ? [...rows, { imei1: '', imei2: '' }] : rows));
   };
 
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
@@ -127,7 +129,11 @@ export default function ProductDialog({
       };
 
       if (isEdit) {
-        return api.products.update({ ...common, id: product.id, isActive: form.isActive });
+        const updated = await api.products.update({ ...common, id: product.id, isActive: form.isActive });
+        // After the update, so a product just switched to IMEI tracking accepts them.
+        return form.isSerialized && serials.length > 0
+          ? api.serials.add({ productId: product.id, serials })
+          : updated;
       }
       return api.products.create({
         ...common,
@@ -401,16 +407,20 @@ export default function ProductDialog({
                 <SerialTable productId={product.id} />
               </Paper>
               <Alert severity="info">
-                Add more phones with the "IMEI / serial numbers" button in the product list — each phone is a unit of stock.
+                {untagged > 0
+                  ? `${untagged} unit(s) in stock have no IMEI yet — enter them below. Stock does not change.`
+                  : 'Every unit in stock has an IMEI. New phones come in through a purchase invoice.'}
               </Alert>
             </>
           )}
 
-          {form.isSerialized && !isEdit && (
+          {form.isSerialized && untagged > 0 && (
             <Stack spacing={1.5}>
               <Typography variant="body2" color="text.secondary">
-                Enter the IMEI of each phone you have. Each phone is one unit of stock; add IMEI 2 for
-                dual-SIM phones. Press Enter or scan to move to the next box.
+                {isEdit
+                  ? 'Enter the IMEI of each phone already in stock; add IMEI 2 for dual-SIM phones.'
+                  : 'Enter the IMEI of each phone you have. Each phone is one unit of stock; add IMEI 2 for dual-SIM phones.'}{' '}
+                Press Enter or scan to move to the next box.
               </Typography>
               {phones.map((phone, index) => (
                 <Stack key={index} direction="row" spacing={1} sx={{ alignItems: 'center' }}>
@@ -452,12 +462,21 @@ export default function ProductDialog({
                 <Button
                   size="small"
                   startIcon={<AddIcon />}
+                  disabled={phones.length >= untagged}
                   onClick={() => setPhones((rows) => [...rows, { imei1: '', imei2: '' }])}
                 >
                   Add another phone
                 </Button>
                 <Typography variant="body2" color="text.secondary">
-                  Opening stock: <strong>{serials.length}</strong>
+                  {isEdit ? (
+                    <>
+                      IMEIs: <strong>{serials.length}</strong> of {untagged}
+                    </>
+                  ) : (
+                    <>
+                      Opening stock: <strong>{serials.length}</strong>
+                    </>
+                  )}
                 </Typography>
               </Stack>
             </Stack>

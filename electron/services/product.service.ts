@@ -420,7 +420,7 @@ export function adjustStock(
 
     if (product.isSerialized) {
       throw errors.invalidState(
-        'Serialized products follow their IMEI records. Add or remove serial numbers instead of adjusting the quantity.',
+        'Serialized products follow their IMEI records. Receive new phones on a purchase invoice instead of adjusting the quantity.',
       );
     }
 
@@ -504,6 +504,8 @@ export function addSerialsInternal(
   allowNegativeStock: boolean,
   /** The purchase invoice line they arrived on. */
   referenceId: string | null = null,
+  /** False: the units are already counted in stock and only get their IMEIs. */
+  receive = true,
 ): number {
   assertSerialCodesFree(serials, db);
 
@@ -529,6 +531,7 @@ export function addSerialsInternal(
       now,
       now,
     );
+    if (!receive) continue;
 
     // Each handset is one unit of stock, recorded individually so the ledger can
     // name the exact IMEI that came in.
@@ -565,6 +568,22 @@ export function addSerials(
       throw errors.invalidState('This product is not marked as serialized.');
     }
 
+    // The units are already in stock (opening stock, a stock adjustment, or stock
+    // held before IMEI tracking was switched on); this only names them, so one
+    // IMEI per unit that has none yet, and stock does not move.
+    assertSerialCodesFree(input.serials, db);
+    const { tagged } = db
+      .prepare(`SELECT COUNT(*) AS tagged FROM "ProductSerial" WHERE productId = ? AND status IN ('AVAILABLE', 'RESERVED')`)
+      .get(input.productId) as { tagged: number };
+    const untagged = Math.max(product.stockQuantity - tagged, 0);
+    if (input.serials.length > untagged) {
+      throw errors.validation(
+        untagged === 0
+          ? `Every unit of "${product.name}" in stock already has an IMEI. New phones come in through a purchase invoice.`
+          : `Only ${untagged} unit(s) of "${product.name}" in stock have no IMEI yet.`,
+      );
+    }
+
     const added = addSerialsInternal(
       input.productId,
       input.serials,
@@ -572,6 +591,8 @@ export function addSerials(
       actor,
       db,
       settings.allowNegativeStock,
+      null,
+      false,
     );
 
     recordAudit(
@@ -580,7 +601,7 @@ export function addSerials(
         action: 'CREATE',
         entityName: 'ProductSerial',
         entityId: input.productId,
-        summary: `Added ${added} serial number(s) to "${product.name}"`,
+        summary: `Added ${added} IMEI / serial number(s) to "${product.name}" units in stock`,
         newValues: input.serials,
       },
       db,

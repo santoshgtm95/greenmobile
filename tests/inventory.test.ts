@@ -16,6 +16,7 @@ import { completeFirstRunSetup } from '../electron/services/auth.service';
 import { getSessionUser, setSessionUser, type SessionUser } from '../electron/session';
 import {
   createProduct,
+  getProduct,
   adjustStock,
   addSerials,
   markSerialDefective,
@@ -32,6 +33,7 @@ import { setSettings } from '../electron/services/settings.service';
 import { businessDay, addDays } from '../shared/datetime';
 import type { FirstRunSetupInput } from '../shared/validation';
 import { saveCashCount } from '../electron/services/banking.service';
+import { AppError } from '../shared/errors';
 
 let ctx: TestDatabase;
 let actor: SessionUser;
@@ -75,6 +77,15 @@ interface StockOptions {
   stock?: number;
   minimumStock?: number;
   serialized?: boolean;
+  /** IMEIs received with the product; each is one unit of opening stock. */
+  serials?: string[];
+}
+
+/** A phone already counted in stock, then switched to IMEI tracking. */
+function stockedPhone(units: number) {
+  const phone = product({ sku: 'PH-1', stock: units });
+  ctx.db.prepare(`UPDATE "Product" SET isSerialized = 1 WHERE id = ?`).run(phone.id);
+  return phone;
 }
 
 function product(options: StockOptions = {}) {
@@ -91,6 +102,7 @@ function product(options: StockOptions = {}) {
       isSerialized: options.serialized ?? false,
       warrantyMonths: 0,
       initialStock: options.stock ?? 10,
+      serials: options.serials?.map((imei1) => ({ imei1 })),
     },
     actor,
     ctx.db,
@@ -255,15 +267,7 @@ describe('the movement ledger', () => {
   });
 
   it('records each handset individually, naming its IMEI', () => {
-    const phone = product({ sku: 'PH-1', stock: 0, serialized: true });
-    addSerials(
-      {
-        productId: phone.id,
-        serials: [{ imei1: '354121080000001' }, { imei1: '354121080000002' }],
-      },
-      actor,
-      ctx.db,
-    );
+    const phone = product({ sku: 'PH-1', stock: 0, serialized: true, serials: ['354121080000001', '354121080000002'] });
 
     const { rows, total } = inventoryHistory({ productId: phone.id }, ctx.db);
     expect(total).toBe(2);
@@ -272,8 +276,22 @@ describe('the movement ledger', () => {
     expect(rows.map((row) => row.reason).join(' ')).toContain('354121080000002');
   });
 
+  it('puts IMEIs on units already in stock without adding stock, one per unit', () => {
+    const phone = stockedPhone(1);
+    addSerials({ productId: phone.id, serials: [{ imei1: '354121080000001' }] }, actor, ctx.db);
+    expect(getProduct(phone.id, ctx.db)).toMatchObject({ stockQuantity: 1, availableSerials: 1 });
+    // The one unit already has its IMEI.
+    expect(() => addSerials({ productId: phone.id, serials: [{ imei1: '354121080000002' }] }, actor, ctx.db)).toThrow(AppError);
+
+    const two = product({ sku: 'PH-2', stock: 2 });
+    ctx.db.prepare(`UPDATE "Product" SET isSerialized = 1 WHERE id = ?`).run(two.id);
+    expect(() =>
+      addSerials({ productId: two.id, serials: ['A1', 'A2', 'A3'].map((imei1) => ({ imei1 })) }, actor, ctx.db),
+    ).toThrow(AppError);
+  });
+
   it('records a defective handset coming off the shelf', () => {
-    const phone = product({ sku: 'PH-1', stock: 0, serialized: true });
+    const phone = stockedPhone(1);
     addSerials({ productId: phone.id, serials: [{ imei1: '354121080000001' }] }, actor, ctx.db);
     const serial = listSerials(phone.id, 'AVAILABLE', ctx.db)[0];
 
@@ -388,7 +406,7 @@ describe('the stock summary', () => {
   });
 
   it('counts handsets still available by IMEI', () => {
-    const phone = product({ sku: 'PH-1', stock: 0, serialized: true });
+    const phone = stockedPhone(2);
     addSerials(
       {
         productId: phone.id,
