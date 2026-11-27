@@ -20,6 +20,7 @@ import {
   adjustStock,
   addSerials,
   markSerialDefective,
+  setSerialColor,
   deleteProduct,
 } from '../electron/services/product.service';
 import { createSale, refundSale } from '../electron/services/sale.service';
@@ -79,6 +80,23 @@ interface StockOptions {
   serialized?: boolean;
   /** IMEIs received with the product; each is one unit of opening stock. */
   serials?: string[];
+}
+
+/** A serialized product with no stock yet. */
+function phoneInput(sku: string) {
+  return {
+    sku,
+    name: `Phone ${sku}`,
+    purchasePrice: 1000,
+    sellingPrice: 1500,
+    taxRate: 0,
+    taxRateOverride: false,
+    minimumStock: 0,
+    unit: 'pcs',
+    isSerialized: true,
+    warrantyMonths: 0,
+    initialStock: 0,
+  };
 }
 
 /** A phone already counted in stock, then switched to IMEI tracking. */
@@ -288,6 +306,47 @@ describe('the movement ledger', () => {
     expect(() =>
       addSerials({ productId: two.id, serials: ['A1', 'A2', 'A3'].map((imei1) => ({ imei1 })) }, actor, ctx.db),
     ).toThrow(AppError);
+  });
+
+  it('keeps colours, counts phones by the colour of their IMEIs, and generates P- codes', () => {
+    const phone = createProduct(
+      {
+        sku: '',
+        name: 'Note 14 5G',
+        purchasePrice: 1000,
+        sellingPrice: 1500,
+        taxRate: 0,
+        taxRateOverride: false,
+        minimumStock: 0,
+        unit: 'pcs',
+        isSerialized: true,
+        warrantyMonths: 0,
+        initialStock: 0,
+        colors: [{ name: 'Black', quantity: 0 }, { name: 'Blue', quantity: 0 }],
+        serials: [
+          { imei1: 'C1', color: 'black' },
+          { imei1: 'C2', color: 'Black' },
+          { imei1: 'C3', color: 'Blue' },
+        ],
+      },
+      actor,
+      ctx.db,
+    );
+    expect(phone.sku).toMatch(/^P-\d{5}$/);
+    expect(phone.colors).toEqual([{ name: 'Black', quantity: 2 }, { name: 'Blue', quantity: 1 }]);
+    // A colour the product does not list is refused.
+    expect(() =>
+      createProduct({ ...phoneInput('PH-X'), colors: [{ name: 'Red', quantity: 0 }], serials: [{ imei1: 'C9', color: 'Green' }] }, actor, ctx.db),
+    ).toThrow(AppError);
+
+    // An IMEI already in stock can change colour, and the counts follow.
+    const c3 = listSerials(phone.id, undefined, ctx.db).find((s) => s.imei1 === 'C3')!;
+    setSerialColor(c3.id, 'black', actor, ctx.db);
+    expect(getProduct(phone.id, ctx.db).colors).toEqual([{ name: 'Black', quantity: 3 }, { name: 'Blue', quantity: 0 }]);
+    expect(() => setSerialColor(c3.id, 'Green', actor, ctx.db)).toThrow(AppError);
+
+    const cable = product({ sku: 'CBL-9', stock: 4 });
+    expect(cable.colors).toEqual([]);
   });
 
   it('records a defective handset coming off the shelf', () => {

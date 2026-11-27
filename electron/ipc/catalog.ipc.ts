@@ -15,6 +15,7 @@ import {
   zAdjustStock,
   zAddSerials,
   zMarkSerialDefective,
+  zSetSerialColor,
   zSaveLookup,
   zSaveCategory,
   zLookupQuery,
@@ -31,6 +32,7 @@ import {
   adjustStock,
   addSerials,
   markSerialDefective,
+  setSerialColor,
   listCategories,
   listBrands,
   saveCategory,
@@ -146,6 +148,15 @@ export function registerCatalogIpc(): void {
     zMarkSerialDefective,
     ({ serialId, reason }) => {
       markSerialDefective(serialId, reason, requireUser());
+    },
+  );
+
+  handle(
+    CHANNELS.serials.setColor,
+    { access: 'permission', permission: 'inventory.adjust' },
+    zSetSerialColor,
+    ({ serialId, color }) => {
+      setSerialColor(serialId, color, requireUser());
     },
   );
 

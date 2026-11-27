@@ -148,7 +148,7 @@ export default function RefundDialog({
                           {item.productName}
                           <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                             {item.sku}
-                            {item.serials ? ` · IMEI ${item.serials}` : ''}
+                            {item.serials ? ` · IMEI ${item.serials}` : ''}{item.color ? ` · ${item.color}` : ''}
                           </Typography>
                         </TableCell>
                         <TableCell align="right">{item.quantity}</TableCell>

@@ -165,6 +165,7 @@ export interface SerialRow {
   warrantyStartDate: string | null;
   warrantyEndDate: string | null;
   notes: string | null;
+  color: string | null;
 }
 
 /** Serials for a product, newest first, optionally filtered by status. */
@@ -174,7 +175,7 @@ export function listSerials(
   db: Db = getDatabase(),
 ): SerialRow[] {
   const sql = `SELECT id, productId, serialNumber, imei1, imei2, purchasePrice, sellingPrice,
-                      status, warrantyStartDate, warrantyEndDate, notes
+                      status, warrantyStartDate, warrantyEndDate, notes, color
                  FROM "ProductSerial"
                 WHERE productId = ? ${status ? 'AND status = ?' : ''}
                 ORDER BY createdAt DESC`;
@@ -189,7 +190,7 @@ export function findSerialByCode(code: string, db: Db = getDatabase()): SerialRo
   const row = db
     .prepare(
       `SELECT id, productId, serialNumber, imei1, imei2, purchasePrice, sellingPrice,
-              status, warrantyStartDate, warrantyEndDate, notes
+              status, warrantyStartDate, warrantyEndDate, notes, color
          FROM "ProductSerial"
         WHERE imei1 = ? OR imei2 = ? OR serialNumber = ?
         LIMIT 1`,

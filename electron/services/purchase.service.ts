@@ -16,7 +16,7 @@ import { nowInstant, businessDay, localDateTimeToInstant, localDateTimeToDay } f
 import { errors } from '../../shared/errors';
 import { recordAudit } from './audit.service';
 import { applyStockMovement } from './inventory.service';
-import { addSerialsInternal, createProduct, saveBrand } from './product.service';
+import { addSerialsInternal, createProduct, nextProductSku, saveBrand } from './product.service';
 import { getShopSettings } from './settings.service';
 import { moveMoney } from './money.service';
 import type { SessionUser } from '../session';
@@ -178,6 +178,10 @@ export interface PurchaseInvoiceItemRow {
   refundedQty: number;
   replacedQty: number;
   pendingQty: number;
+  /** The product's colours, to pick from when IMEIs arrive. */
+  colors: string[];
+  /** The colour ordered on this line. */
+  color: string | null;
 }
 
 export interface SupplierPaymentRow {
@@ -244,9 +248,11 @@ export function getPurchaseInvoice(id: string, db: Db = getDatabase()): Purchase
               COALESCE(br.name, json_extract(it.newProduct, '$.brandName')) AS brandName,
               COALESCE(p.description, json_extract(it.newProduct, '$.description')) AS description,
               COALESCE(it.sellingPrice, json_extract(it.newProduct, '$.sellingPrice'), p.sellingPrice, 0) AS sellingPrice,
-              COALESCE(p.isSerialized, 0) AS isSerialized, it.quantity, it.freeQty, it.unitCost,
+              COALESCE(p.isSerialized, 0) AS isSerialized, it.quantity, it.freeQty, it.unitCost, it.color,
               it.receivedQty, it.refundedQty, it.replacedQty,
-              it.quantity - it.receivedQty - it.refundedQty AS pendingQty
+              it.quantity - it.receivedQty - it.refundedQty AS pendingQty,
+              (SELECT json_group_array(name) FROM
+                 (SELECT name FROM "ProductColor" WHERE productId = it.productId ORDER BY sortOrder)) AS colors
          FROM "PurchaseInvoiceItem" it
          LEFT JOIN "Product" p ON p.id = it.productId
          LEFT JOIN "Brand" br ON br.id = p.brandId
@@ -255,9 +261,13 @@ export function getPurchaseInvoice(id: string, db: Db = getDatabase()): Purchase
     )
     .all(id)
     .map((row) => {
-      const r = row as Omit<PurchaseInvoiceItemRow, 'newProduct'> & { newProduct: string | null };
+      const r = row as Omit<PurchaseInvoiceItemRow, 'newProduct' | 'colors'> & { newProduct: string | null; colors: string };
       // Once delivered the line points at the real product; the draft is history.
-      return { ...r, newProduct: r.productId || !r.newProduct ? null : (JSON.parse(r.newProduct) as DraftProduct) };
+      return {
+        ...r,
+        newProduct: r.productId || !r.newProduct ? null : (JSON.parse(r.newProduct) as DraftProduct),
+        colors: JSON.parse(r.colors) as string[],
+      };
     });
 
   const payments = db
@@ -302,6 +312,7 @@ function draftKey(p: NewPurchaseProduct): string {
     (p.brandName ?? '').toLowerCase(),
     p.sellingPrice,
     p.description ?? null,
+    (p.colors ?? []).map((c) => [c.name, c.quantity]),
   ]);
 }
 
@@ -334,19 +345,35 @@ function prepareDraft(p: NewPurchaseProduct, invoiceId: string, actor: SessionUs
 
 function insertItems(invoiceId: string, items: CreatePurchaseInvoiceInput['items'], actor: SessionUser, db: Db): void {
   const insert = db.prepare(
-    `INSERT INTO "PurchaseInvoiceItem" (id, invoiceId, productId, newProduct, quantity, freeQty, unitCost, sellingPrice, sortOrder)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO "PurchaseInvoiceItem" (id, invoiceId, productId, newProduct, quantity, freeQty, unitCost, sellingPrice, color, sortOrder)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const product = db.prepare(`SELECT id FROM "Product" WHERE id = ?`);
+  const colorOf = db.prepare(`SELECT name FROM "ProductColor" WHERE productId = ? AND name = ? COLLATE NOCASE`);
   const skus = new Set<string>();
+  // Codes typed on this invoice, so a generated one never repeats them.
+  const typed = new Set(items.map((i) => i.newProduct?.sku).filter((sku): sku is string => Boolean(sku)));
   items.forEach((item, index) => {
     let draft: DraftProduct | null = null;
     if (item.newProduct) {
-      if (skus.has(item.newProduct.sku)) throw errors.validation(`SKU "${item.newProduct.sku}" appears twice on this invoice.`);
-      skus.add(item.newProduct.sku);
-      draft = prepareDraft(item.newProduct, invoiceId, actor, db);
+      const p = item.newProduct.sku
+        ? item.newProduct
+        : { ...item.newProduct, sku: nextProductSku(db, new Set([...typed, ...skus])) };
+      if (skus.has(p.sku)) throw errors.validation(`SKU "${p.sku}" appears twice on this invoice.`);
+      skus.add(p.sku);
+      if ((p.colors ?? []).reduce((sum, c) => sum + c.quantity, 0) > item.quantity) {
+        throw errors.validation(`The colours of "${p.name}" add up to more than its quantity.`);
+      }
+      draft = prepareDraft(p, invoiceId, actor, db);
     } else if (!product.get(item.productId)) {
       throw errors.productGone();
+    }
+    // Stored as the product spells it, so delivery finds the colour.
+    let color: string | null = null;
+    if (item.color && item.productId) {
+      const match = colorOf.get(item.productId, item.color) as { name: string } | undefined;
+      if (!match) throw errors.validation(`"${item.color}" is not one of this product's colours.`);
+      color = match.name;
     }
     insert.run(
       newId(),
@@ -357,6 +384,7 @@ function insertItems(invoiceId: string, items: CreatePurchaseInvoiceInput['items
       item.freeQty,
       item.unitCost,
       item.sellingPrice ?? draft?.sellingPrice ?? null,
+      color,
       index,
     );
   });
@@ -462,6 +490,7 @@ export function updatePurchaseInvoice(
             : b.productId === input.items[i].productId) &&
           b.quantity === input.items[i].quantity &&
           b.freeQty === input.items[i].freeQty &&
+          (b.color ?? '').toLowerCase() === (input.items[i].color ?? '').toLowerCase() &&
           b.unitCost === input.items[i].unitCost &&
           b.sellingPrice === (input.items[i].sellingPrice ?? input.items[i].newProduct?.sellingPrice ?? b.sellingPrice),
       );
@@ -531,6 +560,8 @@ export function receivePurchaseItems(
       if (entry.quantity > item.pendingQty) {
         throw errors.validation(`Only ${item.pendingQty} of "${item.productName}" are still awaited.`);
       }
+      // The same line can come again (one entry per colour); count what this one takes.
+      item.pendingQty -= entry.quantity;
       if (!item.productId && item.newProduct) {
         // First arrival of a new product: it joins Stocks now, priced at the invoice cost.
         const p = item.newProduct;
@@ -551,6 +582,8 @@ export function receivePurchaseItems(
             isSerialized: false,
             warrantyMonths: 0,
             initialStock: 0,
+            // Counts start at 0 and grow as each colour is delivered.
+            colors: p.colors?.map((c) => ({ name: c.name, quantity: 0 })),
           },
           actor,
           db,
@@ -585,9 +618,11 @@ export function receivePurchaseItems(
         if (serials.length !== entry.quantity) {
           throw errors.validation(`Enter ${entry.quantity} IMEI / serial number(s) for "${item.productName}".`);
         }
+        const color = entry.color ?? item.color ?? undefined;
+        if (color) ensureColor(item.productId!, color, db);
         addSerialsInternal(
           item.productId!,
-          serials.map((imei1) => ({ imei1 })),
+          serials.map((imei1) => ({ imei1, color })),
           item.unitCost,
           actor,
           db,
@@ -609,6 +644,9 @@ export function receivePurchaseItems(
           { allowNegativeStock: settings.allowNegativeStock },
           db,
         );
+        // A delivery entry may name its colour (several colours on one line); else the line's own.
+        if (entry.color) ensureColor(item.productId!, entry.color, db);
+        moveColorQuantity(item.productId!, entry.color ?? item.color, entry.quantity, db);
       }
       db.prepare(`UPDATE "PurchaseInvoiceItem" SET receivedQty = receivedQty + ? WHERE id = ?`).run(
         entry.quantity,
@@ -690,6 +728,7 @@ export function returnPurchaseItem(
         );
       }
     } else {
+      moveColorQuantity(item.productId!, item.color, -input.quantity, db);
       applyStockMovement(
         {
           productId: item.productId!,
@@ -791,6 +830,26 @@ export function paySupplier(input: PaySupplierInput, actor: SessionUser, db: Db 
     );
     return getPurchaseInvoice(invoice.id, db);
   }, db);
+}
+
+/** Units of a line's colour arriving (+) or going back (−); a colour's count never drops below zero. */
+function moveColorQuantity(productId: string, color: string | null, change: number, db: Db): void {
+  if (!color) return;
+  db.prepare(`UPDATE "ProductColor" SET quantity = MAX(quantity + ?, 0) WHERE productId = ? AND name = ?`).run(
+    change,
+    productId,
+    color,
+  );
+}
+
+/** Adds a colour typed on delivery to the product's list, unless it is already there. */
+function ensureColor(productId: string, name: string, db: Db): void {
+  const exists = db.prepare(`SELECT 1 FROM "ProductColor" WHERE productId = ? AND name = ? COLLATE NOCASE`).get(productId, name);
+  if (exists) return;
+  db.prepare(
+    `INSERT INTO "ProductColor" (id, productId, name, quantity, sortOrder)
+     VALUES (?, ?, ?, 0, (SELECT COALESCE(MAX(sortOrder), -1) + 1 FROM "ProductColor" WHERE productId = ?))`,
+  ).run(newId(), productId, name, productId);
 }
 
 /** A product line and its (not deleted) invoice. */

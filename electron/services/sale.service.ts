@@ -89,6 +89,7 @@ export interface SaleItemRow {
   returnedQuantity: number;
   isGift: number;
   serials: string | null;
+  color: string | null;
 }
 
 export interface PaymentRow {
@@ -106,10 +107,23 @@ export interface SaleDetail {
   payments: PaymentRow[];
 }
 
+/**
+ * Moves a colour's count on a product without IMEI tracking. The colours are a
+ * breakdown of stock, never below zero; an IMEI line (colour null here) counts its serials instead.
+ */
+function moveColorStock(productId: string, color: string | null, change: number, db: Db): void {
+  if (!color) return;
+  db.prepare(
+    `UPDATE "ProductColor" SET quantity = MAX(quantity + ?, 0) WHERE productId = ? AND name = ?`,
+  ).run(change, productId, color);
+}
+
 /** One priced line, computed entirely from trusted data. */
 interface PricedLine {
   productId: string;
   productSerialId: string | null;
+  /** As the product spells it; the handset's own on an IMEI line. */
+  color: string | null;
   productName: string;
   sku: string;
   quantity: number;
@@ -177,9 +191,10 @@ export function priceSale(
        FROM "Product" WHERE id = ?`,
   );
   const serialStatement = db.prepare(
-    `SELECT id, productId, status, purchasePrice, sellingPrice, imei1, serialNumber
+    `SELECT id, productId, status, purchasePrice, sellingPrice, imei1, serialNumber, color
        FROM "ProductSerial" WHERE id = ?`,
   );
+  const colorsStatement = db.prepare(`SELECT name FROM "ProductColor" WHERE productId = ?`);
 
   const lines: PricedLine[] = [];
 
@@ -193,6 +208,16 @@ export function priceSale(
     let unitPrice = product.sellingPrice;
     let unitCost = product.purchasePrice;
     let quantity = item.quantity;
+    let color: string | null = null;
+
+    if (!product.isSerialized) {
+      // A product with colours sells one colour per line, so that colour's count can go down.
+      const colors = (colorsStatement.all(product.id) as Array<{ name: string }>).map((c) => c.name);
+      if (colors.length > 0) {
+        color = colors.find((c) => c.toLowerCase() === (item.color ?? '').toLowerCase()) ?? null;
+        if (!color) throw errors.validation(`Choose a colour for "${product.name}".`);
+      }
+    }
 
     if (product.isSerialized) {
       if (!item.productSerialId) {
@@ -207,6 +232,7 @@ export function priceSale(
             sellingPrice: number | null;
             imei1: string | null;
             serialNumber: string | null;
+            color: string | null;
           }
         | undefined;
 
@@ -219,6 +245,7 @@ export function priceSale(
 
       // A specific handset is one unit, priced and costed as itself.
       quantity = 1;
+      color = serial.color;
       unitCost = serial.purchasePrice;
       if (serial.sellingPrice !== null) unitPrice = serial.sellingPrice;
     }
@@ -231,6 +258,7 @@ export function priceSale(
     lines.push({
       productId: product.id,
       productSerialId: item.productSerialId ?? null,
+      color,
       productName: product.name,
       sku: product.sku,
       quantity,
@@ -384,8 +412,8 @@ export function createSale(
     const insertItem = db.prepare(
       `INSERT INTO "SaleItem" (id, saleId, productId, productSerialId, productName, sku,
          unitCost, unitPrice, quantity, discountAmount, taxAmount, totalAmount,
-         returnedQuantity, isGift, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+         returnedQuantity, isGift, color, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
     );
 
     for (const line of priced.lines) {
@@ -404,8 +432,10 @@ export function createSale(
         line.taxAmount,
         line.totalAmount,
         line.isGift ? 1 : 0,
+        line.color,
         now,
       );
+      if (!line.isSerialized) moveColorStock(line.productId, line.color, -line.quantity, db);
 
       // Claiming the serial is guarded by status = 'AVAILABLE', so two tills
       // cannot sell the same handset even if they price it at the same moment.
@@ -589,7 +619,7 @@ export function getSale(id: string, db: Db = getDatabase()): SaleDetail {
   const items = db
     .prepare(
       `SELECT i.id, i.saleId, i.productId, i.productName, i.sku, i.quantity, i.unitCost,
-              i.unitPrice, i.discountAmount, i.taxAmount, i.totalAmount, i.returnedQuantity, i.isGift,
+              i.unitPrice, i.discountAmount, i.taxAmount, i.totalAmount, i.returnedQuantity, i.isGift, i.color,
               (SELECT GROUP_CONCAT(COALESCE(ps.imei1, ps.serialNumber), ', ')
                  FROM "ProductSerial" ps WHERE ps.saleItemId = i.id) AS serials
          FROM "SaleItem" i
@@ -704,6 +734,7 @@ export function cancelSale(
           { allowNegativeStock: settings.allowNegativeStock },
           db,
         );
+        moveColorStock(item.productId, item.serials ? null : item.color, remaining, db);
       }
 
       const serials = db
@@ -892,6 +923,9 @@ export function refundSale(
         { allowNegativeStock: settings.allowNegativeStock },
         db,
       );
+
+      // A good one goes back on its colour; a faulty one is written off below.
+      if (!requested.isDefective && serials.length === 0) moveColorStock(item.productId, item.color, requested.quantity, db);
 
       // Faulty goods are then written straight back off, so the ledger shows
       // both facts — it came back, and it is not sellable — rather than hiding

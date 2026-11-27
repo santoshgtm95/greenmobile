@@ -211,7 +211,7 @@ export default function SaleDetailDialog({
                       )}
                       <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                         {item.sku}
-                        {item.serials ? ` · IMEI ${item.serials}` : ''}
+                        {item.serials ? ` · IMEI ${item.serials}` : ''}{item.color ? ` · ${item.color}` : ''}
                       </Typography>
                     </TableCell>
                     <TableCell align="right">{item.quantity}</TableCell>
@@ -413,7 +413,7 @@ export default function SaleDetailDialog({
                         </Typography>
                         <Typography variant="caption" color="text.secondary" component="div" sx={{ wordBreak: 'break-word' }}>
                           {item.sku}
-                          {item.serials ? ` · IMEI ${item.serials}` : ''}
+                          {item.serials ? ` · IMEI ${item.serials}` : ''}{item.color ? ` · ${item.color}` : ''}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
                           {item.quantity} × {item.isGift ? 'free' : money(item.unitPrice)}

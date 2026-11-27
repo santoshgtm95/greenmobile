@@ -9,6 +9,7 @@ import {
   DialogTitle,
   Divider,
   IconButton,
+  MenuItem,
   Stack,
   Table,
   TableBody,
@@ -53,6 +54,9 @@ export default function SerialsDialog({
 }) {
   const queryClient = useQueryClient();
   const [bulk, setBulk] = useState('');
+  // One colour for the phones being added now; add each colour in its own batch.
+  const [color, setColor] = useState('');
+  const needsColor = product.colors.length > 0 && !color;
   const [error, setError] = useState<string | null>(null);
 
   const serials = useQuery({
@@ -76,7 +80,7 @@ export default function SerialsDialog({
     mutationFn: () =>
       api.serials.add({
         productId: product.id,
-        serials: parsed.map(([imei1, imei2]) => ({ imei1, imei2 })),
+        serials: parsed.map(([imei1, imei2]) => ({ imei1, imei2, color: color || undefined })),
       }),
     onSuccess: () => {
       setBulk('');
@@ -134,14 +138,31 @@ export default function SerialsDialog({
             }
           />
 
-          <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end' }}>
+          <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end', alignItems: 'center' }}>
+            {product.colors.length > 0 && (
+              <TextField
+                select
+                size="small"
+                label="Colour of these phones"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                disabled={untagged === 0}
+                sx={{ minWidth: 220 }}
+              >
+                {product.colors.map((c) => (
+                  <MenuItem key={c.name} value={c.name}>
+                    {c.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
             <Button
               variant="contained"
               onClick={() => {
                 setError(null);
                 add.mutate();
               }}
-              disabled={add.isPending || parsed.length === 0 || tooMany || overLimit}
+              disabled={add.isPending || parsed.length === 0 || tooMany || overLimit || needsColor}
             >
               {add.isPending ? 'Adding…' : `Add ${parsed.length || ''} IMEI`}
             </Button>
@@ -165,6 +186,7 @@ export default function SerialsDialog({
             productId={product.id}
             onMarkDefective={(id) => markDefective.mutate(id)}
             busy={markDefective.isPending}
+            colors={product.colors.map((c) => c.name)}
           />
         </Stack>
       </DialogContent>
@@ -180,8 +202,11 @@ export function SerialTable({
   productId,
   onMarkDefective,
   busy,
+  colors = [],
 }: {
   productId: string;
+  /** The product's saved colours; when given, in-stock units can change colour here. */
+  colors?: string[];
   /** Shows the "mark faulty" button on available units when given. */
   onMarkDefective?: (serialId: string) => void;
   busy?: boolean;
@@ -192,6 +217,14 @@ export function SerialTable({
     queryFn: () => api.serials.list({ productId }),
   });
   const rows = serials.data ?? [];
+  const queryClient = useQueryClient();
+  const setColor = useMutation({
+    mutationFn: (input: { serialId: string; color?: string }) => api.serials.setColor(input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['serials', productId] });
+      void queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
 
   return (
     <Table size="small">
@@ -199,6 +232,7 @@ export function SerialTable({
         <TableRow>
           <TableCell>IMEI 1</TableCell>
           <TableCell>IMEI 2</TableCell>
+          <TableCell>Colour</TableCell>
           <TableCell align="right">Cost</TableCell>
           <TableCell>Status</TableCell>
           <TableCell>Warranty ends</TableCell>
@@ -208,7 +242,7 @@ export function SerialTable({
       <TableBody>
         {rows.length === 0 && (
           <TableRow>
-            <TableCell colSpan={6} align="center" sx={{ py: 3, color: 'text.secondary' }}>
+            <TableCell colSpan={7} align="center" sx={{ py: 3, color: 'text.secondary' }}>
               {serials.isLoading ? 'Loading…' : 'No IMEI numbers yet.'}
             </TableCell>
           </TableRow>
@@ -217,6 +251,36 @@ export function SerialTable({
           <TableRow key={serial.id} hover>
             <TableCell sx={{ fontFamily: 'monospace' }}>{serial.imei1 ?? serial.serialNumber ?? '—'}</TableCell>
             <TableCell sx={{ fontFamily: 'monospace' }}>{serial.imei2 ?? '—'}</TableCell>
+            <TableCell>
+              {colors.length > 0 && (serial.status === 'AVAILABLE' || serial.status === 'RESERVED') ? (
+                <TextField
+                  select
+                  size="small"
+                  variant="standard"
+                  value={serial.color ?? ''}
+                  onChange={(e) => setColor.mutate({ serialId: serial.id, color: e.target.value || undefined })}
+                  disabled={setColor.isPending}
+                  slotProps={{ htmlInput: { 'aria-label': `Colour of ${serial.imei1 ?? serial.serialNumber ?? 'unit'}` } }}
+                  sx={{ minWidth: 110 }}
+                >
+                  <MenuItem value="">
+                    <em>None</em>
+                  </MenuItem>
+                  {colors.map((name) => (
+                    <MenuItem key={name} value={name}>
+                      {name}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              ) : (
+                (serial.color ?? '—')
+              )}
+              {setColor.isError && setColor.variables?.serialId === serial.id && (
+                <Typography variant="caption" color="error" sx={{ display: 'block' }}>
+                  {setColor.error.message}
+                </Typography>
+              )}
+            </TableCell>
             <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
               {money(serial.purchasePrice)}
             </TableCell>

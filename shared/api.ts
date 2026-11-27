@@ -156,6 +156,8 @@ export interface Product {
   availableSerials: number;
   /** Suppliers on its purchase invoices, most recent first. */
   supplierName: string | null;
+  /** Its colours; an IMEI-tracked product counts the units in stock of each. */
+  colors: Array<{ name: string; quantity: number }>;
   createdAt: string;
   updatedAt: string;
 }
@@ -172,6 +174,8 @@ export interface ProductSerial {
   warrantyStartDate: string | null;
   warrantyEndDate: string | null;
   notes: string | null;
+  /** One of the product's colours. */
+  color: string | null;
 }
 
 export interface Lookup {
@@ -266,6 +270,8 @@ export interface SaleItem {
   isGift: SqliteBool;
   /** Comma-separated IMEIs / serials sold on this line. */
   serials: string | null;
+  /** The colour sold. */
+  color: string | null;
 }
 
 export interface SalePayment {
@@ -1087,6 +1093,10 @@ export interface PurchaseInvoiceItem {
   refundedQty: number;
   replacedQty: number;
   pendingQty: number;
+  /** The product's colours, to pick from when IMEIs arrive. */
+  colors: string[];
+  /** The colour ordered on this line. */
+  color: string | null;
 }
 
 export interface SupplierPayment {
@@ -1148,6 +1158,7 @@ export interface PosApi {
     findByCode(input: { code: string }): Promise<ProductSerial | null>;
     add(input: AddSerialsInput): Promise<Product>;
     markDefective(input: MarkSerialDefectiveInput): Promise<void>;
+    setColor(input: { serialId: string; color?: string }): Promise<void>;
   };
   categories: {
     /** Tree order: each category followed by its sub categories. */

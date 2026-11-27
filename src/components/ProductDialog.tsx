@@ -72,12 +72,22 @@ export default function ProductDialog({
     paidBy: 'CASH' as 'CASH' | 'BANK',
     purchaseShopAccountId: '',
   });
+  // The colours it comes in; quantities are typed only without IMEI tracking.
+  const [colors, setColors] = useState(product?.colors.map((c) => ({ ...c })) ?? []);
+  const colorNames = colors.map((c) => c.name.trim()).filter(Boolean);
+  const colorTotal = colors.reduce((sum, c) => sum + c.quantity, 0);
+  const setColor = (index: number, patch: Partial<{ name: string; quantity: number }>) =>
+    setColors((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+
   // One row per phone; a dual-SIM phone has two IMEIs.
-  const [phones, setPhones] = useState([{ imei1: '', imei2: '' }]);
-  const serials = phones
-    .map((p) => [p.imei1.trim(), p.imei2.trim()].filter(Boolean))
-    .filter((codes) => codes.length > 0)
-    .map(([imei1, imei2]) => ({ imei1, imei2 }));
+  const [phones, setPhones] = useState([{ imei1: '', imei2: '', color: '' }]);
+  const filledPhones = phones.filter((p) => p.imei1.trim() || p.imei2.trim());
+  const serials = filledPhones.map((p) => {
+    const [imei1, imei2] = [p.imei1.trim(), p.imei2.trim()].filter(Boolean);
+    return { imei1, imei2, color: p.color || undefined };
+  });
+  // With colours listed, every phone says which one it is.
+  const missingColor = colorNames.length > 0 && filledPhones.some((p) => !colorNames.includes(p.color));
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const money = useMoneyFormatter();
@@ -87,7 +97,7 @@ export default function ProductDialog({
   const paysForStock = !isEdit && openingUnits > 0;
   const stockCost = paysForStock ? multiplyMoney(form.purchasePrice, openingUnits) : 0;
 
-  const setPhone = (index: number, key: 'imei1' | 'imei2', value: string) =>
+  const setPhone = (index: number, key: 'imei1' | 'imei2' | 'color', value: string) =>
     setPhones((rows) => rows.map((row, i) => (i === index ? { ...row, [key]: value } : row)));
 
   // Enter (or a scanner's trailing Enter) moves to the next IMEI box, adding a phone at the end.
@@ -97,7 +107,7 @@ export default function ProductDialog({
     const inputs = [...document.querySelectorAll<HTMLInputElement>('[data-imei] input')];
     const next = inputs[inputs.indexOf(event.target as HTMLInputElement) + 1];
     if (next) next.focus();
-    else setPhones((rows) => (rows.length < untagged ? [...rows, { imei1: '', imei2: '' }] : rows));
+    else setPhones((rows) => (rows.length < untagged ? [...rows, { imei1: '', imei2: '', color: '' }] : rows));
   };
 
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
@@ -126,6 +136,9 @@ export default function ProductDialog({
         unit: form.unit,
         isSerialized: form.isSerialized,
         warrantyMonths: form.warrantyMonths,
+        colors: colors
+          .filter((c) => c.name.trim())
+          .map((c) => ({ name: c.name.trim(), quantity: form.isSerialized ? 0 : c.quantity })),
       };
 
       if (isEdit) {
@@ -179,11 +192,16 @@ export default function ProductDialog({
           <Stack direction="row" spacing={2}>
             <TextField
               label="SKU/Code"
-              required
+              required={isEdit}
               value={form.sku}
               onChange={(e) => set('sku', e.target.value)}
+              placeholder={isEdit ? undefined : 'Auto'}
+              slotProps={{ inputLabel: { shrink: true } }}
               error={Boolean(fieldErrors.sku)}
-              helperText={fieldErrors.sku ?? 'Your own product code — must be unique'}
+              helperText={
+                fieldErrors.sku ??
+                (isEdit ? 'Your own product code — must be unique' : 'Leave empty to generate (P-00001, …)')
+              }
             />
             <TextField
               label="Barcode"
@@ -216,8 +234,10 @@ export default function ProductDialog({
 
           <Stack direction="row" spacing={2}>
             <Autocomplete
-              // Products go in a sub category; a product already on a top-level one keeps it.
-              options={categories.filter((c) => c.depth > 0 || c.id === form.categoryId)}
+              // Products go in a sub category, or in a category that has none.
+              options={categories.filter(
+                (c) => c.depth > 0 || c.id === form.categoryId || !categories.some((s) => s.parentId === c.id),
+              )}
               value={categories.find((c) => c.id === form.categoryId) ?? null}
               onChange={(_e, c) => set('categoryId', c?.id ?? '')}
               groupBy={(c) => c.path.split(' › ')[0]}
@@ -228,7 +248,7 @@ export default function ProductDialog({
                 </li>
               )}
               isOptionEqualToValue={(a, b) => a.id === b.id}
-              noOptionsText="No matching sub category"
+              noOptionsText="No matching category"
               fullWidth
               renderInput={(params) => <TextField {...params} label="Category" placeholder="Type to search" />}
             />
@@ -377,6 +397,68 @@ export default function ProductDialog({
 
           <Divider textAlign="left">
             <Typography variant="caption" color="text.secondary">
+              Colours
+            </Typography>
+          </Divider>
+
+          <Stack spacing={1}>
+            {colors.length === 0 && (
+              <Typography variant="body2" color="text.secondary">
+                No colours. Add the colours this product comes in, if it has any.
+              </Typography>
+            )}
+            {colors.map((color, index) => (
+              <Stack key={index} direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                <TextField
+                  size="small"
+                  label="Colour"
+                  value={color.name}
+                  autoFocus={index === colors.length - 1 && !color.name}
+                  onChange={(e) => setColor(index, { name: e.target.value })}
+                  sx={{ flex: 1 }}
+                />
+                {form.isSerialized ? (
+                  <Typography variant="body2" color="text.secondary" sx={{ width: 140 }}>
+                    {/* Counted from the IMEIs in stock of this colour. */}
+                    {product?.colors.find((c) => c.name === color.name)?.quantity ?? 0} in stock
+                  </Typography>
+                ) : (
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Quantity"
+                    value={color.quantity}
+                    onChange={(e) => setColor(index, { quantity: Math.max(0, Math.floor(Number(e.target.value)) || 0) })}
+                    sx={{ width: 140 }}
+                  />
+                )}
+                <IconButton
+                  size="small"
+                  aria-label={`Remove colour ${color.name || index + 1}`}
+                  onClick={() => setColors((rows) => rows.filter((_, i) => i !== index))}
+                >
+                  <DeleteOutlineIcon fontSize="small" />
+                </IconButton>
+              </Stack>
+            ))}
+            <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+              <Button size="small" startIcon={<AddIcon />} onClick={() => setColors((rows) => [...rows, { name: '', quantity: 0 }])}>
+                Add colour
+              </Button>
+              {!form.isSerialized && colors.length > 0 && (
+                <Typography
+                  variant="body2"
+                  color={colorTotal === (isEdit ? product.stockQuantity : form.initialStock) ? 'text.secondary' : 'warning.main'}
+                >
+                  Colours total <strong>{colorTotal}</strong> of {isEdit ? product.stockQuantity : form.initialStock} in stock
+                </Typography>
+              )}
+            </Stack>
+            {fieldErrors.colors && <Alert severity="error">{fieldErrors.colors}</Alert>}
+          </Stack>
+
+          <Divider textAlign="left">
+            <Typography variant="caption" color="text.secondary">
               Serial numbers and warranty
             </Typography>
           </Divider>
@@ -404,7 +486,7 @@ export default function ProductDialog({
           {form.isSerialized && isEdit && (
             <>
               <Paper variant="outlined" sx={{ overflow: 'auto', maxHeight: 280 }}>
-                <SerialTable productId={product.id} />
+                <SerialTable productId={product.id} colors={product.colors.map((c) => c.name)} />
               </Paper>
               <Alert severity="info">
                 {untagged > 0
@@ -448,6 +530,23 @@ export default function ProductDialog({
                     slotProps={{ htmlInput: { style: { fontFamily: 'monospace' } } }}
                     sx={{ flex: 1 }}
                   />
+                  {colorNames.length > 0 && (
+                    <TextField
+                      select
+                      size="small"
+                      label="Colour"
+                      value={colorNames.includes(phone.color) ? phone.color : ''}
+                      onChange={(e) => setPhone(index, 'color', e.target.value)}
+                      error={Boolean((phone.imei1.trim() || phone.imei2.trim()) && !colorNames.includes(phone.color))}
+                      sx={{ width: 140 }}
+                    >
+                      {colorNames.map((name) => (
+                        <MenuItem key={name} value={name}>
+                          {name}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  )}
                   <IconButton
                     size="small"
                     aria-label={`Remove phone ${index + 1}`}
@@ -463,7 +562,7 @@ export default function ProductDialog({
                   size="small"
                   startIcon={<AddIcon />}
                   disabled={phones.length >= untagged}
-                  onClick={() => setPhones((rows) => [...rows, { imei1: '', imei2: '' }])}
+                  onClick={() => setPhones((rows) => [...rows, { imei1: '', imei2: '', color: '' }])}
                 >
                   Add another phone
                 </Button>
@@ -504,7 +603,8 @@ export default function ProductDialog({
           disabled={
             save.isPending ||
             !form.name.trim() ||
-            !form.sku.trim() ||
+            (isEdit && !form.sku.trim()) ||
+            (form.isSerialized && missingColor) ||
             (paysForStock && form.paidBy === 'BANK' && !form.purchaseShopAccountId)
           }
         >

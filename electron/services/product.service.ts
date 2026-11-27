@@ -48,6 +48,8 @@ export interface ProductRow {
   availableSerials: number;
   /** Suppliers on its purchase invoices, most recent first. */
   supplierName: string | null;
+  /** Its colours; an IMEI-tracked product counts the units in stock of each. */
+  colors: Array<{ name: string; quantity: number }>;
   createdAt: string;
   updatedAt: string;
 }
@@ -68,13 +70,70 @@ const PRODUCT_SELECT = `
               JOIN "PurchaseInvoice" pinv ON pinv.id = pi.invoiceId AND pinv.isDeleted = 0
               JOIN "Supplier" sp ON sp.id = pinv.supplierId
              WHERE pi.productId = p.id
-             GROUP BY sp.id ORDER BY MAX(pinv.invoiceDate) DESC)) AS supplierName
+             GROUP BY sp.id ORDER BY MAX(pinv.invoiceDate) DESC)) AS supplierName,
+         (SELECT json_group_array(json_object('name', pc.name, 'quantity',
+                   CASE WHEN p.isSerialized = 1
+                        THEN (SELECT COUNT(*) FROM "ProductSerial" ps
+                               WHERE ps.productId = p.id AND ps.color = pc.name
+                                 AND ps.status IN ('AVAILABLE', 'RESERVED'))
+                        ELSE pc.quantity END))
+            FROM (SELECT name, quantity FROM "ProductColor" WHERE productId = p.id ORDER BY sortOrder) pc) AS colors
     FROM "Product" p
     LEFT JOIN "Category" c ON c.id = p.categoryId
     LEFT JOIN "Category" c1 ON c1.id = c.parentId
     LEFT JOIN "Category" c2 ON c2.id = c1.parentId
     LEFT JOIN "Brand" b ON b.id = p.brandId
 `;
+
+/**
+ * P-00001, P-00002, …: the next number after the highest generated code, as the
+ * import hands out. New products still on order hold their code too, and `taken`
+ * adds codes already used on the invoice being saved.
+ */
+export function nextProductSku(db: Db, taken: ReadonlySet<string> = new Set()): string {
+  const { n } = db
+    .prepare(
+      `SELECT MAX(CAST(substr(sku, 3) AS INTEGER)) AS n FROM (
+         SELECT sku FROM "Product"
+         UNION ALL
+         SELECT json_extract(newProduct, '$.sku') FROM "PurchaseInvoiceItem" WHERE productId IS NULL AND newProduct IS NOT NULL
+       ) WHERE sku GLOB 'P-[0-9]*'`,
+    )
+    .get() as { n: number | null };
+  let next = (n ?? 0) + 1;
+  while (taken.has(`P-${String(next).padStart(5, '0')}`)) next += 1;
+  return `P-${String(next).padStart(5, '0')}`;
+}
+
+/** Replaces a product's colours. One still on a handset in stock cannot be dropped. */
+function saveColors(productId: string, colors: CreateProductInput['colors'], db: Db): void {
+  if (!colors) return;
+  const kept = new Set(colors.map((c) => c.name.toLowerCase()));
+  const inUse = db
+    .prepare(
+      `SELECT DISTINCT color FROM "ProductSerial"
+        WHERE productId = ? AND color IS NOT NULL AND status IN ('AVAILABLE', 'RESERVED')`,
+    )
+    .all(productId) as Array<{ color: string }>;
+  const dropped = inUse.find((s) => !kept.has(s.color.toLowerCase()));
+  if (dropped) {
+    throw errors.validation(`Phones in stock are "${dropped.color}", so that colour cannot be removed.`, {
+      colors: 'Colour in use',
+    });
+  }
+
+  db.prepare(`DELETE FROM "ProductColor" WHERE productId = ?`).run(productId);
+  const insert = db.prepare(
+    `INSERT INTO "ProductColor" (id, productId, name, quantity, sortOrder) VALUES (?, ?, ?, ?, ?)`,
+  );
+  colors.forEach((c, index) => insert.run(newId(), productId, c.name, c.quantity, index));
+}
+
+/** A PRODUCT_SELECT row: its colours come back as JSON text. */
+function toProduct(row: unknown): ProductRow {
+  const r = row as Omit<ProductRow, 'colors'> & { colors: string | null };
+  return { ...r, colors: r.colors ? (JSON.parse(r.colors) as ProductRow['colors']) : [] };
+}
 
 // -----------------------------------------------------------------------------
 // Reading
@@ -134,15 +193,16 @@ export function listProducts(
 
   const rows = db
     .prepare(`${PRODUCT_SELECT} ${whereSql} ORDER BY p.name ASC LIMIT ? OFFSET ?`)
-    .all(...params, query.pageSize, query.page * query.pageSize) as ProductRow[];
+    .all(...params, query.pageSize, query.page * query.pageSize)
+    .map(toProduct);
 
   return { rows, total };
 }
 
 export function getProduct(id: string, db: Db = getDatabase()): ProductRow {
-  const row = db.prepare(`${PRODUCT_SELECT} WHERE p.id = ?`).get(id) as ProductRow | undefined;
+  const row = db.prepare(`${PRODUCT_SELECT} WHERE p.id = ?`).get(id);
   if (!row) throw errors.productGone();
-  return row;
+  return toProduct(row);
 }
 
 /** Exact lookup for the barcode scanner (spec §33). */
@@ -151,8 +211,8 @@ export function findProductByCode(code: string, db: Db = getDatabase()): Product
   if (!trimmed) return null;
   const row = db
     .prepare(`${PRODUCT_SELECT} WHERE (p.barcode = ? OR p.sku = ? COLLATE NOCASE) AND p.isActive = 1 LIMIT 1`)
-    .get(trimmed, trimmed) as ProductRow | undefined;
-  return row ?? null;
+    .get(trimmed, trimmed);
+  return row ? toProduct(row) : null;
 }
 
 // -----------------------------------------------------------------------------
@@ -200,6 +260,7 @@ export function createProduct(
   const settings = getShopSettings(db);
 
   return transaction(() => {
+    input = { ...input, sku: input.sku || nextProductSku(db) };
     assertSkuFree(input.sku, null, db);
 
     const barcode = input.barcode?.trim() || generateUniqueBarcode(db);
@@ -253,6 +314,7 @@ export function createProduct(
       );
     }
 
+    saveColors(id, input.colors, db);
     if (input.isSerialized && input.serials?.length) {
       addSerialsInternal(id, input.serials, input.purchasePrice, actor, db, settings.allowNegativeStock);
     }
@@ -328,6 +390,7 @@ export function updateProduct(
       actor.id,
       input.id,
     );
+    saveColors(input.id, input.colors, db);
 
     recordAudit(
       {
@@ -509,12 +572,23 @@ export function addSerialsInternal(
 ): number {
   assertSerialCodesFree(serials, db);
 
+  // A colour must be one of the product's, written the way the product spells it.
+  const colors = (db.prepare(`SELECT name FROM "ProductColor" WHERE productId = ?`).all(productId) as Array<{ name: string }>).map(
+    (c) => c.name,
+  );
+  const colorOf = (typed: string | undefined): string | null => {
+    if (!typed) return null;
+    const match = colors.find((c) => c.toLowerCase() === typed.toLowerCase());
+    if (!match) throw errors.validation(`"${typed}" is not one of this product's colours.`);
+    return match;
+  };
+
   const now = nowInstant();
   const insert = db.prepare(
     `INSERT INTO "ProductSerial" (id, productId, serialNumber, imei1, imei2, purchasePrice,
-       sellingPrice, status, warrantyStartDate, warrantyEndDate, saleItemId, notes,
+       sellingPrice, status, warrantyStartDate, warrantyEndDate, saleItemId, notes, color,
        createdAt, updatedAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'AVAILABLE', NULL, NULL, NULL, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'AVAILABLE', NULL, NULL, NULL, ?, ?, ?, ?)`,
   );
 
   for (const serial of serials) {
@@ -528,6 +602,7 @@ export function addSerialsInternal(
       serial.purchasePrice ?? defaultCost,
       serial.sellingPrice ?? null,
       serial.notes ?? null,
+      colorOf(serial.color),
       now,
       now,
     );
@@ -608,6 +683,38 @@ export function addSerials(
     );
 
     return getProduct(input.productId, db);
+  }, db);
+}
+
+/** Sets or clears the colour of one IMEI / serial unit still in stock. */
+export function setSerialColor(serialId: string, color: string | undefined, actor: SessionUser, db: Db = getDatabase()): void {
+  transaction(() => {
+    const serial = db.prepare(`SELECT productId, color, status FROM "ProductSerial" WHERE id = ?`).get(serialId) as
+      | { productId: string; color: string | null; status: string }
+      | undefined;
+    if (!serial) throw errors.notFound('serial number');
+    if (serial.status !== 'AVAILABLE' && serial.status !== 'RESERVED') {
+      throw errors.invalidState('Only units in stock can change colour.');
+    }
+    const colors = (db.prepare(`SELECT name FROM "ProductColor" WHERE productId = ?`).all(serial.productId) as Array<{ name: string }>).map(
+      (c) => c.name,
+    );
+    const match = color ? colors.find((c) => c.toLowerCase() === color.toLowerCase()) : null;
+    if (color && !match) throw errors.validation(`"${color}" is not one of this product's colours.`);
+
+    db.prepare(`UPDATE "ProductSerial" SET color = ?, updatedAt = ? WHERE id = ?`).run(match ?? null, nowInstant(), serialId);
+    recordAudit(
+      {
+        userId: actor.id,
+        action: 'UPDATE',
+        entityName: 'ProductSerial',
+        entityId: serialId,
+        summary: `Changed IMEI colour to ${match ?? 'none'}`,
+        oldValues: { color: serial.color },
+        newValues: { color: match ?? null },
+      },
+      db,
+    );
   }, db);
 }
 

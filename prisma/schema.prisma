@@ -160,6 +160,7 @@ model Product {
   updater  User?     @relation("ProductUpdatedBy", fields: [updatedBy], references: [id], onDelete: Restrict)
 
   serials            ProductSerial[]
+  colors             ProductColor[]
   saleItems          SaleItem[]
   serviceItems       ServiceItem[]
   inventoryMovements InventoryTransaction[]
@@ -190,6 +191,8 @@ model ProductSerial {
   /// Set when sold; cleared when the sale is refunded or cancelled.
   saleItemId    String?
   notes         String?
+  /// One of the product's colours (ProductColor.name).
+  color         String?
   createdAt     String
   updatedAt     String
 
@@ -203,6 +206,20 @@ model ProductSerial {
   @@index([status])
   @@index([productId, status])
   @@index([saleItemId])
+}
+
+/// A colour a product comes in. quantity is a typed breakdown of stock for a
+/// product without IMEI tracking; an IMEI-tracked product counts its serials.
+model ProductColor {
+  id        String @id
+  productId String
+  name      String
+  quantity  Int    @default(0)
+  sortOrder Int    @default(0)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, name])
 }
 
 // -----------------------------------------------------------------------------
@@ -301,6 +318,8 @@ model SaleItem {
   returnedQuantity Int    @default(0)
   /// 1 when given away free (unitPrice is then 0).
   isGift          Int     @default(0)
+  /// The colour sold: chosen at the till, or the handset's own.
+  color           String?
   createdAt       String
 
   sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
@@ -989,6 +1008,8 @@ model PurchaseInvoiceItem {
   unitCost    Int
   /// Becomes the product's selling price on delivery; null leaves it as is.
   sellingPrice Int?
+  /// One of the product's colours; delivered units go on it.
+  color       String?
   /// In stock from this line.
   receivedQty Int    @default(0)
   /// Sent back for money; no longer owed.

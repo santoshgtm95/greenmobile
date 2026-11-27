@@ -44,6 +44,7 @@ export const CHANNELS = {
     findByCode: 'serials:findByCode',
     add: 'serials:add',
     markDefective: 'serials:markDefective',
+    setColor: 'serials:setColor',
   },
   categories: {
     list: 'categories:list',

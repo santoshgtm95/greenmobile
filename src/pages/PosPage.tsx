@@ -30,6 +30,7 @@ import { useMoneyFormatter } from '../hooks/useSettings';
 import { PosApiError } from '@shared/errors';
 import type { Product, ProductSerial, SaleDetail, SaleQuote } from '@shared/api';
 import SerialPickerDialog from '../components/SerialPickerDialog';
+import ColorPickerDialog from '../components/ColorPickerDialog';
 import CustomerPickerDialog from '../components/CustomerPickerDialog';
 import PaymentDialog from '../components/PaymentDialog';
 import MoneyField from '../components/MoneyField';
@@ -43,6 +44,8 @@ export interface CartLine {
   product: Product;
   quantity: number;
   serial: ProductSerial | null;
+  /** Without IMEI tracking: the colour chosen; each colour is its own line. */
+  color: string | null;
   /** Given free: priced at 0 by the main process. */
   isGift: boolean;
 }
@@ -63,6 +66,7 @@ export default function PosPage() {
   const [discount, setDiscount] = useState(0);
   const [customer, setCustomer] = useState<{ id: string; name: string; phone: string | null } | null>(null);
   const [serialPickerFor, setSerialPickerFor] = useState<Product | null>(null);
+  const [colorPickerFor, setColorPickerFor] = useState<Product | null>(null);
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -102,6 +106,7 @@ export default function PosPage() {
         quantity: line.quantity,
         productSerialId: line.serial?.id,
         isGift: line.isGift || undefined,
+        color: line.color ?? undefined,
       })),
       discountAmount: discount,
       payments: [],
@@ -117,19 +122,25 @@ export default function PosPage() {
   });
 
   const addProduct = useCallback(
-    (product: Product, serial: ProductSerial | null = null) => {
+    (product: Product, serial: ProductSerial | null = null, color: string | null = null) => {
       setError(null);
 
       if (product.isSerialized === 1 && !serial) {
         setSerialPickerFor(product);
         return;
       }
+      if (product.isSerialized !== 1 && product.colors.length > 0 && !color) {
+        setColorPickerFor(product);
+        return;
+      }
 
       setCart((current) => {
         // A serialized unit is unique; anything else stacks.
         if (!serial) {
-          // A gift line of the same product stays separate; stock counts both.
-          const existing = current.find((l) => l.product.id === product.id && !l.serial && !l.isGift);
+          // A gift line, or another colour, of the same product stays separate; stock counts all.
+          const existing = current.find(
+            (l) => l.product.id === product.id && !l.serial && !l.isGift && l.color === color,
+          );
           const inCart = current.reduce((n, l) => (l.product.id === product.id ? n + l.quantity : n), 0);
           if (existing) {
             if (inCart + 1 > product.stockQuantity && product.stockQuantity >= 0) {
@@ -145,14 +156,14 @@ export default function PosPage() {
             return current;
           }
           // Not crypto.randomUUID: it is missing on plain-http pages (network access from another PC).
-          return [...current, { key: `line-${++lineCounter}`, product, quantity: 1, serial: null, isGift: false }];
+          return [...current, { key: `line-${++lineCounter}`, product, quantity: 1, serial: null, color, isGift: false }];
         }
 
         if (current.some((l) => l.serial?.id === serial.id)) {
           setError('That unit is already in the cart.');
           return current;
         }
-        return [...current, { key: serial.id, product, quantity: 1, serial, isGift: false }];
+        return [...current, { key: serial.id, product, quantity: 1, serial, color: null, isGift: false }];
       });
     },
     [],
@@ -520,7 +531,7 @@ export default function PosPage() {
                       </Typography>
                       <Typography variant="caption" color="text.secondary" component="div" sx={{ wordBreak: 'break-word' }}>
                         {[line.product.sku, line.product.brandName].filter(Boolean).join(' · ')}
-                        {line.serial && ` · IMEI ${line.serial.imei1 ?? line.serial.serialNumber}`}
+                        {line.serial && ` · IMEI ${line.serial.imei1 ?? line.serial.serialNumber}${line.serial.color ? ` · ${line.serial.color}` : ''}`}{line.color && ` · ${line.color}`}
                       </Typography>
                     </Box>
                     <Tooltip title={line.isGift ? 'Charge for this item' : 'Give free as a gift'}>
@@ -663,6 +674,18 @@ export default function PosPage() {
         />
       )}
 
+      {colorPickerFor && (
+        <ColorPickerDialog
+          product={colorPickerFor}
+          onClose={() => setColorPickerFor(null)}
+          onPick={(color) => {
+            addProduct(colorPickerFor, null, color);
+            setColorPickerFor(null);
+            setSearch('');
+          }}
+        />
+      )}
+
       {customerPickerOpen && (
         <CustomerPickerDialog
           onClose={() => setCustomerPickerOpen(false)}
@@ -769,7 +792,7 @@ function CartSummary({ cart, quote, customerName }: { cart: CartLine[]; quote: S
                   </Typography>
                   <Typography variant="caption" color="text.secondary" component="div" sx={{ wordBreak: 'break-word' }}>
                     {[line.product.brandName, line.product.sku].filter(Boolean).join(' · ')}
-                    {line.serial && ` · IMEI ${line.serial.imei1 ?? line.serial.serialNumber}`}
+                    {line.serial && ` · IMEI ${line.serial.imei1 ?? line.serial.serialNumber}${line.serial.color ? ` · ${line.serial.color}` : ''}`}{line.color && ` · ${line.color}`}
                   </Typography>
                   <Typography
                     variant="caption"

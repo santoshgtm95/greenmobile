@@ -42,6 +42,7 @@ const PURGE: Record<DataModule, readonly string[]> = {
     `DELETE FROM "PurchaseInvoice"`,
     `DELETE FROM "InventoryTransaction"`,
     `DELETE FROM "ProductSerial"`,
+    `DELETE FROM "ProductColor"`,
     `DELETE FROM "Product"`,
   ],
   // Items and payments go with their job (ON DELETE CASCADE).

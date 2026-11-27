@@ -279,4 +279,169 @@ describe('purchase invoices', () => {
 
     expect(() => createPurchaseInvoice({ ...input, discount: 10001 }, actor, ctx.db)).toThrow(AppError);
   });
+
+  it('orders a colour on a line and adds the delivered units to it', () => {
+    const supplier = saveSupplier({ name: 'Acme', address: undefined, phone: undefined, isActive: true }, actor, ctx.db);
+    const case_ = createProduct(
+      {
+        sku: 'CASE-C',
+        name: 'Case',
+        purchasePrice: 1000,
+        sellingPrice: 1500,
+        taxRate: 0,
+        taxRateOverride: false,
+        minimumStock: 0,
+        unit: 'pcs',
+        isSerialized: false,
+        warrantyMonths: 0,
+        initialStock: 0,
+        colors: [{ name: 'Red', quantity: 0 }, { name: 'Blue', quantity: 0 }],
+      },
+      actor,
+      ctx.db,
+    );
+    const order = (color: string) =>
+      createPurchaseInvoice(
+        {
+          supplierId: supplier.id,
+          invoiceAt: '2026-11-13T10:00',
+          paymentMethod: 'COD',
+          discount: 0,
+          items: [{ productId: case_.id, freeQty: 0, quantity: 3, unitCost: 1000, color }],
+        },
+        actor,
+        ctx.db,
+      );
+    expect(() => order('Green')).toThrow(AppError);
+
+    let invoice = order('blue');
+    expect(invoice.items[0].color).toBe('Blue');
+    invoice = receivePurchaseItems({ invoiceId: invoice.id, items: [{ itemId: invoice.items[0].id, quantity: 3 }] }, actor, ctx.db);
+    expect(getProduct(case_.id, ctx.db).colors).toEqual([{ name: 'Red', quantity: 0 }, { name: 'Blue', quantity: 3 }]);
+
+    // One broken case goes back: off stock and off its colour.
+    returnPurchaseItem(
+      { itemId: invoice.items[0].id, quantity: 1, outcome: 'REPLACE', arrived: true, reason: 'Cracked', refundAmount: 0 },
+      actor,
+      ctx.db,
+    );
+    expect(getProduct(case_.id, ctx.db).colors[1]).toEqual({ name: 'Blue', quantity: 2 });
+  });
+
+  it('generates P- codes for new products left without a SKU, skipping ones on order', () => {
+    const supplier = saveSupplier({ name: 'Acme', address: undefined, phone: undefined, isActive: true }, actor, ctx.db);
+    const draft = (name: string, sku = '') => ({ newProduct: { name, sku, sellingPrice: 900 }, freeQty: 0, quantity: 1, unitCost: 400 });
+    const first = createPurchaseInvoice(
+      {
+        supplierId: supplier.id,
+        invoiceAt: '2026-11-13T10:00',
+        paymentMethod: 'COD',
+        discount: 0,
+        // A typed P- code on the same invoice is never handed out again.
+        items: [draft('A'), draft('B', 'P-00002'), draft('C')],
+      },
+      actor,
+      ctx.db,
+    );
+    expect(first.items.map((i) => i.sku)).toEqual(['P-00001', 'P-00002', 'P-00003']);
+
+    // Codes on an undelivered invoice are taken, and so is the next one in Stocks.
+    const second = createPurchaseInvoice(
+      { supplierId: supplier.id, invoiceAt: '2026-11-13T10:00', paymentMethod: 'COD', discount: 0, items: [draft('D')] },
+      actor,
+      ctx.db,
+    );
+    expect(second.items[0].sku).toBe('P-00004');
+  });
+
+  it('orders a new product by colour and creates it with those colours on delivery', () => {
+    const supplier = saveSupplier({ name: 'Acme', address: undefined, phone: undefined, isActive: true }, actor, ctx.db);
+    const newProduct = {
+      name: 'Case Y',
+      sku: 'CASE-Y',
+      sellingPrice: 900,
+      colors: [{ name: 'Red', quantity: 6 }, { name: 'Blue', quantity: 4 }],
+    };
+    const order = (colors: typeof newProduct.colors) =>
+      createPurchaseInvoice(
+        {
+          supplierId: supplier.id,
+          invoiceAt: '2026-11-13T10:00',
+          paymentMethod: 'COD',
+          discount: 0,
+          items: [{ newProduct: { ...newProduct, colors }, freeQty: 2, quantity: 10, unitCost: 400 }],
+        },
+        actor,
+        ctx.db,
+      );
+    // The colours cannot add up to more than the units ordered.
+    expect(() => order([{ name: 'Red', quantity: 11 }])).toThrow();
+
+    let invoice = order(newProduct.colors);
+    expect(invoice.items[0].newProduct?.colors).toEqual(newProduct.colors);
+    const itemId = invoice.items[0].id;
+    invoice = receivePurchaseItems(
+      {
+        invoiceId: invoice.id,
+        items: [
+          { itemId, quantity: 6, color: 'Red' },
+          { itemId, quantity: 3, color: 'Blue' },
+        ],
+      },
+      actor,
+      ctx.db,
+    );
+    const created = getProduct(invoice.items[0].productId!, ctx.db);
+    expect(created).toMatchObject({ stockQuantity: 9, colors: [{ name: 'Red', quantity: 6 }, { name: 'Blue', quantity: 3 }] });
+    expect(invoice.items[0].colors).toEqual(['Red', 'Blue']);
+  });
+
+  it('receives phones by colour, adding a colour the product does not have yet', () => {
+    const supplier = saveSupplier({ name: 'Acme', address: undefined, phone: undefined, isActive: true }, actor, ctx.db);
+    const phone = product('PH', true);
+    let invoice = createPurchaseInvoice(
+      {
+        supplierId: supplier.id,
+        invoiceAt: '2026-11-13T10:00',
+        paymentMethod: 'COD',
+        discount: 0,
+        items: [{ productId: phone.id, freeQty: 0, quantity: 3, unitCost: 1000 }],
+      },
+      actor,
+      ctx.db,
+    );
+    const itemId = invoice.items[0].id;
+    // One entry per colour for the same line; together they may not exceed what is awaited.
+    expect(() =>
+      receivePurchaseItems(
+        {
+          invoiceId: invoice.id,
+          items: [
+            { itemId, quantity: 2, serials: ['B1', 'B2'], color: 'Black' },
+            { itemId, quantity: 2, serials: ['W1', 'W2'], color: 'White' },
+          ],
+        },
+        actor,
+        ctx.db,
+      ),
+    ).toThrow(AppError);
+
+    invoice = receivePurchaseItems(
+      {
+        invoiceId: invoice.id,
+        items: [
+          { itemId, quantity: 2, serials: ['B1', 'B2'], color: 'Black' },
+          { itemId, quantity: 1, serials: ['W1'], color: 'White' },
+        ],
+      },
+      actor,
+      ctx.db,
+    );
+    expect(invoice.pendingQty).toBe(0);
+    expect(invoice.items[0].colors).toEqual(['Black', 'White']);
+    expect(getProduct(phone.id, ctx.db)).toMatchObject({
+      stockQuantity: 3,
+      colors: [{ name: 'Black', quantity: 2 }, { name: 'White', quantity: 1 }],
+    });
+  });
 });

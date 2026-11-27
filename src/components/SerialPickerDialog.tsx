@@ -1,6 +1,7 @@
 import {
   Alert,
   Button,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -71,6 +72,7 @@ export default function SerialPickerDialog({
                   </Typography>
                 )}
               </Stack>
+              {serial.color && <Chip size="small" variant="outlined" label={serial.color} sx={{ mr: 2 }} />}
               <Typography sx={{ fontWeight: 700 }}>
                 {money(serial.sellingPrice ?? product.sellingPrice)}
               </Typography>

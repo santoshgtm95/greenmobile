@@ -246,6 +246,54 @@ describe('spec §80 — profit maths', () => {
     expect(cashOnly.rows.map((r) => r.kind).sort()).toEqual(['REFUND', 'SALE']);
   });
 
+  it('sells by colour: the colour must be chosen, its count goes down and comes back on refund or cancel', () => {
+    const product = createProduct(
+      {
+        sku: 'CASE-C',
+        name: 'Case',
+        purchasePrice: 1_000,
+        sellingPrice: 2_000,
+        taxRate: 0,
+        taxRateOverride: false,
+        minimumStock: 0,
+        unit: 'pcs',
+        isSerialized: false,
+        warrantyMonths: 0,
+        initialStock: 4,
+        colors: [{ name: 'Red', quantity: 2 }, { name: 'Blue', quantity: 2 }],
+      },
+      actor,
+      ctx.db,
+    );
+    const sell = (color: string | undefined) =>
+      createSale(
+        { items: [{ productId: product.id, quantity: 2, color }], discountAmount: 0, payments: [], notes: undefined },
+        actor,
+        ctx.db,
+      );
+    expect(() => sell(undefined)).toThrow(/colour/i);
+
+    const { sale } = sell('red');
+    expect(getSale(sale.id, ctx.db).items[0].color).toBe('Red');
+    expect(getProduct(product.id, ctx.db).colors).toEqual([{ name: 'Red', quantity: 0 }, { name: 'Blue', quantity: 2 }]);
+
+    refundSale(
+      {
+        saleId: sale.id,
+        items: [{ saleItemId: getSale(sale.id, ctx.db).items[0].id, quantity: 1, isDefective: false }],
+        reason: 'Wrong colour',
+        refundMethod: 'CASH',
+        notes: undefined,
+      },
+      actor,
+      ctx.db,
+    );
+    expect(getProduct(product.id, ctx.db).colors[0]).toEqual({ name: 'Red', quantity: 1 });
+
+    cancelSale(sell('Blue').sale.id, 'Mistake', actor, ctx.db);
+    expect(getProduct(product.id, ctx.db).colors[1]).toEqual({ name: 'Blue', quantity: 2 });
+  });
+
   it('freezes the historical unit cost so a later price change cannot rewrite profit', () => {
     const product = makeSimpleProduct({ cost: 80_000, price: 100_000, stock: 10 });
 

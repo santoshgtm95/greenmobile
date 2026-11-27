@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Checkbox,
@@ -22,6 +23,7 @@ import {
   Typography,
 } from '@mui/material';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
+import AddIcon from '@mui/icons-material/Add';
 import AssignmentReturnIcon from '@mui/icons-material/AssignmentReturn';
 import PaymentsIcon from '@mui/icons-material/Payments';
 import EditIcon from '@mui/icons-material/Edit';
@@ -179,6 +181,7 @@ export default function PurchaseInvoiceDetailDialog({
                         {item.productName}
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                           {item.sku}
+                          {item.color && ` · ${item.color}`}
                           {item.isSerialized ? ' · IMEI tracked' : ''}
                           {item.newProduct && ' · new product, added to Stocks on delivery'}
                           {item.replacedQty > 0 && ` · ${item.replacedQty} sent back for replacement`}
@@ -390,16 +393,49 @@ function ReceiveDialog({
   const [quantities, setQuantities] = useState<Record<string, number>>(() =>
     Object.fromEntries(items.map((i) => [i.id, i.pendingQty])),
   );
-  const [codes, setCodes] = useState<Record<string, string>>({});
+  // IMEI-tracked lines: one group of codes per colour.
+  const [groups, setGroups] = useState<Record<string, Array<{ color: string; codes: string }>>>({});
+  const groupsOf = (itemId: string) =>
+    groups[itemId] ?? [{ color: items.find((i) => i.id === itemId)?.color ?? '', codes: '' }];
+  const setGroup = (itemId: string, index: number, patch: Partial<{ color: string; codes: string }>) =>
+    setGroups((g) => ({ ...g, [itemId]: groupsOf(itemId).map((row, i) => (i === index ? { ...row, ...patch } : row)) }));
   const [error, setError] = useState<string | null>(null);
 
+  // A line without its own colour, on a product with colours (or a new one ordered by colour), arrives per colour.
+  // '' is the "No colour" box, for units the colours do not cover.
+  const colorsOf = (i: PurchaseInvoiceItem) => {
+    const names = i.color ? [] : (i.newProduct?.colors?.map((c) => c.name) ?? i.colors);
+    return names.length > 0 ? [...names, ''] : [];
+  };
+  const [colorQty, setColorQty] = useState<Record<string, Record<string, number>>>(() =>
+    Object.fromEntries(
+      items.map((i) => {
+        const planned = (name: string) => i.newProduct?.colors?.find((c) => c.name === name)?.quantity ?? 0;
+        const named = colorsOf(i).filter(Boolean);
+        const rest = Math.max(i.pendingQty - named.reduce((sum, name) => sum + planned(name), 0), 0);
+        return [i.id, Object.fromEntries(colorsOf(i).map((name) => [name, name ? planned(name) : rest]))];
+      }),
+    ),
+  );
+
   const entries = items
-    .map((i) => {
-      const serials = i.isSerialized ? parseCodes(codes[i.id] ?? '') : undefined;
-      return { itemId: i.id, quantity: serials ? serials.length : (quantities[i.id] ?? 0), serials };
-    })
+    .flatMap((i) =>
+      i.isSerialized
+        ? groupsOf(i.id).map((g) => {
+            const serials = parseCodes(g.codes);
+            return { itemId: i.id, quantity: serials.length, serials, color: g.color.trim() || undefined };
+          })
+        : colorsOf(i).length > 0
+          ? colorsOf(i).map((color) => ({ itemId: i.id, quantity: colorQty[i.id]?.[color] ?? 0, color: color || undefined }))
+          : [{ itemId: i.id, quantity: quantities[i.id] ?? 0 }],
+    )
     .filter((e) => e.quantity > 0);
-  const tooMany = items.some((i) => (entries.find((e) => e.itemId === i.id)?.quantity ?? 0) > i.pendingQty);
+  const countOf = (itemId: string) => entries.filter((e) => e.itemId === itemId).reduce((sum, e) => sum + e.quantity, 0);
+  const tooMany = items.some((i) => countOf(i.id) > i.pendingQty);
+  // A product that has colours needs each phone's colour.
+  const missingColor = items.some(
+    (i) => i.isSerialized && i.colors.length > 0 && groupsOf(i.id).some((g) => parseCodes(g.codes).length > 0 && !g.color.trim()),
+  );
 
   const save = useMutation({
     mutationFn: () => api.purchases.receive({ invoiceId: invoice.id, items: entries }),
@@ -418,16 +454,101 @@ function ReceiveDialog({
           </Typography>
           {items.map((item) =>
             item.isSerialized ? (
-              <TextField
-                key={item.id}
-                label={`${item.productName} — IMEI / serial, one per line`}
-                multiline
-                minRows={Math.min(item.pendingQty, 4)}
-                value={codes[item.id] ?? ''}
-                onChange={(e) => setCodes((c) => ({ ...c, [item.id]: e.target.value }))}
-                helperText={`${parseCodes(codes[item.id] ?? '').length} of ${item.pendingQty} waiting`}
-                error={parseCodes(codes[item.id] ?? '').length > item.pendingQty}
-              />
+              <Stack key={item.id} spacing={1}>
+                <Typography variant="subtitle2">
+                  {item.productName}{' '}
+                  <Typography
+                    component="span"
+                    variant="caption"
+                    color={countOf(item.id) > item.pendingQty ? 'error.main' : 'text.secondary'}
+                  >
+                    {countOf(item.id)} of {item.pendingQty} waiting
+                  </Typography>
+                </Typography>
+                {groupsOf(item.id).map((group, index) => (
+                  <Stack key={index} direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+                    <Autocomplete
+                      freeSolo
+                      size="small"
+                      options={item.colors}
+                      inputValue={group.color}
+                      onInputChange={(_e, text) => setGroup(item.id, index, { color: text })}
+                      sx={{ width: 170, flexShrink: 0 }}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="Colour"
+                          error={item.colors.length > 0 && parseCodes(group.codes).length > 0 && !group.color.trim()}
+                          helperText={
+                            group.color.trim() && !item.colors.some((c) => c.toLowerCase() === group.color.trim().toLowerCase())
+                              ? 'New colour — added to the product'
+                              : ' '
+                          }
+                        />
+                      )}
+                    />
+                    <TextField
+                      size="small"
+                      label="IMEI / serial, one per line"
+                      multiline
+                      minRows={2}
+                      fullWidth
+                      value={group.codes}
+                      onChange={(e) => setGroup(item.id, index, { codes: e.target.value })}
+                      helperText={`${parseCodes(group.codes).length} phone(s)`}
+                    />
+                    <IconButton
+                      size="small"
+                      aria-label="Remove this colour"
+                      disabled={groupsOf(item.id).length === 1}
+                      onClick={() => setGroups((g) => ({ ...g, [item.id]: groupsOf(item.id).filter((_, i) => i !== index) }))}
+                    >
+                      <DeleteOutlineIcon fontSize="small" />
+                    </IconButton>
+                  </Stack>
+                ))}
+                <Box>
+                  <Button
+                    size="small"
+                    startIcon={<AddIcon />}
+                    onClick={() => setGroups((g) => ({ ...g, [item.id]: [...groupsOf(item.id), { color: '', codes: '' }] }))}
+                  >
+                    Another colour
+                  </Button>
+                </Box>
+              </Stack>
+            ) : colorsOf(item).length > 0 ? (
+              <Stack key={item.id} spacing={1}>
+                <Typography variant="subtitle2">
+                  {item.productName}{' '}
+                  <Typography
+                    component="span"
+                    variant="caption"
+                    color={countOf(item.id) > item.pendingQty ? 'error.main' : 'text.secondary'}
+                  >
+                    {countOf(item.id)} of {item.pendingQty} waiting
+                  </Typography>
+                </Typography>
+                <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 1 }}>
+                  {colorsOf(item).map((color) => (
+                    <TextField
+                      key={color}
+                      size="small"
+                      type="number"
+                      label={color || 'No colour'}
+                      value={colorQty[item.id]?.[color] ?? 0}
+                      onChange={(e) =>
+                        setColorQty((q) => ({
+                          ...q,
+                          [item.id]: { ...q[item.id], [color]: Math.max(0, Math.floor(Number(e.target.value)) || 0) },
+                        }))
+                      }
+                      slotProps={{ htmlInput: { min: 0 } }}
+                      sx={{ width: 120 }}
+                    />
+                  ))}
+                </Stack>
+              </Stack>
             ) : (
               <TextField
                 key={item.id}
@@ -452,7 +573,7 @@ function ReceiveDialog({
         <Button
           variant="contained"
           startIcon={<LocalShippingIcon />}
-          disabled={entries.length === 0 || tooMany || save.isPending}
+          disabled={entries.length === 0 || tooMany || missingColor || save.isPending}
           onClick={() => save.mutate()}
         >
           {save.isPending ? 'Saving…' : 'Mark delivered'}

@@ -3,6 +3,7 @@ import { Alert, Box, CircularProgress, Paper, Stack, Typography } from '@mui/mat
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { useMoneyFormatter, useSettings } from '../../hooks/useSettings';
+import { useAuth } from '../../hooks/useAuth';
 import { PosApiError } from '@shared/errors';
 import { formatInstant } from '@shared/datetime';
 import { formatRate } from '@shared/money';
@@ -23,6 +24,7 @@ export default function ProductDetail({
 }) {
   const money = useMoneyFormatter();
   const { data: settings } = useSettings();
+  const canAdjust = useAuth().can('inventory.adjust');
   const detail = useQuery({
     queryKey: ['products', 'detail', productId],
     queryFn: () => api.products.get({ id: productId }),
@@ -51,6 +53,7 @@ export default function ProductDetail({
     ['Category', product.categoryName ?? '—'],
     ['Brand', product.brandName ?? '—'],
     ['Supplier', product.supplierName ?? '—'],
+    ['Colours', product.colors.length ? product.colors.map((c) => `${c.name} (${c.quantity})`).join(', ') : '—'],
     ['Purchase price', money(product.purchasePrice)],
     ['Selling price', money(product.sellingPrice)],
     ['Tax rate', product.taxRateOverride ? formatRate(product.taxRate) : 'Shop default'],
@@ -128,7 +131,7 @@ export default function ProductDetail({
             IMEI numbers
           </Typography>
           <Paper sx={historyTableSx}>
-            <SerialTable productId={product.id} />
+            <SerialTable productId={product.id} colors={canAdjust ? product.colors.map((c) => c.name) : []} />
           </Paper>
         </>
       )}

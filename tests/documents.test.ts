@@ -85,6 +85,7 @@ function makeSale(overrides: Partial<SaleDetail['sale']> = {}, itemName = 'USB-C
         returnedQuantity: 0,
         isGift: 0,
         serials: null,
+        color: null,
       },
     ],
     payments: [

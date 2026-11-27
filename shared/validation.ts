@@ -310,7 +310,19 @@ export const zSerialEntry = z.object({
   purchasePrice: zMinor.optional(),
   sellingPrice: zMinor.optional(),
   notes: zShortText,
+  /** One of the product's colours. */
+  color: zShortText,
 });
+
+/** The colours a product comes in; quantity is only used without IMEI tracking. Omitted: left as they are. */
+const zProductColors = z
+  .array(z.object({ name: z.string().trim().min(1, 'Name the colour').max(40), quantity: zStock.default(0) }))
+  .max(50)
+  .refine(
+    (colors) => new Set(colors.map((c) => c.name.toLowerCase())).size === colors.length,
+    'A colour is listed twice',
+  )
+  .optional();
 
 const productFields = {
   sku: z.string().trim().min(1, 'SKU is required').max(60),
@@ -335,10 +347,13 @@ const productFields = {
   unit: z.string().trim().min(1).max(20).default('pcs'),
   isSerialized: z.boolean().default(false),
   warrantyMonths: z.number().int().min(0).max(120).default(0),
+  colors: zProductColors,
 };
 
 export const zCreateProduct = z.object({
   ...productFields,
+  /** Blank: generated (P-00001, …), as the import does. */
+  sku: z.string().trim().max(60).default(''),
   initialStock: zStock.default(0),
   serials: z.array(zSerialEntry).max(500).optional(),
   /** Who paid for the opening stock: a shop account, or cash in hand when omitted. */
@@ -378,6 +393,11 @@ export const zAdjustStock = z.object({
 export const zAddSerials = z.object({
   productId: zId,
   serials: z.array(zSerialEntry).min(1, 'Add at least one IMEI or serial number').max(500),
+});
+
+export const zSetSerialColor = z.object({
+  serialId: zId,
+  color: z.string().trim().max(40).optional().transform((v) => v || undefined).optional(),
 });
 
 export const zMarkSerialDefective = z.object({
@@ -448,6 +468,8 @@ export const zSaleItem = z.object({
   productSerialId: zId.optional(),
   /** Given away free: the main process prices the line at 0 and keeps its cost. */
   isGift: z.boolean().optional(),
+  /** Without IMEI tracking: which of the product's colours, required when it has any. */
+  color: zShortText,
 });
 
 /**
@@ -574,13 +596,16 @@ export const zSaveSupplier = z.object({
 /** A product not in Stocks yet; created when it is delivered. Purchase price = unit cost, stock = quantity. */
 export const zNewPurchaseProduct = z.object({
   name: zName,
-  sku: productFields.sku,
+  /** Blank: generated (P-00001, …) when the invoice is saved. */
+  sku: z.string().trim().max(60).default(''),
   barcode: productFields.barcode,
   categoryId: zId.optional(),
   /** Typed brand: an unknown name is registered as a new brand. */
   brandName: zShortText,
   sellingPrice: zMinor,
   description: zOptionalText,
+  /** How the ordered units split by colour; the product gets these colours on delivery. */
+  colors: zProductColors,
 });
 export type NewPurchaseProduct = z.output<typeof zNewPurchaseProduct>;
 
@@ -607,9 +632,15 @@ const purchaseInvoiceFields = {
           unitCost: zMinor,
           /** Becomes the product's selling price on delivery. */
           sellingPrice: zMinor.optional(),
+          /** One of the product's colours; delivered units go on it. */
+          color: zShortText,
         })
         .refine((i) => Boolean(i.productId) !== Boolean(i.newProduct), 'Choose a product or enter a new one')
-        .refine((i) => i.freeQty < i.quantity, 'Free quantity must be less than the total quantity'),
+        .refine((i) => i.freeQty < i.quantity, 'Free quantity must be less than the total quantity')
+        .refine(
+          (i) => (i.newProduct?.colors ?? []).reduce((sum, c) => sum + c.quantity, 0) <= i.quantity,
+          'The colours add up to more than the quantity',
+        ),
     )
     .min(1, 'Add at least one product'),
 };
@@ -632,6 +663,8 @@ export const zReceivePurchaseItems = z.object({
         quantity: zQuantity,
         /** Serialized products: one IMEI / serial per unit. */
         serials: z.array(zSerial).optional(),
+        /** Their colour; one not on the product yet is added to it. The same line may come once per colour. */
+        color: z.string().trim().max(40).optional().transform((v) => v || undefined).optional(),
       }),
     )
     .min(1, 'Choose at least one product'),

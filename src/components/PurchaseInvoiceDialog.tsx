@@ -57,6 +57,13 @@ type Line = {
   /** Paid units; free ones are extra. */
   quantity: number;
   freeQty: number;
+  /** One of the picked product's colours (colorOptions); empty when it has none. */
+  color: string;
+  colorOptions: string[];
+  /** New product: how its units split by colour. */
+  newColors: Array<{ name: string; quantity: number }>;
+  /** IMEI phones get their colour per handset on delivery, so theirs is only a default. */
+  isSerialized: boolean;
 };
 
 let nextKey = 0;
@@ -73,7 +80,14 @@ const emptyLine = (): Line => ({
   sellingPrice: 0,
   quantity: 1,
   freeQty: 0,
+  color: '',
+  colorOptions: [],
+  newColors: [],
+  isSerialized: false,
 });
+const newColorsTotal = (l: Line) => l.newColors.reduce((sum, c) => sum + c.quantity, 0);
+// A product with colours, without IMEI tracking, is ordered one colour per line.
+const needsColor = (l: Line) => !l.isSerialized && l.colorOptions.length > 0 && !l.color;
 const isFilled = (l: Line) => Boolean(l.productId || l.name.trim());
 
 /** New purchase invoice, or edit one (`invoice` given). */
@@ -111,6 +125,10 @@ export default function PurchaseInvoiceDialog({
           sellingPrice: i.sellingPrice,
           quantity: i.quantity - i.freeQty,
           freeQty: i.freeQty,
+          color: i.color ?? '',
+          colorOptions: i.colors,
+          newColors: i.newProduct?.colors ?? [],
+          isSerialized: i.isSerialized === 1,
         }))
       : [emptyLine()],
   );
@@ -151,6 +169,7 @@ export default function PurchaseInvoiceDialog({
             freeQty: l.freeQty,
             unitCost: l.unitCost,
             sellingPrice: l.sellingPrice,
+            color: l.color || undefined,
           };
           if (l.productId) return { productId: l.productId, ...prices };
           return {
@@ -162,6 +181,7 @@ export default function PurchaseInvoiceDialog({
               brandName: l.brandName.trim() || undefined,
               sellingPrice: l.sellingPrice,
               description: l.description.trim() || undefined,
+              colors: l.newColors.filter((c) => c.name.trim()).map((c) => ({ name: c.name.trim(), quantity: c.quantity })),
             },
             ...prices,
           };
@@ -181,7 +201,9 @@ export default function PurchaseInvoiceDialog({
     invoiceAt &&
     filled.length > 0 &&
     total >= 0 &&
-    filled.every((l) => l.quantity > 0 && (l.productId || l.sku.trim()));
+    !filled.some(needsColor) &&
+    filled.every((l) => l.productId || newColorsTotal(l) <= l.quantity + l.freeQty) &&
+    filled.every((l) => l.quantity > 0);
 
   return (
     <Dialog open fullWidth maxWidth="xl" onClose={save.isPending ? undefined : onClose}>
@@ -262,7 +284,7 @@ export default function PurchaseInvoiceDialog({
           )}
           <Typography variant="caption" color="text.secondary">
             Pick a product from Stocks or type a new name. A new product is added to Stocks, and an existing one takes
-            these prices, when it is marked delivered.
+            these prices, when it is marked delivered. Leave a new product's SKU empty to generate one (P-00001, …).
           </Typography>
           <Box sx={{ overflowX: 'auto' }}>
             <Table size="small" sx={{ '& td': { px: 0.5, verticalAlign: 'top' }, '& th': { px: 0.5 } }}>
@@ -273,6 +295,7 @@ export default function PurchaseInvoiceDialog({
                   <TableCell sx={{ minWidth: 160 }}>Barcode</TableCell>
                   <TableCell sx={{ minWidth: 150 }}>Category</TableCell>
                   <TableCell sx={{ minWidth: 140 }}>Brand</TableCell>
+                  <TableCell sx={{ minWidth: 130 }}>Colour</TableCell>
                   <TableCell sx={{ minWidth: 120 }}>Purchase price</TableCell>
                   <TableCell sx={{ minWidth: 120 }}>Selling price</TableCell>
                   <TableCell sx={{ minWidth: 80 }}>Qty</TableCell>
@@ -298,7 +321,7 @@ export default function PurchaseInvoiceDialog({
                   />
                 ))}
                 <TableRow>
-                  <TableCell colSpan={9}>
+                  <TableCell colSpan={10}>
                     <Button size="small" startIcon={<AddIcon />} disabled={linesLocked} onClick={() => setLines((all) => [...all, emptyLine()])}>
                       Add product
                     </Button>
@@ -378,6 +401,70 @@ export default function PurchaseInvoiceDialog({
   );
 }
 
+/** A new product's colours and how many of the line's units (Qty + Free) are each. */
+function NewColors({
+  line,
+  locked,
+  onChange,
+}: {
+  line: Line;
+  locked: boolean;
+  onChange: (colors: Line['newColors']) => void;
+}) {
+  const units = line.quantity + line.freeQty;
+  const total = newColorsTotal(line);
+  const set = (index: number, patch: Partial<Line['newColors'][number]>) =>
+    onChange(line.newColors.map((c, i) => (i === index ? { ...c, ...patch } : c)));
+  return (
+    <Stack spacing={0.5} sx={{ minWidth: 170 }}>
+      {line.newColors.map((c, index) => (
+        <Stack key={index} direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+          <TextField
+            size="small"
+            placeholder="Colour"
+            disabled={locked}
+            value={c.name}
+            onChange={(e) => set(index, { name: e.target.value })}
+            sx={{ flex: 1 }}
+          />
+          <TextField
+            size="small"
+            type="number"
+            disabled={locked}
+            value={c.quantity}
+            onChange={(e) => set(index, { quantity: Math.max(0, Math.floor(Number(e.target.value)) || 0) })}
+            slotProps={{ htmlInput: { min: 0, style: { textAlign: 'right' } } }}
+            sx={{ width: 64 }}
+          />
+          <IconButton
+            size="small"
+            aria-label={`Remove colour ${c.name || index + 1}`}
+            disabled={locked}
+            onClick={() => onChange(line.newColors.filter((_, i) => i !== index))}
+          >
+            <DeleteOutlineIcon fontSize="small" />
+          </IconButton>
+        </Stack>
+      ))}
+      <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+        <Button
+          size="small"
+          startIcon={<AddIcon />}
+          disabled={locked}
+          onClick={() => onChange([...line.newColors, { name: '', quantity: Math.max(units - total, 0) }])}
+        >
+          Colour
+        </Button>
+        {line.newColors.length > 0 && (
+          <Typography variant="caption" color={total > units ? 'error.main' : total < units ? 'warning.main' : 'text.secondary'}>
+            {total} of {units}
+          </Typography>
+        )}
+      </Stack>
+    </Stack>
+  );
+}
+
 function ProductRow({
   line,
   locked,
@@ -421,6 +508,10 @@ function ProductRow({
       description: p.description ?? '',
       unitCost: p.purchasePrice,
       sellingPrice: p.sellingPrice,
+      colorOptions: p.colors.map((c) => c.name),
+      color: '',
+      newColors: [],
+      isSerialized: p.isSerialized === 1,
     });
 
   return (
@@ -433,10 +524,14 @@ function ProductRow({
           options={products.data?.rows ?? []}
           value={null}
           inputValue={line.name}
-          // Typing over a picked product starts a new one; its codes do not carry over.
+          // Typing over a picked product starts a new one; its codes and colours do not carry over.
           onInputChange={(_e, text, reason) => {
             if (reason !== 'input') return;
-            onChange(line.productId ? { productId: null, name: text, sku: '', barcode: '', description: '' } : { name: text });
+            onChange(
+              line.productId
+                ? { productId: null, name: text, sku: '', barcode: '', description: '', color: '', colorOptions: [], isSerialized: false }
+                : { name: text },
+            );
           }}
           onChange={(_e, value) => value && typeof value !== 'string' && pick(value)}
           // The server already filtered.
@@ -463,7 +558,14 @@ function ProductRow({
         />
       </TableCell>
       <TableCell>
-        <TextField size="small" fullWidth disabled={fixed} required={isNew} value={line.sku} onChange={(e) => onChange({ sku: e.target.value })} />
+        <TextField
+          size="small"
+          fullWidth
+          disabled={fixed}
+          value={line.sku}
+          placeholder={isNew ? 'Auto' : undefined}
+          onChange={(e) => onChange({ sku: e.target.value })}
+        />
       </TableCell>
       <TableCell>
         <TextField
@@ -490,7 +592,10 @@ function ProductRow({
         <Autocomplete
           size="small"
           disabled={fixed}
-          options={categories.filter((c) => c.depth > 0 || c.id === line.categoryId)}
+          // A sub category, or a category that has none.
+          options={categories.filter(
+            (c) => c.depth > 0 || c.id === line.categoryId || !categories.some((s) => s.parentId === c.id),
+          )}
           value={categories.find((c) => c.id === line.categoryId) ?? null}
           onChange={(_e, c) => onChange({ categoryId: c?.id ?? '' })}
           getOptionLabel={(c) => c.path}
@@ -515,6 +620,34 @@ function ProductRow({
             />
           )}
         />
+      </TableCell>
+      <TableCell>
+        {isNew ? (
+          <NewColors line={line} locked={locked} onChange={(newColors) => onChange({ newColors })} />
+        ) : line.colorOptions.length > 0 ? (
+          <TextField
+            select
+            size="small"
+            fullWidth
+            disabled={locked}
+            value={line.colorOptions.includes(line.color) ? line.color : ''}
+            onChange={(e) => onChange({ color: e.target.value })}
+            error={needsColor(line)}
+            helperText={line.isSerialized ? 'Default; set per phone on delivery' : undefined}
+            slotProps={{ formHelperText: { sx: { mx: 0 } } }}
+          >
+            {line.isSerialized && <MenuItem value="">Choose on delivery</MenuItem>}
+            {line.colorOptions.map((name) => (
+              <MenuItem key={name} value={name}>
+                {name}
+              </MenuItem>
+            ))}
+          </TextField>
+        ) : (
+          <Typography variant="body2" color="text.disabled" sx={{ pt: 1 }}>
+            —
+          </Typography>
+        )}
       </TableCell>
       <TableCell>
         <MoneyField size="small" disabled={locked} value={line.unitCost} onChange={(v) => onChange({ unitCost: v })} />

@@ -91,7 +91,7 @@ export function renderA4Invoice({ sale, settings, reprint }: DocumentContext): s
         <td class="c">${index + 1}</td>
         <td>
           ${esc(item.productName)}${item.isGift ? ' <b>(Gift)</b>' : ''}
-          <div class="muted sku">${esc(item.sku)}${item.serials ? ` · IMEI ${esc(item.serials)}` : ''}</div>
+          <div class="muted sku">${esc(item.sku)}${item.serials ? ` · IMEI ${esc(item.serials)}` : ''}${item.color ? ` · ${esc(item.color)}` : ''}</div>
         </td>
         <td class="c num">${item.quantity}</td>
         <td class="r num">${money(item.unitPrice, settings)}</td>
@@ -300,7 +300,7 @@ export function renderThermalReceipt({ sale, settings, reprint }: DocumentContex
       <tr class="item">
         <td colspan="2">${esc(item.productName)}${item.isGift ? ' (Gift)' : ''}</td>
       </tr>
-      ${item.serials ? `<tr><td colspan="2" class="serial">IMEI ${esc(item.serials)}</td></tr>` : ''}
+      ${item.serials || item.color ? `<tr><td colspan="2" class="serial">${[item.serials && `IMEI ${esc(item.serials)}`, item.color && esc(item.color)].filter(Boolean).join(' · ')}</td></tr>` : ''}
       <tr>
         <td class="qty">${item.quantity} × ${item.isGift ? 'free' : money(item.unitPrice, settings)}</td>
         <td class="r num b">${item.isGift ? 'GIFT' : money(item.unitPrice * item.quantity, settings)}</td>
