@@ -2026,8 +2026,10 @@ export function dailyPositionHistory(range: DayRangeInput, db: Db = getDatabase(
        )
        SELECT d.day,
               (SELECT COALESCE(SUM(m.amount), 0) FROM moves m WHERE m.day > d.day) AS bankAfter,
+              -- countedDay leads so the (countedDay, countedAt, createdAt) index finds it without a sort;
+              -- same row as by countedAt alone, since the day always comes from the same moment.
               COALESCE((SELECT c.amount FROM "CashCount" c WHERE c.countedDay <= d.day
-                         ORDER BY c.countedAt DESC, c.createdAt DESC, c.rowid DESC LIMIT 1), 0) AS cash,
+                         ORDER BY c.countedDay DESC, c.countedAt DESC, c.createdAt DESC, c.rowid DESC LIMIT 1), 0) AS cash,
               (SELECT COALESCE(SUM(amount), 0) FROM "BankTransaction"
                 WHERE advanceRole = 'DEPOSIT' AND isDeleted = 0 AND transactionDay = d.day) AS customerAdvanceIn,
               -- Per advance: its deposit, plus "receive more", less withdrawals, all up to that day.
@@ -2074,9 +2076,12 @@ export function dailyPositionHistory(range: DayRangeInput, db: Db = getDatabase(
 const CASH_HISTORY_SELECT = `
   SELECT c.id, c.countedAt, c.countedDay, COALESCE(c.source, 'Cash count') AS source, c.notes,
          c.amount AS balance,
-         c.amount - COALESCE(LAG(c.amount) OVER (ORDER BY c.countedAt, c.createdAt, c.rowid), 0) AS change,
+         -- The previous row by index, not a window: a window walks every row to show one page.
+         c.amount - COALESCE((SELECT p.amount FROM "CashCount" p
+                               WHERE (p.countedAt, p.createdAt, p.rowid) < (c.countedAt, c.createdAt, c.rowid)
+                               ORDER BY p.countedAt DESC, p.createdAt DESC, p.rowid DESC LIMIT 1), 0) AS change,
          u.fullName AS countedByName,
-         ROW_NUMBER() OVER (ORDER BY c.countedAt, c.createdAt, c.rowid) AS seq
+         c.createdAt, c.rowid AS rid
     FROM "CashCount" c
     LEFT JOIN "User" u ON u.id = c.createdBy
 `;
@@ -2085,7 +2090,7 @@ export function listCashHistory(
   query: CashHistoryQuery,
   db: Db = getDatabase(),
 ): { rows: CashHistoryRow[]; total: number; sources: string[] } {
-  // Filters apply outside the window, so each row keeps its true change and balance.
+  // Filters apply outside the select, so each row keeps its true change and balance.
   const where: string[] = [];
   const params: unknown[] = [];
   if (query.source) {
@@ -2110,9 +2115,12 @@ export function listCashHistory(
   }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const rows = db
-    .prepare(`SELECT h.* FROM (${CASH_HISTORY_SELECT}) h ${whereSql} ORDER BY h.seq DESC LIMIT ? OFFSET ?`)
+    .prepare(
+      `SELECT h.* FROM (${CASH_HISTORY_SELECT}) h ${whereSql}
+        ORDER BY h.countedAt DESC, h.createdAt DESC, h.rid DESC LIMIT ? OFFSET ?`,
+    )
     .all(...params, query.pageSize, query.page * query.pageSize) as Array<
-    CashHistoryRow & { seq: number; countedDay: string }
+    CashHistoryRow & { countedDay: string; createdAt: string; rid: number }
   >;
   const total = (
     db.prepare(`SELECT COUNT(*) AS n FROM (${CASH_HISTORY_SELECT}) h ${whereSql}`).get(...params) as {
@@ -2124,7 +2132,11 @@ export function listCashHistory(
       .prepare(`SELECT DISTINCT COALESCE(source, 'Cash count') AS s FROM "CashCount" ORDER BY s`)
       .all() as Array<{ s: string }>
   ).map((r) => r.s);
-  return { rows: rows.map(({ seq: _seq, countedDay: _day, ...row }) => row), total, sources };
+  return {
+    rows: rows.map(({ countedDay: _day, createdAt: _created, rid: _rid, ...row }) => row),
+    total,
+    sources,
+  };
 }
 
 /**

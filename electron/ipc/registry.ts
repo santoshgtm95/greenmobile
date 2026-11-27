@@ -113,7 +113,11 @@ export function handle<TSchema extends z.ZodTypeAny, TResult>(
         throw errors.validation('Please check the highlighted fields.', fieldErrors(parsed.error));
       }
 
+      const started = performance.now();
       const data = await handler(parsed.data, { user });
+      const ms = Math.round(performance.now() - started);
+      // Slow-request log: names the screens worth optimising, from real shop data.
+      if (ms >= 100) logger.warn('Slow request', { channel, ms });
       return { ok: true, data };
     } catch (err) {
       return { ok: false, error: toSerializedError(channel, err) };

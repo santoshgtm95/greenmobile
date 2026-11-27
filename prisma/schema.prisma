@@ -888,8 +888,8 @@ model CashCount {
 
   creator User @relation(fields: [createdBy], references: [id], onDelete: Restrict)
 
-  @@index([countedAt])
-  @@index([countedDay])
+  @@index([countedAt, createdAt])
+  @@index([countedDay, countedAt, createdAt])
 }
 
 // -----------------------------------------------------------------------------

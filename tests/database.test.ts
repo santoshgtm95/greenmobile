@@ -33,6 +33,7 @@ const EXPECTED_TABLES = [
   'InventoryTransaction',
   'Payment',
   'Product',
+  'ProductColor',
   'ProductSerial',
   'PurchaseInvoice',
   'PurchaseInvoiceItem',

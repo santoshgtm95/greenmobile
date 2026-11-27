@@ -46,14 +46,36 @@ export function openDatabase(file: string): Db {
   connection.pragma('busy_timeout = 5000');
   // Keep temp b-trees in memory; sorting big reports should not touch disk.
   connection.pragma('temp_store = MEMORY');
+  // 64 MB page cache (default is 2 MB) and memory-mapped reads: the whole shop file stays in RAM.
+  connection.pragma('cache_size = -65536');
+  connection.pragma('mmap_size = 268435456');
+  // Refreshes the planner's statistics where tables have grown, so indexes keep being picked.
+  connection.pragma('optimize = 0x10002');
 
   db = connection;
   logger.info('Database opened', {
     file,
     journalMode: connection.pragma('journal_mode', { simple: true }),
     foreignKeys: connection.pragma('foreign_keys', { simple: true }),
+    tableSizesKb: tableSizes(connection),
   });
   return connection;
+}
+
+/** Space per table (with its indexes) in KB, largest first, so the log shows what makes the file big. */
+function tableSizes(connection: Db): Record<string, number> | undefined {
+  try {
+    const rows = connection
+      .prepare(
+        `SELECT COALESCE(m.tbl_name, s.name) AS name, SUM(s.pgsize) / 1024 AS kb
+           FROM dbstat s LEFT JOIN sqlite_master m ON m.name = s.name
+          GROUP BY 1 ORDER BY kb DESC LIMIT 12`,
+      )
+      .all() as Array<{ name: string; kb: number }>;
+    return Object.fromEntries(rows.map((r) => [r.name, r.kb]));
+  } catch {
+    return undefined; // dbstat is not compiled in; the size report is only a diagnostic.
+  }
 }
 
 export function getDatabase(): Db {
@@ -128,6 +150,7 @@ export function vacuumInto(target: string, connection: Db = getDatabase()): void
 export function closeDatabase(): void {
   if (!db) return;
   try {
+    db.pragma('optimize');
     db.pragma('wal_checkpoint(TRUNCATE)');
     db.close();
     logger.info('Database closed');
