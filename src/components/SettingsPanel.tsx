@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Alert, Box, Button, CircularProgress, Paper, Stack, Typography } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import SaveIcon from '@mui/icons-material/Save';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlineOutlined';
 import type { SettingsDraft } from '../hooks/useSettingsDraft';
@@ -33,15 +34,23 @@ export default function SettingsPanel({
   children: ReactNode;
 }) {
   return (
-    <Paper sx={{ p: 3, border: '1px solid', borderColor: 'divider' }}>
-      <Stack spacing={2.5}>
-        <Box>
-          <Typography variant="h6">{title}</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            {description}
-          </Typography>
-        </Box>
+    <Paper sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', overflow: 'clip' }}>
+      <Box
+        sx={(theme) => ({
+          px: 3,
+          py: 2,
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          background: `linear-gradient(180deg, ${alpha(theme.palette.primary.main, 0.07)}, transparent)`,
+        })}
+      >
+        <Typography sx={{ fontWeight: 800, fontSize: '1.05rem', letterSpacing: '-0.02em' }}>{title}</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25, maxWidth: 720 }}>
+          {description}
+        </Typography>
+      </Box>
 
+      <Stack spacing={2.5} sx={{ p: 3 }}>
         {!canEdit && (
           <Alert severity="info">
             You can see these settings but not change them. Ask an administrator.
@@ -63,43 +72,68 @@ export default function SettingsPanel({
             {children}
           </Stack>
         )}
+      </Stack>
 
-        <Stack
-          direction="row"
-          spacing={2}
-          sx={{
-            alignItems: 'center',
-            pt: 1,
-            borderTop: '1px solid',
-            borderColor: 'divider',
-          }}
-        >
-          <Button
-            variant="contained"
-            startIcon={<SaveIcon />}
-            onClick={draft.save}
-            disabled={!canEdit || !draft.dirty || draft.saving}
-          >
-            {draft.saving
-              ? 'Saving…'
-              : draft.dirty
-                ? `Save ${draft.changed.length} change${draft.changed.length === 1 ? '' : 's'}`
-                : 'Save'}
-          </Button>
-
-          {draft.dirty && !draft.saving && (
-            <Button onClick={draft.reset} disabled={!canEdit}>
-              Discard
-            </Button>
-          )}
-
-          {draft.saved && (
+      {/* Sticks to the bottom of the screen, so Save is in reach on a long section. */}
+      <Stack
+        direction="row"
+        spacing={1.5}
+        sx={(theme) => ({
+          alignItems: 'center',
+          px: 3,
+          py: 1.5,
+          position: 'sticky',
+          bottom: 0,
+          zIndex: 1,
+          borderTop: '1px solid',
+          borderColor: draft.dirty ? alpha(theme.palette.warning.main, 0.4) : 'divider',
+          bgcolor: draft.dirty
+            ? alpha(theme.palette.warning.main, 0.06)
+            : alpha(theme.palette.text.primary, 0.025),
+          backdropFilter: 'blur(6px)',
+          transition: 'background-color .2s, border-color .2s',
+        })}
+      >
+        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+          {draft.dirty && !draft.saving ? (
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+              <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'warning.main', flexShrink: 0 }} />
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                Unsaved changes
+              </Typography>
+            </Stack>
+          ) : draft.saved ? (
             <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', color: 'success.main' }}>
               <CheckCircleOutlineIcon fontSize="small" />
-              <Typography variant="body2">Saved.</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                Saved.
+              </Typography>
             </Stack>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              Nothing changes until you save.
+            </Typography>
           )}
-        </Stack>
+        </Box>
+
+        {draft.dirty && !draft.saving && (
+          <Button onClick={draft.reset} disabled={!canEdit} color="inherit">
+            Discard
+          </Button>
+        )}
+
+        <Button
+          variant="contained"
+          startIcon={<SaveIcon />}
+          onClick={draft.save}
+          disabled={!canEdit || !draft.dirty || draft.saving}
+        >
+          {draft.saving
+            ? 'Saving…'
+            : draft.dirty
+              ? `Save ${draft.changed.length} change${draft.changed.length === 1 ? '' : 's'}`
+              : 'Save'}
+        </Button>
       </Stack>
     </Paper>
   );

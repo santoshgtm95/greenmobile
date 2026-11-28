@@ -6,6 +6,8 @@ import { AuthProvider, useAuth } from './hooks/useAuth';
 import LoginPage from './pages/LoginPage';
 import FirstRunWizard from './pages/FirstRunWizard';
 import AppRouter from './router/AppRouter';
+import { useEffect } from 'react';
+import { enhanceTables } from './lib/tableEnhancer';
 
 /**
  * There is no server and no network, so retrying a failed call is pointless —
@@ -20,6 +22,8 @@ const queryClient = new QueryClient({
 });
 
 export default function App() {
+  // Sortable headers and draggable column widths on every table.
+  useEffect(() => enhanceTables(), []);
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />

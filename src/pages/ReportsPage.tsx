@@ -3,7 +3,10 @@ import {
   Alert,
   Box,
   Button,
-  Divider,
+  LinearProgress,
+  ListItemIcon,
+  ListItemText,
+  Menu,
   MenuItem,
   Paper,
   Snackbar,
@@ -13,6 +16,7 @@ import {
   TableBody,
   TableCell,
   TableContainer,
+  TableFooter,
   TableHead,
   TableRow,
   Tabs,
@@ -24,6 +28,22 @@ import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import TableViewIcon from '@mui/icons-material/TableView';
 import DescriptionIcon from '@mui/icons-material/Description';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
+import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
+import TagIcon from '@mui/icons-material/Tag';
+import PercentIcon from '@mui/icons-material/Percent';
+import InsightsOutlinedIcon from '@mui/icons-material/InsightsOutlined';
+import SummaryCard from '../components/SummaryCard';
+import { historyTableSx } from '../components/historyTableSx';
+import { compactFiltersSx } from '../components/compactSx';
+import {
+  PageHeader,
+  SummaryPanel,
+  TableCardHeader,
+  cardGrid,
+  pillTabsPaperSx,
+  pillTabsSx,
+} from '../components/PageLayout';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { compactPageSx } from '../components/compactSx';
@@ -64,6 +84,7 @@ export default function ReportsPage() {
   const [customTo, setCustomTo] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [exportAnchor, setExportAnchor] = useState<HTMLElement | null>(null);
 
   const range = useMemo(
     () => resolvePreset(preset, { from: customFrom || undefined, to: customTo || undefined }),
@@ -103,11 +124,110 @@ export default function ReportsPage() {
 
   const data = report.data;
 
+  const exportAs = (format: ExportFormat) => {
+    setExportAnchor(null);
+    exportReport.mutate(format);
+  };
+
   return (
-    <Stack
-      spacing={2}
-      sx={compactPageSx}
-    >
+    <Stack spacing={2} sx={compactPageSx}>
+      <PageHeader
+        title="Reports"
+        subtitle="Sales, stock, money and profit for any period: the same figures you print or export"
+        actions={
+          <>
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', ...compactFiltersSx }}>
+              <TextField
+                select
+                size="small"
+                label="Period"
+                value={preset}
+                onChange={(e) => setPreset(e.target.value as DatePreset)}
+                sx={{ width: 150 }}
+              >
+                {DATE_PRESETS.map((option) => (
+                  <MenuItem key={option} value={option}>
+                    {DATE_PRESET_LABELS[option]}
+                  </MenuItem>
+                ))}
+              </TextField>
+              {preset === 'CUSTOM' && (
+                <>
+                  <TextField
+                    size="small"
+                    label="From"
+                    type="date"
+                    value={customFrom}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                    slotProps={{ inputLabel: { shrink: true } }}
+                    sx={{ width: 145 }}
+                  />
+                  <TextField
+                    size="small"
+                    label="To"
+                    type="date"
+                    value={customTo}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                    slotProps={{ inputLabel: { shrink: true } }}
+                    sx={{ width: 145 }}
+                  />
+                </>
+              )}
+            </Stack>
+            <Button
+              variant="outlined"
+              startIcon={<FileDownloadOutlinedIcon />}
+              onClick={(e) => setExportAnchor(e.currentTarget)}
+              disabled={exportReport.isPending}
+              aria-haspopup="menu"
+            >
+              Export
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<PrintIcon />}
+              onClick={() => exportReport.mutate('PRINT')}
+              disabled={exportReport.isPending}
+            >
+              Print
+            </Button>
+            <Menu anchorEl={exportAnchor} open={Boolean(exportAnchor)} onClose={() => setExportAnchor(null)}>
+              <MenuItem onClick={() => exportAs('PDF')}>
+                <ListItemIcon>
+                  <PictureAsPdfIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="PDF" secondary="To print or send" />
+              </MenuItem>
+              <MenuItem onClick={() => exportAs('XLSX')}>
+                <ListItemIcon>
+                  <TableViewIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Excel" secondary="To work on the figures" />
+              </MenuItem>
+              <MenuItem onClick={() => exportAs('CSV')}>
+                <ListItemIcon>
+                  <DescriptionIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="CSV" secondary="For other software" />
+              </MenuItem>
+              <MenuItem
+                divider={false}
+                onClick={() => {
+                  setExportAnchor(null);
+                  openFolder.mutate();
+                }}
+                sx={{ borderTop: 1, borderColor: 'divider' }}
+              >
+                <ListItemIcon>
+                  <FolderOpenIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Open exports folder" />
+              </MenuItem>
+            </Menu>
+          </>
+        }
+      />
+
       {error && (
         <Alert severity="error" onClose={() => setError(null)}>
           {error}
@@ -119,8 +239,9 @@ export default function ReportsPage() {
         </Alert>
       )}
 
-      <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
+      <Paper sx={pillTabsPaperSx}>
         <Tabs
+          sx={pillTabsSx}
           value={kind}
           onChange={(_e, next) => setKind(next as ReportKind)}
           variant="scrollable"
@@ -130,152 +251,33 @@ export default function ReportsPage() {
             <Tab key={option} value={option} label={REPORT_LABELS[option]} />
           ))}
         </Tabs>
-
-        <Divider />
-
-        {/* One filter row scoping the whole report, plus the export actions. */}
-        <Stack
-          direction='row'
-          spacing={2}
-          useFlexGap
-          sx={{ p: 1.5, alignItems: 'center', flexWrap: 'wrap' }}
-        >
-          <TextField
-            select
-            size="small"
-            label="Period"
-            value={preset}
-            onChange={(e) => setPreset(e.target.value as DatePreset)}
-            sx={{ width: 160 }}
-          >
-            {DATE_PRESETS.map((option) => (
-              <MenuItem key={option} value={option}>
-                {DATE_PRESET_LABELS[option]}
-              </MenuItem>
-            ))}
-          </TextField>
-
-          {preset === 'CUSTOM' && (
-            <>
-              <TextField
-                size="small"
-                label="From"
-                type="date"
-                value={customFrom}
-                onChange={(e) => setCustomFrom(e.target.value)}
-                slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ width: 150 }}
-              />
-              <TextField
-                size="small"
-                label="To"
-                type="date"
-                value={customTo}
-                onChange={(e) => setCustomTo(e.target.value)}
-                slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ width: 150 }}
-              />
-            </>
-          )}
-
-          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', ml: 'auto' }}>
-            <Button
-              size="small"
-              startIcon={<PrintIcon />}
-              onClick={() => exportReport.mutate('PRINT')}
-              disabled={exportReport.isPending}
-            >
-              Print
-            </Button>
-            <Button
-              size="small"
-              startIcon={<PictureAsPdfIcon />}
-              onClick={() => exportReport.mutate('PDF')}
-              disabled={exportReport.isPending}
-            >
-              PDF
-            </Button>
-            <Button
-              size="small"
-              startIcon={<TableViewIcon />}
-              onClick={() => exportReport.mutate('XLSX')}
-              disabled={exportReport.isPending}
-            >
-              Excel
-            </Button>
-            <Button
-              size="small"
-              startIcon={<DescriptionIcon />}
-              onClick={() => exportReport.mutate('CSV')}
-              disabled={exportReport.isPending}
-            >
-              CSV
-            </Button>
-            <Button
-              size="small"
-              color="inherit"
-              startIcon={<FolderOpenIcon />}
-              onClick={() => openFolder.mutate()}
-            >
-              Exports folder
-            </Button>
-          </Stack>
-        </Stack>
       </Paper>
 
-      {data && (
-        <Stack
-          spacing={2}
-          sx={{ opacity: report.isFetching ? 0.7 : 1, transition: 'opacity .15s' }}
-        >
-          <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: 'baseline', flexWrap: 'wrap', rowGap: 0.5 }}>
-            <Typography variant="h6">{data.title}</Typography>
-            <Typography variant="body2" color="text.secondary">
-              {data.periodLabel} · amounts in {data.currency}
-            </Typography>
-          </Stack>
+      {/* A thin bar while a new period or report is being built; the old one stays visible meanwhile. */}
+      <Box sx={{ height: 3, mt: '6px !important' }}>
+        {report.isFetching && <LinearProgress sx={{ height: 3, borderRadius: 2 }} />}
+      </Box>
 
+      {data && (
+        <Stack spacing={2} sx={{ mt: '6px !important', opacity: report.isFetching ? 0.6 : 1, transition: 'opacity .15s' }}>
           {/* Headline figures (spec §47). */}
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
-              gap: 1.5,
-            }}
-          >
-            {data.figures.map((figure) => (
-              <Paper
-                key={figure.label}
-                sx={{
-                  p: 1.5,
-                  border: figure.emphasis ? '2px solid' : '1px solid',
-                  borderColor: figure.emphasis ? 'primary.main' : 'divider',
-                }}
-              >
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                  {figure.label}
-                </Typography>
-                <Typography
-                  variant="h6"
-                  sx={{
-                    fontWeight: 700,
-                    mt: 0.25,
-                    color:
-                      figure.emphasis && typeof figure.value === 'number' && figure.value < 0
-                        ? 'error.main'
-                        : 'text.primary',
-                  }}
-                >
-                  {formatCell(figure.value, figure.type, money)}
-                </Typography>
-                {figure.hint && (
-                  <Typography variant="caption" color="text.secondary">
-                    {figure.hint}
-                  </Typography>
-                )}
-              </Paper>
-            ))}
-          </Box>
+          <SummaryPanel tint title={data.title} caption={`${data.periodLabel} · amounts in ${data.currency}`}>
+            <Box sx={{ ...cardGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))' }}>
+              {data.figures.map((figure) => {
+                const negative = typeof figure.value === 'number' && figure.value < 0;
+                return (
+                  <SummaryCard
+                    key={figure.label}
+                    label={figure.label}
+                    value={formatCell(figure.value, figure.type, money)}
+                    caption={figure.hint ?? (figure.emphasis ? 'The bottom line' : '')}
+                    icon={figureIcon(figure.type, Boolean(figure.emphasis))}
+                    tone={negative ? 'error' : figure.emphasis ? 'success' : undefined}
+                  />
+                );
+              })}
+            </Box>
+          </SummaryPanel>
 
           {data.tables.map((table) => (
             <ReportTableView key={table.title} table={table} money={money} />
@@ -284,7 +286,9 @@ export default function ReportsPage() {
       )}
 
       {report.isLoading && !data && (
-        <Typography color="text.secondary">Building the report…</Typography>
+        <Typography color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>
+          Building the report…
+        </Typography>
       )}
 
       <Snackbar
@@ -302,6 +306,13 @@ export default function ReportsPage() {
 }
 
 const NUMERIC_TYPES: ColumnType[] = ['money', 'number', 'percent'];
+
+function figureIcon(type: ColumnType, emphasis: boolean) {
+  if (emphasis) return <InsightsOutlinedIcon fontSize="small" />;
+  if (type === 'money') return <PaymentsOutlinedIcon fontSize="small" />;
+  if (type === 'percent') return <PercentIcon fontSize="small" />;
+  return <TagIcon fontSize="small" />;
+}
 
 /** Formats a described cell. Money always arrives as minor units. */
 function formatCell(
@@ -336,20 +347,14 @@ function ReportTableView({
   money: (minor: number) => string;
 }) {
   return (
-    <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
-      <Box sx={{ px: 2, pt: 2, pb: 1 }}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-          {table.title}
-        </Typography>
-        {table.subtitle && (
-          <Typography variant="caption" color="text.secondary">
-            {table.subtitle}
-          </Typography>
-        )}
-      </Box>
+    <Paper sx={historyTableSx}>
+      <TableCardHeader
+        title={table.title}
+        caption={[table.subtitle, `${table.rows.length} row${table.rows.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}
+      />
 
       {table.rows.length === 0 ? (
-        <Typography variant="body2" color="text.secondary" sx={{ px: 2, pb: 2 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ px: 2, py: 4, textAlign: 'center', borderTop: 1, borderColor: 'divider' }}>
           {table.emptyMessage ?? 'Nothing to report.'}
         </Typography>
       ) : (
@@ -399,7 +404,9 @@ function ReportTableView({
                 );
               })}
 
-              {table.totals && (
+            </TableBody>
+            {table.totals && (
+              <TableFooter>
                 <TableRow>
                   {table.columns.map((column, index) => {
                     const total = table.totals?.[column.key];
@@ -409,10 +416,16 @@ function ReportTableView({
                         key={column.key}
                         align={numeric ? 'right' : 'left'}
                         sx={{
-                          fontWeight: 700,
+                          fontWeight: 800,
+                          fontSize: 'inherit',
+                          color: 'text.primary',
                           borderTop: '2px solid',
                           borderTopColor: 'divider',
                           fontVariantNumeric: numeric ? 'tabular-nums' : undefined,
+                          // Stays in sight while a long table scrolls.
+                          position: 'sticky',
+                          bottom: 0,
+                          bgcolor: 'background.paper',
                         }}
                       >
                         {total !== undefined
@@ -424,8 +437,8 @@ function ReportTableView({
                     );
                   })}
                 </TableRow>
-              )}
-            </TableBody>
+              </TableFooter>
+            )}
           </Table>
         </TableContainer>
       )}
