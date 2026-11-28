@@ -1,11 +1,11 @@
+import { MovementDialog } from './MovementParts';
+import ReceiptOutlinedIcon from '@mui/icons-material/ReceiptOutlined';
 import { useState } from 'react';
 import {
   Alert,
   Button,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   MenuItem,
   Stack,
   TextField,
@@ -88,8 +88,13 @@ export default function ExpenseDialog({
   const spend = samePlace ? form.amount - expense.amount : form.amount;
 
   return (
-    <Dialog open fullWidth maxWidth="sm" onClose={onClose}>
-      <DialogTitle>{isEdit ? `Edit ${expense.expenseNumber}` : 'Add expense'}</DialogTitle>
+    <MovementDialog
+      maxWidth="sm"
+      onClose={onClose}
+      icon={<ReceiptOutlinedIcon />}
+      title={isEdit ? `Edit ${expense.expenseNumber}` : 'Add expense'}
+      subtitle="Money the shop spent: rent, bills, wages and the like"
+    >
       <DialogContent dividers>
         <Stack spacing={2.5} sx={{ pt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -221,6 +226,6 @@ export default function ExpenseDialog({
           {save.isPending ? 'Saving…' : 'Save'}
         </Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }

@@ -1,12 +1,12 @@
+import { MovementDialog } from './MovementParts';
+import CategoryOutlinedIcon from '@mui/icons-material/CategoryOutlined';
 import { useState } from 'react';
 import {
   Alert,
   Button,
   Chip,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Divider,
   IconButton,
   Stack,
@@ -83,8 +83,13 @@ export default function ExpenseCategoriesDialog({
   const rows = categories.data ?? [];
 
   return (
-    <Dialog open fullWidth maxWidth="sm" onClose={onClose}>
-      <DialogTitle>Expense categories</DialogTitle>
+    <MovementDialog
+      maxWidth="sm"
+      onClose={onClose}
+      icon={<CategoryOutlinedIcon />}
+      title="Expense categories"
+      subtitle="How expenses are grouped in the list and the reports"
+    >
       <DialogContent dividers>
         <Stack spacing={2.5}>
           {error && (
@@ -193,6 +198,6 @@ export default function ExpenseCategoriesDialog({
       <DialogActions>
         <Button onClick={onClose}>Close</Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }

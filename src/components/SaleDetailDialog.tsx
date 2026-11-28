@@ -1,13 +1,13 @@
+import { MovementDialog } from './MovementParts';
+import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import { useState } from 'react';
 import {
   Alert,
   Box,
   Button,
   Chip,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Divider,
   MenuItem,
   Stack,
@@ -138,27 +138,32 @@ export default function SaleDetailDialog({
   });
 
   return (
-    <Dialog open fullWidth maxWidth="md" onClose={onClose}>
-      <DialogTitle>
-        <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-          <span>Invoice {header?.invoiceNumber ?? '…'}</span>
-          {header && (
-            <Chip
-              size="small"
-              label={SALE_STATUS_LABELS[header.status]}
-              color={
-                header.status === 'COMPLETED'
-                  ? 'success'
-                  : header.status === 'CANCELLED'
-                    ? 'default'
-                    : header.status === 'REFUNDED'
-                      ? 'error'
-                      : 'warning'
-              }
-            />
-          )}
-        </Stack>
-      </DialogTitle>
+    <MovementDialog
+      maxWidth="md"
+      onClose={onClose}
+      icon={<ReceiptLongOutlinedIcon />}
+      title={`Invoice ${header?.invoiceNumber ?? '…'}`}
+      subtitle={
+        header && `${header.customerName} · ${formatInstant(header.saleDate)}${header.cashierName ? ` · by ${header.cashierName}` : ''}`
+      }
+      badges={
+        header && (
+          <Chip
+            size="small"
+            label={SALE_STATUS_LABELS[header.status]}
+            color={
+              header.status === 'COMPLETED'
+                ? 'success'
+                : header.status === 'CANCELLED'
+                  ? 'default'
+                  : header.status === 'REFUNDED'
+                    ? 'error'
+                    : 'warning'
+            }
+          />
+        )
+      }
+    >
 
       <DialogContent dividers>
         {sale.isLoading && <Typography color="text.secondary">Loading…</Typography>}
@@ -470,7 +475,7 @@ export default function SaleDetailDialog({
           }}
         />
       )}
-    </Dialog>
+    </MovementDialog>
   );
 }
 

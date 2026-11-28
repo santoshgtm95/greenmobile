@@ -1,13 +1,13 @@
+import { MovementDialog } from './MovementParts';
+import AccountBalanceOutlinedIcon from '@mui/icons-material/AccountBalanceOutlined';
 import { useMemo, useState } from 'react';
 import {
   Alert,
   Box,
   Button,
   Chip,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Paper,
   Stack,
   TextField,
@@ -177,8 +177,13 @@ export default function BankBalanceDialog({
   });
 
   return (
-    <Dialog open fullWidth maxWidth="md" onClose={onClose}>
-      <DialogTitle>In the banks</DialogTitle>
+    <MovementDialog
+      maxWidth="md"
+      onClose={onClose}
+      icon={<AccountBalanceOutlinedIcon />}
+      title="In the banks"
+      subtitle="Match each account to its banking app or statement"
+    >
       <DialogContent dividers>
         <Stack spacing={2.5} sx={{ pt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -516,6 +521,6 @@ export default function BankBalanceDialog({
           {save.isPending ? 'Saving…' : 'Save balances'}
         </Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }

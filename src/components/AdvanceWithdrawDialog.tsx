@@ -27,6 +27,7 @@ import type { BankAccount, BankAdvance } from "@shared/api";
 import {
   FeeFields,
   MovementDialog,
+  summaryBoxSx,
   Section,
   SummaryLine,
   TypeButton,
@@ -289,7 +290,7 @@ export default function AdvanceWithdrawDialog({
             </Typography>
           </Section>
 
-          <Paper variant="outlined" sx={{ p: 2, bgcolor: "action.hover" }}>
+          <Paper variant="outlined" sx={summaryBoxSx}>
             <Stack spacing={0.75}>
               <SummaryLine strong label="Customer receives" value={money(paidOut)} />
               {fee > 0 && (

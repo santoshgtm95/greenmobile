@@ -135,8 +135,8 @@ export function TableCardHeader({
   title: string;
   caption: ReactNode;
   action?: ReactNode;
-  /** The filter row. */
-  children: ReactNode;
+  /** The filter row; leave out for a list with no filters. */
+  children?: ReactNode;
 }) {
   return (
     <>
@@ -151,9 +151,11 @@ export function TableCardHeader({
         </Box>
         {action}
       </Stack>
-      <Box sx={{ px: 2, pb: 1.5, borderBottom: "1px solid", borderColor: "divider", ...compactFiltersSx }}>
-        {children}
-      </Box>
+      {children && (
+        <Box sx={{ px: 2, pb: 1.5, borderBottom: "1px solid", borderColor: "divider", ...compactFiltersSx }}>
+          {children}
+        </Box>
+      )}
     </>
   );
 }

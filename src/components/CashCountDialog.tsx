@@ -1,11 +1,11 @@
+import { MovementDialog } from './MovementParts';
+import LocalAtmOutlinedIcon from '@mui/icons-material/LocalAtmOutlined';
 import { useState } from 'react';
 import {
   Alert,
   Button,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Stack,
   TextField,
   Typography,
@@ -53,8 +53,13 @@ export default function CashCountDialog({
   const difference = adjustment;
 
   return (
-    <Dialog open fullWidth maxWidth="xs" onClose={onClose}>
-      <DialogTitle>Cash in hand</DialogTitle>
+    <MovementDialog
+      maxWidth="xs"
+      onClose={onClose}
+      icon={<LocalAtmOutlinedIcon />}
+      title="Cash in hand"
+      subtitle="Record what went into or out of the drawer"
+    >
       <DialogContent dividers>
         <Stack spacing={2.5} sx={{ pt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -128,6 +133,6 @@ export default function CashCountDialog({
           {save.isPending ? 'Saving…' : 'Save count'}
         </Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }

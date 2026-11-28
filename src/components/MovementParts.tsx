@@ -3,7 +3,6 @@ import {
   Box,
   Dialog,
   DialogTitle,
-  Grow,
   IconButton,
   InputAdornment,
   Stack,
@@ -18,8 +17,7 @@ import { bankFee, feeRateOf, formatRate, parseRate } from "@shared/money";
 import MoneyField from "./MoneyField";
 
 /**
- * The shared pieces of the money-movement dialogs (New transaction, Withdraw
- * from advance, Receive advance repayment), so all three read the same way.
+ * The shared pieces of the Banking dialogs, so every one of them reads the same way.
  */
 
 const rise = keyframes`
@@ -27,18 +25,21 @@ const rise = keyframes`
   to   { opacity: 1; transform: none; }
 `;
 const pop = keyframes`
-  0%   { opacity: 0; transform: scale(0.5) rotate(-12deg); }
-  70%  { transform: scale(1.08) rotate(2deg); }
-  100% { opacity: 1; transform: none; }
+  from { opacity: 0; transform: scale(0.6); }
+  to   { opacity: 1; transform: none; }
 `;
 
-/** Styles every movement dialog shares, applied to the paper so plain MUI parts inside pick them up. */
-const paperSx = (theme: Theme) => {
-  const primary = theme.palette.primary.main;
+type Tone = "primary" | "error" | "warning";
+
+/** Styles every Banking dialog shares, applied to the paper so plain MUI parts inside pick them up. */
+const paperSx = (tone: Tone) => (theme: Theme) => {
+  const primary = theme.palette[tone].main;
   return {
-    borderRadius: 3,
+    borderRadius: 3.5,
     overflow: "hidden",
-    boxShadow: `0 24px 60px ${alpha(theme.palette.common.black, 0.25)}`,
+    // A thin accent line on top says which kind of dialog this is at a glance.
+    borderTop: `3px solid ${primary}`,
+    boxShadow: `0 24px 60px ${alpha(theme.palette.common.black, 0.22)}`,
     // The form's rows slide in one after another.
     "& .MuiDialogContent-root > .MuiStack-root > *": {
       animation: `${rise} 360ms cubic-bezier(.2,.8,.2,1) both`,
@@ -88,18 +89,11 @@ const paperSx = (theme: Theme) => {
         },
       },
     },
-    // The summary box.
-    "& .MuiDialogContent-root .MuiPaper-outlined": {
-      borderRadius: 2,
-      borderStyle: "dashed",
-      borderColor: alpha(primary, 0.35),
-      background: `linear-gradient(135deg, ${alpha(primary, 0.06)}, ${alpha(primary, 0.02)})`,
-    },
     "& .MuiDialogActions-root": {
       px: 3,
       py: 1.75,
       borderTop: `1px solid ${theme.palette.divider}`,
-      bgcolor: alpha(theme.palette.text.primary, 0.02),
+      bgcolor: alpha(theme.palette.text.primary, 0.025),
       "& .MuiButton-root": { borderRadius: 2, px: 2.5, textTransform: "none", fontWeight: 600 },
       "& .MuiButton-contained": {
         background: `linear-gradient(135deg, ${theme.palette.primary.light}, ${primary})`,
@@ -115,14 +109,24 @@ const paperSx = (theme: Theme) => {
   };
 };
 
+/** The totals box under a form: the same soft wash as the headline SummaryPanel. Put on <Paper variant="outlined">. */
+export const summaryBoxSx = (theme: Theme) => ({
+  p: 2,
+  borderRadius: 2.5,
+  borderColor: alpha(theme.palette.primary.main, 0.2),
+  background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.07)}, ${alpha(theme.palette.primary.main, 0.015)})`,
+});
+
 /**
- * The frame every money-movement dialog shares: it grows in, has a coloured
- * header with an icon, and its rows slide in one after another.
+ * The frame every Banking dialog shares: an accent line, a header with an icon
+ * tile, title, status badges and close, and rows that slide in one after another.
  */
 export function MovementDialog({
   title,
   subtitle,
   icon,
+  badges,
+  tone = "primary",
   onClose,
   maxWidth = "sm",
   children,
@@ -130,6 +134,10 @@ export function MovementDialog({
   title: ReactNode;
   subtitle?: ReactNode;
   icon: ReactNode;
+  /** Status chips shown beside the title. */
+  badges?: ReactNode;
+  /** "error" for destructive dialogs (delete). */
+  tone?: Tone;
   /** Undefined while saving, so the dialog cannot be closed mid-save. */
   onClose?: () => void;
   maxWidth?: DialogProps["maxWidth"];
@@ -141,16 +149,16 @@ export function MovementDialog({
       fullWidth
       maxWidth={maxWidth}
       onClose={onClose}
-      slots={{ transition: Grow }}
-      slotProps={{ paper: { sx: paperSx } }}
+      slotProps={{ paper: { sx: paperSx(tone) } }}
     >
       <DialogTitle
         sx={(theme) => ({
           display: "flex",
           alignItems: "center",
           gap: 1.5,
-          py: 2,
-          background: `linear-gradient(120deg, ${alpha(theme.palette.primary.main, 0.16)} 0%, ${alpha(theme.palette.primary.main, 0.03)} 60%, transparent 100%)`,
+          py: 1.75,
+          px: 2.5,
+          background: `linear-gradient(180deg, ${alpha(theme.palette[tone].main, 0.08)}, transparent)`,
           borderBottom: `1px solid ${theme.palette.divider}`,
           // This header is light, so undo the theme's white header text.
           color: theme.palette.text.primary,
@@ -159,25 +167,33 @@ export function MovementDialog({
       >
         <Box
           sx={(theme) => ({
-            width: 42,
-            height: 42,
+            width: 40,
+            height: 40,
             flexShrink: 0,
             borderRadius: 2.5,
             display: "grid",
             placeItems: "center",
-            color: theme.palette.primary.contrastText,
-            background: `linear-gradient(135deg, ${theme.palette.primary.light}, ${theme.palette.primary.dark})`,
-            boxShadow: `0 6px 16px ${alpha(theme.palette.primary.main, 0.4)}`,
-            animation: `${pop} 480ms cubic-bezier(.2,.8,.2,1) both`,
+            color: theme.palette[tone].main,
+            bgcolor: alpha(theme.palette[tone].main, 0.12),
+            boxShadow: `inset 0 0 0 1px ${alpha(theme.palette[tone].main, 0.2)}`,
+            "& svg": { fontSize: 22 },
+            animation: `${pop} 320ms cubic-bezier(.2,.8,.2,1) both`,
             "@media (prefers-reduced-motion: reduce)": { animation: "none" },
           })}
         >
           {icon}
         </Box>
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-          <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.25 }} noWrap>
-            {title}
-          </Typography>
+          <Stack direction="row" spacing={1} sx={{ alignItems: "center", minWidth: 0 }}>
+            <Typography
+              component="div"
+              sx={{ fontWeight: 800, fontSize: "1.05rem", letterSpacing: "-0.02em", lineHeight: 1.3 }}
+              noWrap
+            >
+              {title}
+            </Typography>
+            {badges}
+          </Stack>
           {subtitle && (
             <Typography variant="caption" color="text.secondary" component="div" noWrap>
               {subtitle}

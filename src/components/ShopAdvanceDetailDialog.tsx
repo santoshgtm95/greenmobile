@@ -1,13 +1,13 @@
+import { MovementDialog, summaryBoxSx } from './MovementParts';
+import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
 import { useState } from 'react';
 import {
   Alert,
   Box,
   Button,
   Chip,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Divider,
   IconButton,
   Paper,
@@ -200,31 +200,21 @@ export default function ShopAdvanceDetailDialog({
 
   return (
     <>
-      <Dialog open fullWidth maxWidth="xl" onClose={onClose}>
-        <DialogTitle>
-          <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
-            <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
-              <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                Shop Advance Details
-              </Typography>
-              {advance && (
-                <Typography variant="body2" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
-                  {advance.advanceNumber}
-                </Typography>
-              )}
-            </Stack>
-            {advance && (
-              <Stack direction="row" sx={{ alignItems: 'center' }}>
-                <Chip
-                  label={advance.status}
-                  color={advance.status === 'OPEN' ? 'warning' : 'success'}
-                  size="small"
-                />
-                {isDeleted && <DeletedChip reason={advance.deletedReason} />}
-              </Stack>
-            )}
-          </Stack>
-        </DialogTitle>
+      <MovementDialog
+        maxWidth="xl"
+        onClose={onClose}
+        icon={<PaymentsOutlinedIcon />}
+        title={`Shop advance ${advance?.advanceNumber ?? ''}`}
+        subtitle="Paid out by the shop, with every repayment received"
+        badges={
+          advance && (
+            <>
+              <Chip label={advance.status} color={advance.status === 'OPEN' ? 'warning' : 'success'} size="small" />
+              {isDeleted && <DeletedChip reason={advance.deletedReason} />}
+            </>
+          )
+        }
+      >
 
         <DialogContent>
           <Stack spacing={3} sx={{ pt: 1 }}>
@@ -239,7 +229,7 @@ export default function ShopAdvanceDetailDialog({
             {advance && (
               <>
                 {/* Summary Row */}
-                <Paper variant="outlined" sx={{ p: 2, bgcolor: 'action.hover' }}>
+                <Paper variant="outlined" sx={summaryBoxSx}>
                   <Stack
                     direction={{ xs: 'column', sm: 'row' }}
                     spacing={3}
@@ -436,7 +426,7 @@ export default function ShopAdvanceDetailDialog({
           </Box>
           <Button onClick={onClose}>Close</Button>
         </DialogActions>
-      </Dialog>
+      </MovementDialog>
 
       {/* Delete Advance Dialog */}
       {deletingAdvance && advance && (

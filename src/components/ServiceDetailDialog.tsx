@@ -1,13 +1,13 @@
+import { MovementDialog } from './MovementParts';
+import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
 import { useEffect, useState } from 'react';
 import {
   Alert,
   Box,
   Button,
   Chip,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Divider,
   IconButton,
   MenuItem,
@@ -196,18 +196,21 @@ export default function ServiceDetailDialog({
   const nextStatuses = order ? SERVICE_STATUS_TRANSITIONS[order.status] : [];
 
   return (
-    <Dialog open fullWidth maxWidth="lg" onClose={onClose}>
-      <DialogTitle>
-        <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-          <span>{order ? order.serviceNumber : 'Service job'}</span>
-          {order && (
+    <MovementDialog
+      maxWidth="lg"
+      onClose={onClose}
+      icon={<BuildOutlinedIcon />}
+      title={order ? order.serviceNumber : 'Service job'}
+      subtitle={order ? `${order.customerName} · ${order.deviceBrand} ${order.deviceModel}` : undefined}
+      badges={
+        order && (
+          <>
             <Chip size="small" color="primary" label={SERVICE_STATUS_LABELS[order.status]} />
-          )}
-          {order && order.balance > 0 && (
-            <Chip size="small" color="error" label={`${money(order.balance)} owing`} />
-          )}
-        </Stack>
-      </DialogTitle>
+            {order.balance > 0 && <Chip size="small" color="error" label={`${money(order.balance)} owing`} />}
+          </>
+        )
+      }
+    >
 
       <DialogContent dividers>
         {job.isLoading && <Typography color="text.secondary">Loading…</Typography>}
@@ -606,7 +609,7 @@ export default function ServiceDetailDialog({
           }}
         />
       )}
-    </Dialog>
+    </MovementDialog>
   );
 }
 

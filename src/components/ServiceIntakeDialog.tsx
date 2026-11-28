@@ -1,12 +1,12 @@
+import { MovementDialog } from './MovementParts';
+import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
 import { useState } from 'react';
 import {
   Alert,
   Box,
   Button,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Divider,
   MenuItem,
   Stack,
@@ -105,8 +105,13 @@ export default function ServiceIntakeDialog({
     (customer || form.customerName.trim());
 
   return (
-    <Dialog open fullWidth maxWidth="md" onClose={onClose}>
-      <DialogTitle>Receive a device for repair</DialogTitle>
+    <MovementDialog
+      maxWidth="md"
+      onClose={onClose}
+      icon={<BuildOutlinedIcon />}
+      title="Receive a device for repair"
+      subtitle="Who brought it, what it is and what is wrong with it"
+    >
       <DialogContent dividers>
         <Stack spacing={2.5} sx={{ pt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -311,6 +316,6 @@ export default function ServiceIntakeDialog({
           }}
         />
       )}
-    </Dialog>
+    </MovementDialog>
   );
 }

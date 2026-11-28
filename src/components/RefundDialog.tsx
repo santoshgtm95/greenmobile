@@ -1,13 +1,13 @@
+import { MovementDialog } from './MovementParts';
+import UndoIcon from '@mui/icons-material/Undo';
 import { useMemo, useState } from 'react';
 import {
   Alert,
   Box,
   Button,
   Checkbox,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Divider,
   FormControlLabel,
   IconButton,
@@ -111,8 +111,14 @@ export default function RefundDialog({
   });
 
   return (
-    <Dialog open fullWidth maxWidth="md" onClose={onClose}>
-      <DialogTitle>Refund — invoice {sale.sale.invoiceNumber}</DialogTitle>
+    <MovementDialog
+      maxWidth="md"
+      onClose={onClose}
+      tone="warning"
+      icon={<UndoIcon />}
+      title={`Refund invoice ${sale.sale.invoiceNumber}`}
+      subtitle="Pick what comes back; the money goes back the way it was paid"
+    >
       <DialogContent dividers>
         <Stack spacing={2.5}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -274,6 +280,6 @@ export default function RefundDialog({
           {refund.isPending ? 'Processing…' : 'Confirm refund'}
         </Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }

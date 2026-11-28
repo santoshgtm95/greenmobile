@@ -30,6 +30,7 @@ import type { ShopAdvanceSourceType } from '@shared/domain';
 import {
   FeeFields,
   MovementDialog,
+  summaryBoxSx,
   Section,
   SummaryLine,
   TypeButton,
@@ -286,7 +287,7 @@ export default function ShopAdvanceReceiveDialog({
             )}
           </Section>
 
-          <Paper variant="outlined" sx={{ p: 2, bgcolor: 'action.hover' }}>
+          <Paper variant="outlined" sx={summaryBoxSx}>
             <Stack spacing={0.75}>
               <SummaryLine strong label={isCash ? 'We take in cash' : 'We receive'} value={money(total)} />
               <SummaryLine label="Repays the advance" value={money(principal)} />

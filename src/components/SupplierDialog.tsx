@@ -1,11 +1,11 @@
+import { MovementDialog } from './MovementParts';
+import StorefrontOutlinedIcon from '@mui/icons-material/StorefrontOutlined';
 import { useState } from 'react';
 import {
   Alert,
   Button,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   FormControlLabel,
   Stack,
   Switch,
@@ -44,8 +44,13 @@ export default function SupplierDialog({
   });
 
   return (
-    <Dialog open fullWidth maxWidth="xs" onClose={save.isPending ? undefined : onClose}>
-      <DialogTitle>{supplier ? `Edit ${supplier.name}` : 'Register supplier'}</DialogTitle>
+    <MovementDialog
+      maxWidth="xs"
+      onClose={save.isPending ? undefined : onClose}
+      icon={<StorefrontOutlinedIcon />}
+      title={supplier ? `Edit ${supplier.name}` : 'Register supplier'}
+      subtitle="Who the shop buys stock from"
+    >
       <DialogContent dividers>
         <Stack spacing={2} sx={{ pt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -82,6 +87,6 @@ export default function SupplierDialog({
           {save.isPending ? 'Saving…' : 'Save'}
         </Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }

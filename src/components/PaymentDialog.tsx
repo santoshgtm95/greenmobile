@@ -1,13 +1,13 @@
+import { MovementDialog } from './MovementParts';
+import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
 import { useMemo, useState, type ReactNode } from 'react';
 import {
   Alert,
   Box,
   Button,
   Chip,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Divider,
   IconButton,
   MenuItem,
@@ -102,8 +102,13 @@ export default function PaymentDialog({
     setLines((current) => current.map((line, i) => (i === index ? { ...line, ...patch } : line)));
 
   return (
-    <Dialog open fullWidth maxWidth={summary ? 'md' : 'sm'} onClose={submitting ? undefined : onClose}>
-      <DialogTitle>Payment</DialogTitle>
+    <MovementDialog
+      maxWidth={summary ? 'md' : 'sm'}
+      onClose={submitting ? undefined : onClose}
+      icon={<PaymentsOutlinedIcon />}
+      title="Payment"
+      subtitle={`${money(grandTotal)} to collect · split it across methods if needed`}
+    >
       <DialogContent
         dividers
         sx={
@@ -262,7 +267,7 @@ export default function PaymentDialog({
           {submitting ? 'Completing…' : 'Complete Payment'}
         </Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }
 

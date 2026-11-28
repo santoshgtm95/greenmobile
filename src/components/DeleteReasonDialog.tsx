@@ -1,11 +1,11 @@
+import { MovementDialog } from './MovementParts';
+import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import { useState } from 'react';
 import {
   Alert,
   Button,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Stack,
   TextField,
   Typography,
@@ -57,8 +57,13 @@ export default function DeleteReasonDialog({
   };
 
   return (
-    <Dialog open fullWidth maxWidth="sm" onClose={pending ? undefined : onClose}>
-      <DialogTitle>{title}</DialogTitle>
+    <MovementDialog
+      maxWidth="sm"
+      onClose={pending ? undefined : onClose}
+      tone="error"
+      icon={<DeleteOutlinedIcon />}
+      title={title}
+    >
       <DialogContent dividers>
         <Stack spacing={2}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -93,6 +98,6 @@ export default function DeleteReasonDialog({
           {pending ? 'Deleting…' : 'Delete'}
         </Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }

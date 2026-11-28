@@ -1,13 +1,13 @@
+import { MovementDialog } from './MovementParts';
+import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import { useState } from 'react';
 import {
   Alert,
   Autocomplete,
   Box,
   Button,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   IconButton,
   MenuItem,
   Stack,
@@ -206,8 +206,13 @@ export default function PurchaseInvoiceDialog({
     filled.every((l) => l.quantity > 0);
 
   return (
-    <Dialog open fullWidth maxWidth="xl" onClose={save.isPending ? undefined : onClose}>
-      <DialogTitle>{invoice ? `Edit invoice ${invoice.invoiceNo}` : 'New purchase invoice'}</DialogTitle>
+    <MovementDialog
+      maxWidth="xl"
+      onClose={save.isPending ? undefined : onClose}
+      icon={<ReceiptLongOutlinedIcon />}
+      title={invoice ? `Edit invoice ${invoice.invoiceNo}` : 'New purchase invoice'}
+      subtitle="What was ordered from the supplier, and how it is paid"
+    >
       <DialogContent dividers>
         <Stack spacing={2} sx={{ pt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -397,7 +402,7 @@ export default function PurchaseInvoiceDialog({
           }}
         />
       )}
-    </Dialog>
+    </MovementDialog>
   );
 }
 

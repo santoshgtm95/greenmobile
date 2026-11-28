@@ -27,6 +27,7 @@ import { addMoney, formatRate, subtractMoney } from "@shared/money";
 import {
   FeeFields,
   MovementDialog,
+  summaryBoxSx,
   Section,
   SummaryLine,
   TypeButton,
@@ -296,7 +297,7 @@ export default function CashTransactionDialog({
             )}
           </Section>
 
-          <Paper variant="outlined" sx={{ p: 2, bgcolor: "action.hover" }}>
+          <Paper variant="outlined" sx={summaryBoxSx}>
             <Stack spacing={0.75}>
               <SummaryLine
                 strong

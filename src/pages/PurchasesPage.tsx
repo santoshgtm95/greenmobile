@@ -6,6 +6,7 @@ import {
   Chip,
   IconButton,
   InputAdornment,
+  LinearProgress,
   MenuItem,
   Paper,
   Stack,
@@ -24,6 +25,12 @@ import {
 import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
+import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
+import CheckCircleOutlinedIcon from '@mui/icons-material/CheckCircleOutlined';
+import HourglassBottomOutlinedIcon from '@mui/icons-material/HourglassBottomOutlined';
+import SummaryCard from '../components/SummaryCard';
+import { historyTableSx } from '../components/historyTableSx';
+import { PageHeader, SummaryPanel, TableCardHeader, cardGrid, pillTabsPaperSx, pillTabsSx } from '../components/PageLayout';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
@@ -38,6 +45,8 @@ import { PURCHASE_PAYMENT_LABELS } from '@shared/domain';
 import type { PurchaseInvoice, Supplier } from '@shared/api';
 
 const num = { fontVariantNumeric: 'tabular-nums' } as const;
+
+const STATUS_LABELS = { '': 'All invoices', WAITING: 'Waiting for products', UNPAID: 'Not fully paid' } as const;
 
 function invoiceStatus(row: PurchaseInvoice) {
   if (row.pendingQty === 0) return <Chip size="small" color="success" label="Delivered" />;
@@ -89,27 +98,37 @@ export default function PurchasesPage() {
 
   const totals = invoices.data?.totals;
   const rows = invoices.data?.rows ?? [];
+  const paidPercent = totals?.total ? Math.round((totals.paid * 100) / totals.total) : 0;
+  // What the figures and the list are narrowed to, in words.
+  const scope =
+    [suppliers.data?.find((s) => s.id === supplierId)?.name, status && STATUS_LABELS[status]].filter(Boolean).join(' · ') ||
+    'All invoices';
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-        <Box sx={{ flexGrow: 1 }} />
-        {can('products.manage') && (
-          <>
-            <Button startIcon={<AddIcon />} onClick={() => setEditingSupplier(null)}>
-              Register supplier
-            </Button>
-            <Button variant="contained" startIcon={<AddIcon />} onClick={() => setCreating(true)}>
-              New invoice
-            </Button>
-          </>
-        )}
-      </Stack>
+      <PageHeader
+        title="Purchase invoices"
+        subtitle="Stock ordered from suppliers: what has arrived and what is still owed"
+        actions={
+          can('products.manage') && (
+            <>
+              <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setEditingSupplier(null)}>
+                Register supplier
+              </Button>
+              <Button variant="contained" startIcon={<AddIcon />} onClick={() => setCreating(true)}>
+                New invoice
+              </Button>
+            </>
+          )
+        }
+      />
 
-      <Tabs value={tab} onChange={(_e, next) => setTab(next)}>
-        <Tab value="invoices" label="Invoices" />
-        <Tab value="suppliers" label="Suppliers" />
-      </Tabs>
+      <Paper sx={{ ...pillTabsPaperSx, alignSelf: 'flex-start' }}>
+        <Tabs sx={pillTabsSx} value={tab} onChange={(_e, next) => setTab(next)}>
+          <Tab value="invoices" label="Invoices" />
+          <Tab value="suppliers" label={`Suppliers${suppliers.data ? ` · ${suppliers.data.length}` : ''}`} />
+        </Tabs>
+      </Paper>
 
       {tab === 'invoices' && (
         <>
@@ -119,24 +138,33 @@ export default function PurchasesPage() {
             </Alert>
           )}
 
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-            {[
-              { label: 'Total ordered', value: totals?.total ?? 0 },
-              { label: 'Paid', value: totals?.paid ?? 0 },
-              { label: 'Remaining to pay', value: totals?.remaining ?? 0 },
-            ].map((card) => (
-              <Paper key={card.label} sx={{ p: 2, flex: 1, border: '1px solid', borderColor: 'divider' }}>
-                <Typography variant="caption" color="text.secondary">
-                  {card.label}
-                </Typography>
-                <Typography variant="h5" sx={{ fontWeight: 700, ...num }}>
-                  {money(card.value)}
-                </Typography>
-              </Paper>
-            ))}
-          </Stack>
+          <SummaryPanel tint title="What the shop owes suppliers" caption={`${scope} · follows the filters below`}>
+            <Box sx={{ ...cardGrid, gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' } }}>
+              <SummaryCard
+                label="Total ordered"
+                value={money(totals?.total ?? 0)}
+                caption={`Across ${invoices.data?.total ?? 0} invoices`}
+                icon={<ReceiptLongOutlinedIcon fontSize="small" />}
+              />
+              <SummaryCard
+                label="Paid"
+                value={money(totals?.paid ?? 0)}
+                caption={`${paidPercent}% of the total`}
+                icon={<CheckCircleOutlinedIcon fontSize="small" />}
+                tone="success"
+              />
+              <SummaryCard
+                label="Remaining to pay"
+                value={money(totals?.remaining ?? 0)}
+                caption={(totals?.remaining ?? 0) > 0 ? 'Still owed to suppliers' : 'Nothing owed'}
+                icon={<HourglassBottomOutlinedIcon fontSize="small" />}
+                tone={(totals?.remaining ?? 0) > 0 ? 'warning' : 'success'}
+              />
+            </Box>
+          </SummaryPanel>
 
-          <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
+          <Paper sx={historyTableSx}>
+            <TableCardHeader title="Invoices" caption={`${invoices.data?.total ?? 0} listed · ${scope}`}>
             <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
               <TextField
                 placeholder="Search invoice no, supplier or remark"
@@ -188,9 +216,7 @@ export default function PurchasesPage() {
                 <MenuItem value="UNPAID">Not fully paid</MenuItem>
               </TextField>
             </Stack>
-          </Paper>
-
-          <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
+            </TableCardHeader>
             <TableContainer>
               <Table size="small" stickyHeader>
                 <TableHead>
@@ -210,18 +236,39 @@ export default function PurchasesPage() {
                   {!invoices.isLoading && rows.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={9} align="center" sx={{ py: 5, color: 'text.secondary' }}>
-                        No purchase invoices.
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          No purchase invoices{scope === 'All invoices' ? ' yet' : ' match these filters'}
+                        </Typography>
+                        <Typography variant="caption">
+                          {scope === 'All invoices'
+                            ? 'Record what you order from a supplier with New invoice.'
+                            : 'Try another supplier or show all invoices.'}
+                        </Typography>
                       </TableCell>
                     </TableRow>
                   )}
                   {rows.map((row) => (
                     <TableRow key={row.id} hover onClick={() => setOpenId(row.id)} sx={{ cursor: 'pointer' }}>
                       <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatInstant(row.invoiceDate)}</TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace' }}>{row.invoiceNo}</TableCell>
-                      <TableCell>{row.supplierName}</TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600 }}>{row.invoiceNo}</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>{row.supplierName}</TableCell>
                       <TableCell>{PURCHASE_PAYMENT_LABELS[row.paymentMethod]}</TableCell>
-                      <TableCell align="right">
-                        {row.receivedQty} / {row.quantity - row.refundedQty}
+                      <TableCell align="right" sx={{ minWidth: 90 }}>
+                        <Box sx={num}>
+                          {row.receivedQty} / {row.quantity - row.refundedQty}
+                        </Box>
+                        {/* How much of the order has arrived. */}
+                        <LinearProgress
+                          variant="determinate"
+                          color={row.pendingQty === 0 ? 'success' : 'warning'}
+                          value={
+                            row.quantity - row.refundedQty > 0
+                              ? (row.receivedQty * 100) / (row.quantity - row.refundedQty)
+                              : 100
+                          }
+                          aria-label="Received"
+                          sx={{ mt: 0.5, height: 4, borderRadius: 2 }}
+                        />
                       </TableCell>
                       <TableCell>{invoiceStatus(row)}</TableCell>
                       <TableCell align="right" sx={num}>
@@ -258,7 +305,11 @@ export default function PurchasesPage() {
       )}
 
       {tab === 'suppliers' && (
-        <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
+        <Paper sx={historyTableSx}>
+          <TableCardHeader
+            title="Suppliers"
+            caption={`${suppliers.data?.length ?? 0} registered · totals from all their invoices`}
+          />
           <TableContainer>
             <Table size="small">
               <TableHead>
@@ -304,7 +355,7 @@ export default function PurchasesPage() {
                     </TableCell>
                     <TableCell align="right">
                       {can('products.edit') && (
-                        <IconButton size="small" onClick={() => setEditingSupplier(s)}>
+                        <IconButton size="small" aria-label={`Edit ${s.name}`} onClick={() => setEditingSupplier(s)}>
                           <EditIcon fontSize="small" />
                         </IconButton>
                       )}

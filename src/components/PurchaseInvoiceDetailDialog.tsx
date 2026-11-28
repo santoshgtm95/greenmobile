@@ -1,3 +1,5 @@
+import { MovementDialog } from './MovementParts';
+import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import { useState } from 'react';
 import {
   Alert,
@@ -6,11 +8,9 @@ import {
   Button,
   Checkbox,
   Chip,
-  Dialog,
   DialogActions,
   IconButton,
   DialogContent,
-  DialogTitle,
   Stack,
   Table,
   TableBody,
@@ -92,16 +92,20 @@ export default function PurchaseInvoiceDetailDialog({
     invoice?.items.every((i) => !i.receivedQty && !i.refundedQty && !i.replacedQty) && invoice.payments.length === 0;
 
   return (
-    <Dialog open fullWidth maxWidth="lg" onClose={onClose}>
-      <DialogTitle>
-        Purchase invoice {invoice?.invoiceNo}
-        {invoice && (
-          <Typography variant="body2" color="text.secondary">
+    <MovementDialog
+      maxWidth="lg"
+      onClose={onClose}
+      icon={<ReceiptLongOutlinedIcon />}
+      title={`Purchase invoice ${invoice?.invoiceNo ?? ''}`}
+      subtitle={
+        invoice && (
+          <>
             {invoice.supplierName} · {formatInstant(invoice.invoiceDate)} · {PURCHASE_PAYMENT_LABELS[invoice.paymentMethod]}
             {invoice.createdByName && ` · by ${invoice.createdByName}`}
-          </Typography>
-        )}
-      </DialogTitle>
+          </>
+        )
+      }
+    >
       <DialogContent dividers>
         {detail.isError && <Alert severity="error">{errorText(detail.error, 'Unable to load this invoice.')}</Alert>}
         {invoice && (
@@ -374,7 +378,7 @@ export default function PurchaseInvoiceDetailDialog({
           onClose={() => setDeletingPayment(null)}
         />
       )}
-    </Dialog>
+    </MovementDialog>
   );
 }
 
@@ -444,8 +448,13 @@ function ReceiveDialog({
   });
 
   return (
-    <Dialog open fullWidth maxWidth="sm" onClose={save.isPending ? undefined : onClose}>
-      <DialogTitle>Products arrived</DialogTitle>
+    <MovementDialog
+      maxWidth="sm"
+      onClose={save.isPending ? undefined : onClose}
+      icon={<LocalShippingIcon />}
+      title="Products arrived"
+      subtitle={`Into stock from ${invoice.supplierName}`}
+    >
       <DialogContent dividers>
         <Stack spacing={2}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -579,7 +588,7 @@ function ReceiveDialog({
           {save.isPending ? 'Saving…' : 'Mark delivered'}
         </Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }
 
@@ -630,8 +639,13 @@ function ReturnDialog({
   });
 
   return (
-    <Dialog open fullWidth maxWidth="sm" onClose={save.isPending ? undefined : onClose}>
-      <DialogTitle>Return {item.productName}</DialogTitle>
+    <MovementDialog
+      maxWidth="sm"
+      onClose={save.isPending ? undefined : onClose}
+      icon={<AssignmentReturnIcon />}
+      title={`Return ${item.productName}`}
+      subtitle="Send units back to the supplier for a refund or a replacement"
+    >
       <DialogContent dividers>
         <Stack spacing={2}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -729,7 +743,7 @@ function ReturnDialog({
           {save.isPending ? 'Saving…' : 'Return'}
         </Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }
 
@@ -765,8 +779,13 @@ function PayDialog({
   });
 
   return (
-    <Dialog open fullWidth maxWidth="sm" onClose={save.isPending ? undefined : onClose}>
-      <DialogTitle>Pay {invoice.supplierName}</DialogTitle>
+    <MovementDialog
+      maxWidth="sm"
+      onClose={save.isPending ? undefined : onClose}
+      icon={<PaymentsIcon />}
+      title={`Pay ${invoice.supplierName}`}
+      subtitle={`Invoice ${invoice.invoiceNo}`}
+    >
       <DialogContent dividers>
         <Stack spacing={2} sx={{ pt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -810,6 +829,6 @@ function PayDialog({
           {save.isPending ? 'Saving…' : 'Pay'}
         </Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }

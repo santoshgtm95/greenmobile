@@ -1,13 +1,13 @@
+import { MovementDialog } from './MovementParts';
+import AccountBalanceOutlinedIcon from '@mui/icons-material/AccountBalanceOutlined';
 import { useState } from 'react';
 import {
   Alert,
   Button,
   Chip,
-  Dialog,
   Paper,
   DialogActions,
   DialogContent,
-  DialogTitle,
   IconButton,
   Stack,
   Switch,
@@ -118,8 +118,13 @@ export default function BankAccountsDialog({
   const rows = accounts.data ?? [];
 
   return (
-    <Dialog open fullWidth maxWidth="md" onClose={onClose}>
-      <DialogTitle>Banks and mobile payments</DialogTitle>
+    <MovementDialog
+      maxWidth="md"
+      onClose={onClose}
+      icon={<AccountBalanceOutlinedIcon />}
+      title="Banks and mobile payments"
+      subtitle="The banks and wallets the shop can pay into"
+    >
       <DialogContent dividers>
         <Stack spacing={2.5}>
           {error && (
@@ -323,6 +328,6 @@ export default function BankAccountsDialog({
       <DialogActions>
         <Button onClick={onClose}>Close</Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }

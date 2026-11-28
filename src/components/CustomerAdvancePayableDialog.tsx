@@ -1,10 +1,10 @@
+import { MovementDialog } from './MovementParts';
+import CallMadeIcon from '@mui/icons-material/CallMade';
 import {
   Alert,
   Button,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Paper,
   Table,
   TableBody,
@@ -43,8 +43,13 @@ export default function CustomerAdvancePayableDialog({ onClose }: { onClose: () 
   const total = creditors.reduce((sum, c) => sum + c.remaining, 0);
 
   return (
-    <Dialog open fullWidth maxWidth="sm" onClose={onClose}>
-      <DialogTitle>Payable</DialogTitle>
+    <MovementDialog
+      maxWidth="sm"
+      onClose={onClose}
+      icon={<CallMadeIcon />}
+      title="Payable"
+      subtitle="What the shop still owes customers, biggest first"
+    >
       <DialogContent dividers>
         {open.isError && <Alert severity="error">Unable to load open advances.</Alert>}
         {open.isLoading && <Typography color="text.secondary">Loading…</Typography>}
@@ -94,6 +99,6 @@ export default function CustomerAdvancePayableDialog({ onClose }: { onClose: () 
       <DialogActions>
         <Button onClick={onClose}>Close</Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }

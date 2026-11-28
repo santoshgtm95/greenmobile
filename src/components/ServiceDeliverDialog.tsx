@@ -1,11 +1,11 @@
+import { MovementDialog, summaryBoxSx } from './MovementParts';
+import HandshakeOutlinedIcon from '@mui/icons-material/HandshakeOutlined';
 import { useState } from 'react';
 import {
   Alert,
   Button,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Divider,
   MenuItem,
   Paper,
@@ -69,8 +69,13 @@ export default function ServiceDeliverDialog({
   });
 
   return (
-    <Dialog open fullWidth maxWidth="xs" onClose={deliver.isPending ? undefined : onClose}>
-      <DialogTitle>Deliver {order.serviceNumber}</DialogTitle>
+    <MovementDialog
+      maxWidth="xs"
+      onClose={deliver.isPending ? undefined : onClose}
+      icon={<HandshakeOutlinedIcon />}
+      title={`Deliver ${order.serviceNumber}`}
+      subtitle="Hand the device back and take the payment"
+    >
       <DialogContent dividers>
         <Stack spacing={2.5}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -85,7 +90,7 @@ export default function ServiceDeliverDialog({
             />
           )}
 
-          <Paper variant="outlined" sx={{ p: 2, bgcolor: 'action.hover' }}>
+          <Paper variant="outlined" sx={summaryBoxSx}>
             <Stack spacing={0.75}>
               <SummaryLine label="Total charge" value={money(charge)} />
               <SummaryLine label="Paid so far (incl. deposit)" value={money(order.amountPaid)} />
@@ -152,6 +157,6 @@ export default function ServiceDeliverDialog({
               : 'Mark delivered'}
         </Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }

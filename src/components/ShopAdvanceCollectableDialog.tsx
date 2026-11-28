@@ -1,10 +1,10 @@
+import { MovementDialog } from './MovementParts';
+import CallReceivedIcon from '@mui/icons-material/CallReceived';
 import {
   Alert,
   Button,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Paper,
   Table,
   TableBody,
@@ -42,8 +42,13 @@ export default function ShopAdvanceCollectableDialog({ onClose }: { onClose: () 
   const total = debtors.reduce((sum, d) => sum + d.remaining, 0);
 
   return (
-    <Dialog open fullWidth maxWidth="sm" onClose={onClose}>
-      <DialogTitle>Collectable</DialogTitle>
+    <MovementDialog
+      maxWidth="sm"
+      onClose={onClose}
+      icon={<CallReceivedIcon />}
+      title="Collectable"
+      subtitle="What the shop is still owed, biggest first"
+    >
       <DialogContent dividers>
         {open.isError && <Alert severity="error">Unable to load open advances.</Alert>}
         {open.isLoading && <Typography color="text.secondary">Loading…</Typography>}
@@ -93,6 +98,6 @@ export default function ShopAdvanceCollectableDialog({ onClose }: { onClose: () 
       <DialogActions>
         <Button onClick={onClose}>Close</Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }

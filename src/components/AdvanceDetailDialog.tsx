@@ -1,15 +1,15 @@
+import { MovementDialog, summaryBoxSx } from './MovementParts';
+import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
 import {
   Alert,
   Box,
   Button,
   Chip,
   CircularProgress,
-  Dialog,
   Divider,
   Paper,
   DialogActions,
   DialogContent,
-  DialogTitle,
   IconButton,
   Stack,
   Table,
@@ -83,10 +83,14 @@ export default function AdvanceDetailDialog({
     : [];
 
   return (
-    <Dialog open fullWidth maxWidth="xl" onClose={onClose}>
-      <DialogTitle>
-        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
-          <span>Advance {advance?.transactionNumber ?? ''}</span>
+    <MovementDialog
+      maxWidth="xl"
+      onClose={onClose}
+      icon={<PaymentsOutlinedIcon />}
+      title={`Advance ${advance?.transactionNumber ?? ''}`}
+      subtitle="Received from a customer, with every top-up and withdrawal"
+      badges={
+        <>
           {advance && (
             <Chip
               size="small"
@@ -95,8 +99,9 @@ export default function AdvanceDetailDialog({
             />
           )}
           {isDeleted && <DeletedChip reason={advance?.deletedReason ?? null} />}
-        </Stack>
-      </DialogTitle>
+        </>
+      }
+    >
       <DialogContent dividers>
         {detail.isLoading && (
           <Box sx={{ display: 'grid', placeItems: 'center', py: 4 }}>
@@ -111,7 +116,7 @@ export default function AdvanceDetailDialog({
 
         {advance && (
           <Stack spacing={3}>
-            <Paper variant="outlined" sx={{ p: 2, bgcolor: 'action.hover' }}>
+            <Paper variant="outlined" sx={summaryBoxSx}>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3} sx={{ justifyContent: 'space-around' }}>
                 <Total label="Total Received" value={money(advance.received)} color="success.main" />
                 <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' } }} />
@@ -202,7 +207,7 @@ export default function AdvanceDetailDialog({
           onClose={() => setDeleting(null)}
         />
       )}
-    </Dialog>
+    </MovementDialog>
   );
 }
 
