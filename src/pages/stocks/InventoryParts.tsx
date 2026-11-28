@@ -18,6 +18,14 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import { IconButton, Tooltip } from '@mui/material';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import CheckCircleOutlinedIcon from '@mui/icons-material/CheckCircleOutlined';
+import SmartphoneIcon from '@mui/icons-material/Smartphone';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import RemoveShoppingCartOutlinedIcon from '@mui/icons-material/RemoveShoppingCartOutlined';
+import SummaryCard from '../../components/SummaryCard';
+import { SummaryPanel, cardGrid } from '../../components/PageLayout';
 import NorthEastIcon from '@mui/icons-material/NorthEast';
 import SouthWestIcon from '@mui/icons-material/SouthWest';
 import { useQuery } from '@tanstack/react-query';
@@ -43,88 +51,61 @@ import type { LowStockItem } from '@shared/api';
 // Headline figures
 // -----------------------------------------------------------------------------
 
+/** One panel of four equal cards: whether the stock can be sold. */
 export function StockFigures({
   data,
   lowStock,
+  onShowLow,
 }: {
   data: Awaited<ReturnType<typeof api.inventory.summary>> | undefined;
   lowStock: LowStockItem[] | undefined;
+  /** Opens the Low stock tab, where both low and out-of-stock items are listed. */
+  onShowLow: () => void;
 }) {
-  const money = useMoneyFormatter();
-
-  const figures: Array<{ label: string; value: string; hint?: string; alert?: boolean }> = [
-    { label: 'Units on the shelf', value: (data?.unitsHeld ?? 0).toLocaleString('en-US') },
-    {
-      label: 'Stock value at cost',
-      value: money(data?.stockValueAtCost ?? 0),
-      hint: 'At purchase price',
-    },
-    {
-      label: 'Potential revenue',
-      value: money(data?.potentialRevenue ?? 0),
-      hint: 'At current selling prices',
-    },
-    {
-      label: 'Products in stock',
-      value: `${data?.productsInStock ?? 0} of ${data?.products ?? 0}`,
-    },
-    {
-      label: 'Low stock',
-      value: String(lowStock?.length ?? data?.lowStockCount ?? 0),
-      alert: (lowStock?.length ?? data?.lowStockCount ?? 0) > 0,
-    },
-    {
-      label: 'Out of stock',
-      value: String(data?.outOfStockCount ?? 0),
-      alert: (data?.outOfStockCount ?? 0) > 0,
-    },
-    {
-      label: 'Handsets available',
-      value: String(data?.availableSerials ?? 0),
-      hint: 'Individually tracked by IMEI',
-    },
-  ];
+  const lowCount = lowStock?.length ?? data?.lowStockCount ?? 0;
+  const outCount = data?.outOfStockCount ?? 0;
+  const grid = { ...cardGrid, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' } };
+  const showLow = (
+    <Tooltip title="Open the Low stock list">
+      <IconButton size="small" aria-label="Open the Low stock list" onClick={onShowLow}>
+        <ChevronRightIcon fontSize="small" />
+      </IconButton>
+    </Tooltip>
+  );
 
   return (
-    // Flex-wrap rather than a grid: seven cards in a six-column grid leave the
-    // seventh alone against a row of empty space. maxWidth matters as much as the
-    // flex basis — without it, that lone seventh card stretches across the whole
-    // window, which looks more broken than the gap did.
-    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-      {figures.map((figure) => (
-        <Paper
-          key={figure.label}
-          sx={{
-            p: 2,
-            flex: '1 1 180px',
-            minWidth: 180,
-            maxWidth: 260,
-            border: '1px solid',
-            borderColor: figure.alert ? 'warning.main' : 'divider',
-          }}
-        >
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            {figure.label}
-          </Typography>
-          <Typography
-            variant="h6"
-            sx={{
-              fontWeight: 700,
-              mt: 0.25,
-              fontVariantNumeric: 'tabular-nums',
-              color: figure.alert ? 'warning.dark' : 'text.primary',
-            }}
-          >
-            {figure.value}
-          </Typography>
-          {figure.hint && (
-            <Typography variant="caption" color="text.secondary">
-              {figure.hint}
-            </Typography>
-          )}
-        </Paper>
-      ))}
-    </Box>
+      <SummaryPanel tint title="Availability" caption="What can be sold, and what needs reordering">
+        <Box sx={grid}>
+          <SummaryCard
+            label="Products in stock"
+            value={`${data?.productsInStock ?? 0} of ${data?.products ?? 0}`}
+            caption="Products with at least one unit"
+            icon={<CheckCircleOutlinedIcon fontSize="small" />}
+          />
+          <SummaryCard
+            label="Handsets available"
+            value={String(data?.availableSerials ?? 0)}
+            caption="Individually tracked by IMEI"
+            icon={<SmartphoneIcon fontSize="small" />}
+          />
+          <SummaryCard
+            label="Low stock"
+            value={String(lowCount)}
+            caption={lowCount > 0 ? 'At or below the reorder point' : 'All above the reorder point'}
+            icon={<WarningAmberIcon fontSize="small" />}
+            tone={lowCount > 0 ? 'warning' : undefined}
+            action={showLow}
+          />
+          <SummaryCard
+            label="Out of stock"
+            value={String(outCount)}
+            caption={outCount > 0 ? 'Nothing left to sell' : 'Every product has stock'}
+            icon={<RemoveShoppingCartOutlinedIcon fontSize="small" />}
+            tone={outCount > 0 ? 'error' : undefined}
+            action={showLow}
+          />
+        </Box>
+      </SummaryPanel>
   );
 }
 

@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Alert,
+  Avatar,
   Box,
   Button,
   ButtonBase,
   Chip,
-  Divider,
+  Dialog,
+  DialogActions,
+  DialogContent,
   IconButton,
   InputAdornment,
   Paper,
-  Snackbar,
   Stack,
   TextField,
   Tooltip,
@@ -23,6 +25,8 @@ import CardGiftcardIcon from '@mui/icons-material/CardGiftcardOutlined';
 import PersonIcon from '@mui/icons-material/Person';
 import SmartphoneIcon from '@mui/icons-material/Smartphone';
 import PrintIcon from '@mui/icons-material/Print';
+import ShoppingCartOutlinedIcon from '@mui/icons-material/ShoppingCartOutlined';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useDebounced } from '../hooks/useDebounced';
@@ -34,7 +38,7 @@ import ColorPickerDialog from '../components/ColorPickerDialog';
 import CustomerPickerDialog from '../components/CustomerPickerDialog';
 import PaymentDialog from '../components/PaymentDialog';
 import MoneyField from '../components/MoneyField';
-import { alpha } from '@mui/material/styles';
+import { alpha, keyframes } from '@mui/material/styles';
 
 /** Gives each cart line a unique React key. */
 let lineCounter = 0;
@@ -300,6 +304,8 @@ export default function PosPage() {
   for (const line of cart) cartQty.set(line.product.id, (cartQty.get(line.product.id) ?? 0) + line.quantity);
   const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
 
+  const closeCompleted = () => setCompleted(null);
+
   return (
     <>
       <Box
@@ -307,16 +313,16 @@ export default function PosPage() {
           // Fill the window under the header (60px) and main padding, so nothing scrolls but the lists.
           height: { md: 'calc(100vh - 108px)' },
           display: 'grid',
-          gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) 420px', lg: 'minmax(0, 1fr) 500px' },
+          gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) 400px', lg: 'minmax(0, 1fr) 460px' },
           gap: 2,
         }}
       >
-        {/* Left: search, category bar, product grid */}
-        <Stack spacing={1.5} sx={{ minHeight: 0, minWidth: 0 }}>
+        {/* Left: search, category bar, product tiles */}
+        <Stack spacing={1.25} sx={{ minHeight: 0, minWidth: 0 }}>
           <TextField
             inputRef={searchRef}
             autoFocus
-            placeholder="Search a product, or scan a barcode / IMEI  —  F2"
+            placeholder="Search a product, or scan a barcode / IMEI"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => {
@@ -329,16 +335,29 @@ export default function PosPage() {
               input: {
                 startAdornment: (
                   <InputAdornment position="start">
-                    <SearchIcon />
+                    <SearchIcon color="primary" />
                   </InputAdornment>
                 ),
-                sx: { fontSize: "0.875rem", py: 0.25 },
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <Keycap>F2</Keycap>
+                  </InputAdornment>
+                ),
+                sx: (theme) => ({
+                  fontSize: '0.95rem',
+                  py: 0.5,
+                  borderRadius: 3,
+                  bgcolor: 'background.paper',
+                  boxShadow: '0 1px 2px rgba(16,24,40,.05)',
+                  transition: 'box-shadow .2s',
+                  '&.Mui-focused': { boxShadow: `0 0 0 4px ${alpha(theme.palette.primary.main, 0.15)}` },
+                }),
               },
             }}
           />
 
           {error && (
-            <Alert severity="warning" onClose={() => setError(null)}>
+            <Alert severity="warning" onClose={() => setError(null)} sx={{ borderRadius: 2.5 }}>
               {error}
             </Alert>
           )}
@@ -348,10 +367,16 @@ export default function PosPage() {
             <Stack
               key={level}
               direction="row"
-              spacing={1}
+              spacing={0.75}
               // A vertical wheel scrolls the row sideways.
               onWheel={(e) => (e.currentTarget.scrollLeft += e.deltaY)}
-              sx={{ overflowX: 'auto', flexShrink: 0, pb: 0.25, scrollbarWidth: 'thin' }}
+              sx={{
+                overflowX: 'auto',
+                flexShrink: 0,
+                pb: 0.25,
+                scrollbarWidth: 'thin',
+                '& .MuiChip-root': { fontWeight: 600, borderRadius: 2, flexShrink: 0 },
+              }}
             >
               {level === 0 && (
                 <Chip
@@ -366,18 +391,33 @@ export default function PosPage() {
                 return (
                   <Chip
                     key={category.id}
-                    label={`${category.name}  ${category.activeProductCount}`}
+                    label={
+                      <>
+                        {category.name}
+                        <Box component="span" sx={{ ml: 0.75, opacity: 0.6, fontWeight: 500 }}>
+                          {category.activeProductCount}
+                        </Box>
+                      </>
+                    }
                     color={active ? 'primary' : 'default'}
                     variant={active ? 'filled' : 'outlined'}
                     onClick={() => setCategoryId(active && category.id === categoryId ? category.parentId ?? undefined : category.id)}
-                    sx={{ flexShrink: 0 }}
                   />
                 );
               })}
             </Stack>
           ))}
 
-          <Paper sx={{ flex: 1, minHeight: { xs: 360, md: 0 }, border: '1px solid', borderColor: 'divider', overflow: 'auto' }}>
+          <Paper
+            sx={{
+              flex: 1,
+              minHeight: { xs: 360, md: 0 },
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 3,
+              overflow: 'auto',
+            }}
+          >
             <Stack
               direction="row"
               spacing={1}
@@ -393,7 +433,7 @@ export default function PosPage() {
                 bgcolor: 'background.paper',
               }}
             >
-              <Typography variant="body2" sx={{ fontWeight: 600, flexGrow: 1 }} noWrap>
+              <Typography variant="body2" sx={{ fontWeight: 700, flexGrow: 1 }} noWrap>
                 {selected?.path ?? 'All products'}
               </Typography>
               {results.data && (
@@ -407,81 +447,29 @@ export default function PosPage() {
 
             {results.isLoading && <Box sx={{ p: 3, textAlign: 'center', color: 'text.secondary' }}>Searching…</Box>}
             {!results.isLoading && (results.data?.rows.length ?? 0) === 0 && (
-              <Box sx={{ p: 4, textAlign: 'center', color: 'text.secondary' }}>
-                {search ? `Nothing matches "${search}".` : categoryId ? 'No products here.' : 'Search or scan to begin.'}
+              <Box sx={{ p: 5, textAlign: 'center', color: 'text.secondary' }}>
+                <SearchIcon sx={{ fontSize: 40, opacity: 0.35 }} />
+                <Typography variant="body2" sx={{ mt: 1 }}>
+                  {search ? `Nothing matches "${search}".` : categoryId ? 'No products here.' : 'Search or scan to begin.'}
+                </Typography>
               </Box>
             )}
 
             <Box>
-              {(results.data?.rows ?? []).map((product) => {
-                const out = product.stockQuantity <= 0;
-                const inCart = cartQty.get(product.id) ?? 0;
-                return (
-                  <ButtonBase
-                    key={product.id}
-                    onClick={() => addProduct(product)}
-                    disabled={out && product.isSerialized === 0}
-                    title={product.name}
-                    sx={(theme) => ({
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      flexWrap: 'wrap',
-                      textAlign: 'left',
-                      columnGap: 2,
-                      rowGap: 0.75,
-                      px: 2,
-                      py: 1.25,
-                      borderBottom: '1px solid',
-                      borderColor: 'divider',
-                      // In-cart rows keep an indigo edge so the cashier sees what is already added.
-                      boxShadow: inCart ? `inset 3px 0 0 ${theme.palette.primary.main}` : 'none',
-                      bgcolor: inCart ? alpha(theme.palette.primary.main, 0.04) : 'transparent',
-                      transition: 'background-color 120ms',
-                      '&:hover': { bgcolor: alpha(theme.palette.primary.main, inCart ? 0.07 : 0.035) },
-                      '&.Mui-disabled': { opacity: 0.5 },
-                      '&.Mui-focusVisible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: -2 },
-                    })}
-                  >
-                    {/* 200px basis: on narrow screens (tablet) price and stock wrap below instead of crushing the name. */}
-                    <Box sx={{ flex: '1 1 200px', minWidth: 0 }}>
-                      <Typography sx={{ fontWeight: 600, fontSize: "0.8125rem", lineHeight: 1.3, wordBreak: 'break-word' }}>
-                        {product.name}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" component="div" sx={{ wordBreak: 'break-word' }}>
-                        {[product.sku, product.brandName, product.categoryName].filter(Boolean).join(' · ')}
-                      </Typography>
-                    </Box>
-                    <Stack direction="row" spacing={1.5} sx={{ flexShrink: 0, alignItems: 'center', ml: 'auto' }}>
-                      {inCart > 0 && <Chip size="small" color="primary" label={`×${inCart} in cart`} />}
-                      <Typography sx={{ minWidth: 90, textAlign: 'right', fontWeight: 700, fontSize: "0.875rem", fontVariantNumeric: 'tabular-nums' }}>
-                        {money(product.sellingPrice)}
-                      </Typography>
-                      {product.isSerialized === 1 ? (
-                        <Chip
-                          size="small"
-                          icon={<SmartphoneIcon sx={{ fontSize: "0.875rem" }} />}
-                          label={`${product.availableSerials} units`}
-                          color="info"
-                          sx={{ minWidth: 104 }}
-                        />
-                      ) : (
-                        <Chip
-                          size="small"
-                          label={out ? 'Out of stock' : `${product.stockQuantity} ${product.unit || 'in stock'}`}
-                          color={out ? 'error' : product.stockQuantity <= 5 ? 'warning' : 'success'}
-                          sx={{ minWidth: 104 }}
-                        />
-                      )}
-                    </Stack>
-                  </ButtonBase>
-                );
-              })}
+              {(results.data?.rows ?? []).map((product) => (
+                <ProductRow
+                  key={product.id}
+                  product={product}
+                  inCart={cartQty.get(product.id) ?? 0}
+                  price={money(product.sellingPrice)}
+                  onAdd={() => addProduct(product)}
+                />
+              ))}
             </Box>
           </Paper>
         </Stack>
 
-        {/* Right: cart, full height */}
+        {/* Right: who, what, and the one big button */}
         <Paper
           sx={{
             minHeight: { xs: 560, md: 0 },
@@ -489,7 +477,9 @@ export default function PosPage() {
             flexDirection: 'column',
             border: '1px solid',
             borderColor: 'divider',
+            borderRadius: 3,
             overflow: 'hidden',
+            boxShadow: '0 10px 30px -18px rgba(16,24,40,.35)',
           }}
         >
           <Stack
@@ -497,111 +487,194 @@ export default function PosPage() {
             spacing={1}
             sx={{ px: 2, py: 1.25, alignItems: 'center', borderBottom: '1px solid', borderColor: 'divider' }}
           >
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-              Cart
+            <ShoppingCartOutlinedIcon color="primary" fontSize="small" />
+            <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+              Current sale
             </Typography>
-            {cart.length > 0 && <Chip size="small" label={`${itemCount} item(s)`} />}
+            {cart.length > 0 && (
+              <Chip
+                key={itemCount}
+                size="small"
+                color="primary"
+                label={`${itemCount} item(s)`}
+                sx={{ fontWeight: 700, animation: `${pop} .35s ease-out`, ...noMotion }}
+              />
+            )}
             <Box sx={{ flexGrow: 1 }} />
             {cart.length > 0 && (
-              <Button size="small" color="inherit" onClick={clearCart}>
+              <Button size="small" color="inherit" onClick={clearCart} sx={{ color: 'text.secondary' }}>
                 Clear
               </Button>
             )}
           </Stack>
 
-          <Box sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto' }}>
-            {cart.length === 0 && (
-              <Box sx={{ p: 5, textAlign: 'center', color: 'text.secondary' }}>
-                <Typography variant="body2">The cart is empty.</Typography>
-                <Typography variant="caption">Scan a barcode or pick a product.</Typography>
-              </Box>
-            )}
-
-            {cart.map((line, index) => {
-              // Quote lines come back in cart order; a product can appear twice (paid and gift).
-              const unitPrice = line.isGift
-                ? (line.serial?.sellingPrice ?? line.product.sellingPrice)
-                : (totals?.lines[index]?.unitPrice ?? line.product.sellingPrice);
-              return (
-                <Box key={line.key} sx={{ px: 2, py: 1.25, borderBottom: '1px solid', borderColor: 'divider' }}>
-                  <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
-                    <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-                      <Typography sx={{ fontWeight: 600, lineHeight: 1.3, wordBreak: 'break-word' }}>
-                        {line.product.name}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" component="div" sx={{ wordBreak: 'break-word' }}>
-                        {[line.product.sku, line.product.brandName].filter(Boolean).join(' · ')}
-                        {line.serial && ` · IMEI ${line.serial.imei1 ?? line.serial.serialNumber}${line.serial.color ? ` · ${line.serial.color}` : ''}`}{line.color && ` · ${line.color}`}
-                      </Typography>
-                    </Box>
-                    <Tooltip title={line.isGift ? 'Charge for this item' : 'Give free as a gift'}>
-                      <IconButton
-                        size="small"
-                        aria-pressed={line.isGift}
-                        color={line.isGift ? 'success' : 'default'}
-                        onClick={() =>
-                          setCart((current) => current.map((l) => (l.key === line.key ? { ...l, isGift: !l.isGift } : l)))
-                        }
-                        sx={{ mt: -0.5 }}
-                      >
-                        <CardGiftcardIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Remove">
-                      <IconButton size="small" onClick={() => setQuantity(line.key, 0)} sx={{ mt: -0.5, mr: -0.75 }}>
-                        <DeleteOutlineIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </Stack>
-
-                  <Stack direction="row" spacing={1} sx={{ mt: 0.75, alignItems: 'center' }}>
-                    {!line.serial ? (
-                      <Stack
-                        direction="row"
-                        sx={{ alignItems: 'center', border: '1px solid', borderColor: 'divider', borderRadius: 2 }}
-                      >
-                        <IconButton size="small" aria-label="Decrease" onClick={() => setQuantity(line.key, line.quantity - 1)}>
-                          <RemoveIcon fontSize="small" />
-                        </IconButton>
-                        <Typography sx={{ minWidth: 28, textAlign: 'center', fontWeight: 700 }}>{line.quantity}</Typography>
-                        <IconButton
-                          size="small"
-                          aria-label="Increase"
-                          onClick={() => {
-                            if ((cartQty.get(line.product.id) ?? 0) + 1 > line.product.stockQuantity && line.product.stockQuantity >= 0) {
-                              setError(`Only ${line.product.stockQuantity} of ${line.product.name} in stock.`);
-                              return;
-                            }
-                            setQuantity(line.key, line.quantity + 1);
-                          }}
-                        >
-                          <AddIcon fontSize="small" />
-                        </IconButton>
-                      </Stack>
-                    ) : (
-                      <Chip size="small" label="1 unit" />
-                    )}
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{ flexGrow: 1, textDecoration: line.isGift ? 'line-through' : 'none' }}
-                    >
-                      × {money(unitPrice)}
-                    </Typography>
-                    {line.isGift ? (
-                      <Chip size="small" color="success" icon={<CardGiftcardIcon />} label="Free gift" />
-                    ) : (
-                      <Typography sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-                        {money(unitPrice * line.quantity)}
-                      </Typography>
-                    )}
-                  </Stack>
+          {/* Customer first: it changes the price list and who the receipt is for. */}
+          <Box sx={{ px: 1.5, pt: 1.25 }}>
+            <Tooltip title="Choose a customer — F3">
+              <ButtonBase
+                onClick={() => setCustomerPickerOpen(true)}
+                sx={(theme) => ({
+                  width: '100%',
+                  justifyContent: 'flex-start',
+                  textAlign: 'left',
+                  gap: 1.25,
+                  p: 1,
+                  borderRadius: 2.5,
+                  border: '1px dashed',
+                  borderColor: customer ? alpha(theme.palette.primary.main, 0.4) : 'divider',
+                  bgcolor: customer ? alpha(theme.palette.primary.main, 0.05) : 'transparent',
+                  transition: 'background-color .2s, border-color .2s',
+                  '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.08) },
+                  '&.Mui-focusVisible': { outline: `2px solid ${theme.palette.primary.main}` },
+                })}
+              >
+                <Avatar sx={{ width: 34, height: 34, bgcolor: customer ? 'primary.main' : 'action.selected', fontSize: '0.9rem' }}>
+                  {customer ? customer.name.trim().charAt(0).toUpperCase() : <PersonIcon fontSize="small" />}
+                </Avatar>
+                <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                  <Typography variant="body2" noWrap sx={{ fontWeight: 700 }}>
+                    {customer ? customer.name : 'Walk-in Customer'}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" noWrap component="div">
+                    {customer ? customer.phone ?? 'Customer picked' : 'Tap to choose a customer'}
+                  </Typography>
                 </Box>
-              );
-            })}
+                <Keycap>F3</Keycap>
+              </ButtonBase>
+            </Tooltip>
+            {customer && (
+              <Button size="small" color="inherit" onClick={() => setCustomer(null)} sx={{ mt: 0.25, color: 'text.secondary' }}>
+                Back to walk-in
+              </Button>
+            )}
           </Box>
 
-          <Box sx={{ px: 2, py: 1.5, borderTop: '1px solid', borderColor: 'divider', bgcolor: '#fafbfc' }}>
+          <Box sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto', px: 1.5, py: 1 }}>
+            {cart.length === 0 && (
+              <Stack spacing={1.25} sx={{ py: 5, alignItems: 'center', textAlign: 'center', color: 'text.secondary' }}>
+                <Box
+                  sx={(theme) => ({
+                    width: 72,
+                    height: 72,
+                    borderRadius: '50%',
+                    display: 'grid',
+                    placeItems: 'center',
+                    bgcolor: alpha(theme.palette.primary.main, 0.08),
+                    color: 'primary.main',
+                  })}
+                >
+                  <ShoppingCartOutlinedIcon sx={{ fontSize: 34 }} />
+                </Box>
+                <Typography sx={{ fontWeight: 700, color: 'text.primary' }}>Ready for the next customer</Typography>
+                <Typography variant="caption">Scan a barcode or tap a product to start.</Typography>
+                <Stack direction="row" spacing={1.5} sx={{ pt: 1, flexWrap: 'wrap', justifyContent: 'center' }}>
+                  <Shortcut keycap="F2" label="Search" />
+                  <Shortcut keycap="F3" label="Customer" />
+                  <Shortcut keycap="F8" label="Charge" />
+                </Stack>
+              </Stack>
+            )}
+
+            <Stack spacing={1}>
+              {cart.map((line, index) => {
+                // Quote lines come back in cart order; a product can appear twice (paid and gift).
+                const unitPrice = line.isGift
+                  ? (line.serial?.sellingPrice ?? line.product.sellingPrice)
+                  : (totals?.lines[index]?.unitPrice ?? line.product.sellingPrice);
+                return (
+                  <Box
+                    key={line.key}
+                    sx={(theme) => ({
+                      p: 1.25,
+                      borderRadius: 2.5,
+                      border: '1px solid',
+                      borderColor: line.isGift ? alpha(theme.palette.success.main, 0.4) : 'divider',
+                      bgcolor: line.isGift ? alpha(theme.palette.success.main, 0.05) : 'background.paper',
+                      animation: `${slideIn} .3s cubic-bezier(.2,.8,.2,1)`,
+                      ...noMotion,
+                    })}
+                  >
+                    <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+                      <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                        <Typography sx={{ fontWeight: 700, fontSize: '0.82rem', lineHeight: 1.3, wordBreak: 'break-word' }}>
+                          {line.product.name}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" component="div" sx={{ wordBreak: 'break-word' }}>
+                          {[line.product.sku, line.product.brandName].filter(Boolean).join(' · ')}
+                          {line.serial && ` · IMEI ${line.serial.imei1 ?? line.serial.serialNumber}${line.serial.color ? ` · ${line.serial.color}` : ''}`}{line.color && ` · ${line.color}`}
+                        </Typography>
+                      </Box>
+                      {line.isGift ? (
+                        <Chip size="small" color="success" icon={<CardGiftcardIcon />} label="Free" sx={{ fontWeight: 700 }} />
+                      ) : (
+                        <Typography sx={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                          {money(unitPrice * line.quantity)}
+                        </Typography>
+                      )}
+                    </Stack>
+
+                    <Stack direction="row" spacing={1} sx={{ mt: 0.75, alignItems: 'center' }}>
+                      {!line.serial ? (
+                        <Stack
+                          direction="row"
+                          sx={{ alignItems: 'center', bgcolor: 'action.hover', borderRadius: 5 }}
+                        >
+                          <IconButton size="small" aria-label="Decrease" onClick={() => setQuantity(line.key, line.quantity - 1)}>
+                            <RemoveIcon fontSize="small" />
+                          </IconButton>
+                          <Typography sx={{ minWidth: 26, textAlign: 'center', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                            {line.quantity}
+                          </Typography>
+                          <IconButton
+                            size="small"
+                            aria-label="Increase"
+                            onClick={() => {
+                              if ((cartQty.get(line.product.id) ?? 0) + 1 > line.product.stockQuantity && line.product.stockQuantity >= 0) {
+                                setError(`Only ${line.product.stockQuantity} of ${line.product.name} in stock.`);
+                                return;
+                              }
+                              setQuantity(line.key, line.quantity + 1);
+                            }}
+                          >
+                            <AddIcon fontSize="small" />
+                          </IconButton>
+                        </Stack>
+                      ) : (
+                        <Chip size="small" icon={<SmartphoneIcon sx={{ fontSize: '0.875rem' }} />} label="1 unit" />
+                      )}
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ flexGrow: 1, textDecoration: line.isGift ? 'line-through' : 'none' }}
+                      >
+                        × {money(unitPrice)}
+                      </Typography>
+                      <Tooltip title={line.isGift ? 'Charge for this item' : 'Give free as a gift'}>
+                        <IconButton
+                          size="small"
+                          aria-label={line.isGift ? 'Charge for this item' : 'Give free as a gift'}
+                          aria-pressed={line.isGift}
+                          color={line.isGift ? 'success' : 'default'}
+                          onClick={() =>
+                            setCart((current) => current.map((l) => (l.key === line.key ? { ...l, isGift: !l.isGift } : l)))
+                          }
+                        >
+                          <CardGiftcardIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Remove">
+                        <IconButton size="small" aria-label="Remove" onClick={() => setQuantity(line.key, 0)} sx={{ mr: -0.5 }}>
+                          <DeleteOutlineIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </Stack>
+                  </Box>
+                );
+              })}
+            </Stack>
+          </Box>
+
+          <Box sx={{ px: 2, py: 1.5, borderTop: '1px solid', borderColor: 'divider', bgcolor: 'background.default' }}>
             <Stack spacing={0.75}>
               <TotalRow label="Subtotal" value={money(totals?.subtotal ?? 0)} />
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
@@ -618,45 +691,40 @@ export default function PosPage() {
                 />
               </Stack>
               <TotalRow label="Tax" value={money(totals?.taxAmount ?? 0)} />
-              <Divider sx={{ my: 0.5 }} />
-              <Stack direction="row" sx={{ alignItems: 'baseline' }}>
-                <Typography sx={{ flexGrow: 1, fontWeight: 600 }}>Total</Typography>
-                <Typography variant="h5" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-                  {money(totals?.grandTotal ?? 0)}
-                </Typography>
-              </Stack>
             </Stack>
 
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mt: 1.5 }}>
-              <Tooltip title="Choose a customer — F3">
-                <Button
-                  variant="outlined"
-                  startIcon={<PersonIcon />}
-                  onClick={() => setCustomerPickerOpen(true)}
-                  sx={{ flexGrow: 1, justifyContent: 'flex-start', minWidth: 0 }}
-                >
-                  <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {customer ? customer.name : 'Walk-in Customer'}
-                  </Box>
-                </Button>
-              </Tooltip>
-              {customer && (
-                <Button color="inherit" onClick={() => setCustomer(null)}>
-                  Clear
-                </Button>
-              )}
-            </Stack>
-
-            <Button
-              fullWidth
-              size="large"
-              variant="contained"
+            {/* The one button that matters: says what it will do and for how much. */}
+            <ButtonBase
               disabled={cart.length === 0 || quote.isFetching}
               onClick={checkout}
-              sx={{ mt: 1.25, py: 1, fontSize: "0.875rem" }}
+              sx={(theme) => ({
+                mt: 1.5,
+                width: '100%',
+                px: 2,
+                py: 1.5,
+                borderRadius: 3,
+                justifyContent: 'space-between',
+                color: theme.palette.primary.contrastText,
+                background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.primary.dark})`,
+                boxShadow: `0 10px 24px -10px ${alpha(theme.palette.primary.main, 0.8)}`,
+                transition: 'transform .15s ease, box-shadow .15s ease, filter .2s',
+                '&:hover': { transform: 'translateY(-1px)', boxShadow: `0 14px 28px -10px ${alpha(theme.palette.primary.main, 0.9)}` },
+                '&:active': { transform: 'translateY(0)' },
+                '&.Mui-disabled': { filter: 'grayscale(1)', opacity: 0.45, boxShadow: 'none' },
+                '&.Mui-focusVisible': { outline: `3px solid ${alpha(theme.palette.primary.main, 0.4)}`, outlineOffset: 2 },
+                ...noMotion,
+              })}
             >
-              Complete Sale — F8
-            </Button>
+              <Stack sx={{ alignItems: 'flex-start' }}>
+                <Typography sx={{ fontWeight: 800, fontSize: '0.95rem', lineHeight: 1.2 }}>
+                  {totals?.grandTotal === 0 && cart.length > 0 ? 'Complete free sale' : 'Charge'}
+                </Typography>
+                <Typography sx={{ fontSize: '0.68rem', opacity: 0.85 }}>Press F8</Typography>
+              </Stack>
+              <Typography sx={{ fontWeight: 800, fontSize: '1.45rem', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+                {money(totals?.grandTotal ?? 0)}
+              </Typography>
+            </ButtonBase>
           </Box>
         </Paper>
       </Box>
@@ -706,48 +774,245 @@ export default function PosPage() {
         />
       )}
 
-      {/* Stays until dismissed: the cashier may still want to print the receipt. */}
-      <Snackbar
+      {/*
+        The finish line. Stays until dismissed: the cashier may still want to print.
+        Change is the figure they act on next, so it is the biggest thing here.
+        Enter starts the next sale and puts the cursor back in the search.
+      */}
+      <Dialog
         open={Boolean(completed)}
-        onClose={() => setCompleted(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        onClose={closeCompleted}
+        maxWidth="xs"
+        fullWidth
+        disableRestoreFocus
+        slotProps={{ transition: { onExited: () => searchRef.current?.focus() }, paper: { sx: { borderRadius: 4 } } }}
       >
-        <Alert
-          severity="success"
-          onClose={() => setCompleted(null)}
-          sx={{ width: '100%' }}
-          action={
-            <Stack direction="row" spacing={1}>
-              <Button
-                size="small"
-                color="inherit"
-                startIcon={<PrintIcon fontSize="small" />}
-                onClick={() => {
-                  if (completed) void printReceipt(completed.sale.id);
-                }}
-              >
-                Receipt
-              </Button>
-              <Button
-                size="small"
-                color="inherit"
-                onClick={() => {
-                  if (completed) void printReceipt(completed.sale.id, 'A4');
-                }}
-              >
-                Invoice
-              </Button>
-            </Stack>
-          }
-        >
-          Sale {completed?.sale.invoiceNumber} completed —{' '}
-          {money(completed?.sale.grandTotal ?? 0)}
-          {completed && completed.sale.changeAmount > 0
-            ? `. Change ${money(completed.sale.changeAmount)}.`
-            : '.'}
-        </Alert>
-      </Snackbar>
+        <DialogContent sx={{ textAlign: 'center', pt: 4 }}>
+          <Box
+            sx={(theme) => ({
+              mx: 'auto',
+              width: 76,
+              height: 76,
+              borderRadius: '50%',
+              display: 'grid',
+              placeItems: 'center',
+              color: 'success.main',
+              bgcolor: alpha(theme.palette.success.main, 0.12),
+              boxShadow: `0 0 0 10px ${alpha(theme.palette.success.main, 0.06)}`,
+              animation: `${pop} .5s cubic-bezier(.2,1.4,.4,1)`,
+              ...noMotion,
+            })}
+          >
+            <CheckCircleIcon sx={{ fontSize: 46 }} />
+          </Box>
+          <Typography sx={{ mt: 2, fontWeight: 800, fontSize: '1.15rem' }}>Sale completed</Typography>
+          <Typography variant="body2" color="text.secondary">
+            {completed?.sale.invoiceNumber} · {money(completed?.sale.grandTotal ?? 0)}
+          </Typography>
+          {completed && completed.sale.changeAmount > 0 && (
+            <Box
+              sx={(theme) => ({
+                mt: 2,
+                py: 1.5,
+                borderRadius: 3,
+                bgcolor: alpha(theme.palette.success.main, 0.08),
+                border: '1px solid',
+                borderColor: alpha(theme.palette.success.main, 0.3),
+              })}
+            >
+              <Typography variant="caption" sx={{ fontWeight: 700, color: 'success.dark', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Give change
+              </Typography>
+              <Typography sx={{ fontWeight: 800, fontSize: '2rem', letterSpacing: '-0.02em', color: 'success.dark', fontVariantNumeric: 'tabular-nums' }}>
+                {money(completed.sale.changeAmount)}
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3, gap: 1, flexWrap: 'wrap' }}>
+          <Button
+            variant="outlined"
+            startIcon={<PrintIcon fontSize="small" />}
+            onClick={() => {
+              if (completed) void printReceipt(completed.sale.id);
+            }}
+          >
+            Receipt
+          </Button>
+          <Button
+            variant="outlined"
+            onClick={() => {
+              if (completed) void printReceipt(completed.sale.id, 'A4');
+            }}
+          >
+            Invoice
+          </Button>
+          <Button variant="contained" disableElevation autoFocus onClick={closeCompleted} sx={{ flexGrow: 1 }}>
+            New sale
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
+  );
+}
+
+// --- Motion ------------------------------------------------------------------
+
+const pop = keyframes`
+  0%   { transform: scale(.6); opacity: 0; }
+  70%  { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); }
+`;
+
+const slideIn = keyframes`
+  from { transform: translateX(14px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+`;
+
+const noMotion = { '@media (prefers-reduced-motion: reduce)': { animation: 'none', transition: 'none' } };
+
+// --- Pieces ------------------------------------------------------------------
+
+/** A keyboard key, so every shortcut reads the same wherever it is hinted. */
+function Keycap({ children }: { children: ReactNode }) {
+  return (
+    <Box
+      component="kbd"
+      sx={{
+        px: 0.75,
+        py: 0.1,
+        fontFamily: 'inherit',
+        fontSize: '0.66rem',
+        fontWeight: 700,
+        color: 'text.secondary',
+        border: '1px solid',
+        borderColor: 'divider',
+        borderBottomWidth: 2,
+        borderRadius: 1,
+        bgcolor: 'background.paper',
+        lineHeight: 1.6,
+      }}
+    >
+      {children}
+    </Box>
+  );
+}
+
+function Shortcut({ keycap, label }: { keycap: string; label: string }) {
+  return (
+    <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+      <Keycap>{keycap}</Keycap>
+      <Typography variant="caption">{label}</Typography>
+    </Stack>
+  );
+}
+
+/**
+ * One product as a full-width row: name on the left, price and stock lined up on
+ * the right, so a column of prices can be scanned top to bottom.
+ */
+function ProductRow({
+  product,
+  inCart,
+  price,
+  onAdd,
+}: {
+  product: Product;
+  inCart: number;
+  price: string;
+  onAdd: () => void;
+}) {
+  const out = product.stockQuantity <= 0;
+  const stockLabel =
+    product.isSerialized === 1
+      ? `${product.availableSerials} units`
+      : out
+        ? 'Out of stock'
+        : `${product.stockQuantity} ${product.unit || 'left'}`;
+  const stockColor = product.isSerialized === 1 ? 'info' : out ? 'error' : product.stockQuantity <= 5 ? 'warning' : 'success';
+
+  return (
+    <ButtonBase
+      onClick={onAdd}
+      disabled={out && product.isSerialized === 0}
+      title={product.name}
+      aria-label={`Add ${product.name}, ${price}${inCart ? `, ${inCart} in cart` : ''}`}
+      sx={(theme) => ({
+        width: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        textAlign: 'left',
+        columnGap: 1.5,
+        rowGap: 0.75,
+        px: 2,
+        py: 1,
+        borderBottom: '1px solid',
+        borderColor: 'divider',
+        // In-cart rows keep a primary edge so the cashier sees what is already added.
+        boxShadow: inCart ? `inset 3px 0 0 ${theme.palette.primary.main}` : 'none',
+        bgcolor: inCart ? alpha(theme.palette.primary.main, 0.05) : 'transparent',
+        transition: 'background-color .15s',
+        '&:hover': { bgcolor: alpha(theme.palette.primary.main, inCart ? 0.08 : 0.04) },
+        '&:hover .add-badge': { bgcolor: 'primary.main', color: 'primary.contrastText' },
+        '&:active .add-badge': { transform: 'scale(.88)' },
+        '&.Mui-disabled': { opacity: 0.5 },
+        '&.Mui-focusVisible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: -2 },
+      })}
+    >
+      {/* 200px basis: on narrow screens price and stock wrap below instead of crushing the name. */}
+      <Stack direction="row" spacing={1.25} sx={{ flex: '1 1 200px', minWidth: 0, alignItems: 'center' }}>
+        {product.isSerialized === 1 && <SmartphoneIcon fontSize="small" color="action" aria-hidden />}
+        <Box sx={{ minWidth: 0 }}>
+          <Typography sx={{ fontWeight: 700, fontSize: '0.8125rem', lineHeight: 1.3, wordBreak: 'break-word' }}>
+            {product.name}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" component="div" sx={{ wordBreak: 'break-word' }}>
+            {[product.sku, product.brandName, product.categoryName].filter(Boolean).join(' · ')}
+          </Typography>
+        </Box>
+      </Stack>
+      <Stack direction="row" spacing={1.25} sx={{ flexShrink: 0, alignItems: 'center', ml: 'auto' }}>
+        {inCart > 0 && (
+          <Chip
+            key={inCart}
+            size="small"
+            color="primary"
+            label={`×${inCart} in cart`}
+            sx={{ fontWeight: 700, animation: `${pop} .35s ease-out`, ...noMotion }}
+          />
+        )}
+        <Chip
+          size="small"
+          color={stockColor}
+          variant="outlined"
+          icon={product.isSerialized === 1 ? <SmartphoneIcon sx={{ fontSize: '0.875rem' }} /> : undefined}
+          label={stockLabel}
+          sx={{ minWidth: 96, fontWeight: 700 }}
+        />
+        <Typography
+          sx={{ minWidth: 90, textAlign: 'right', fontWeight: 800, fontSize: '0.9rem', color: 'primary.main', fontVariantNumeric: 'tabular-nums' }}
+        >
+          {price}
+        </Typography>
+        <Box
+          className="add-badge"
+          aria-hidden
+          sx={(theme) => ({
+            width: 28,
+            height: 28,
+            borderRadius: '50%',
+            display: 'grid',
+            placeItems: 'center',
+            color: 'primary.main',
+            bgcolor: alpha(theme.palette.primary.main, 0.1),
+            transition: 'background-color .2s, color .2s, transform .1s',
+          })}
+        >
+          <AddIcon sx={{ fontSize: 18 }} />
+        </Box>
+      </Stack>
+    </ButtonBase>
   );
 }
 

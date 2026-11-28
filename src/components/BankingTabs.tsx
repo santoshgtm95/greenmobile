@@ -1,4 +1,5 @@
 import { Paper, Tab, Tabs } from '@mui/material';
+import { pillTabsPaperSx, pillTabsSx } from './PageLayout';
 import { useNavigate } from 'react-router-dom';
 
 export type BankingTab = 'transactions' | 'advances' | 'shop-advances' | 'internal-transfers';
@@ -20,8 +21,9 @@ export default function BankingTabs({ active }: { active: BankingTab }) {
   const navigate = useNavigate();
 
   return (
-    <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
+    <Paper sx={pillTabsPaperSx}>
       <Tabs
+        sx={pillTabsSx}
         value={active}
         onChange={(_e, next: BankingTab) => {
           const target = TABS.find((tab) => tab.value === next);

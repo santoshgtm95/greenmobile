@@ -31,7 +31,7 @@ import { useDebounced } from "../hooks/useDebounced";
 import BankingTabs from "../components/BankingTabs";
 import SummaryCard from "../components/SummaryCard";
 import { historyTableSx } from "../components/historyTableSx";
-import { compactFiltersSx, compactToolbarSx } from "../components/compactSx";
+import { PageHeader, TableCardHeader } from "../components/PageLayout";
 import InternalTransferDialog from "../components/InternalTransferDialog";
 import DeleteReasonDialog from "../components/DeleteReasonDialog";
 import { DeletedChip, deletedRowSx } from "../components/DeletedMark";
@@ -93,22 +93,17 @@ export default function InternalTransfersPage() {
 
   return (
     <Stack spacing={2}>
-      <Stack
-        direction="row"
-        spacing={2}
-        sx={{ alignItems: "center", flexWrap: "wrap", ...compactToolbarSx }}
-      >
-        <Box sx={{ flexGrow: 1 }} />
-        {canManage && (
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setOpening(true)}
-          >
-            New Transfer
-          </Button>
-        )}
-      </Stack>
+      <PageHeader
+        title="Internal account transfers"
+        subtitle="Money moved between the shop's own banks and wallets — cash in hand and advances are not touched"
+        actions={
+          canManage && (
+            <Button variant="contained" disableElevation startIcon={<AddIcon />} onClick={() => setOpening(true)}>
+              New Transfer
+            </Button>
+          )
+        }
+      />
 
       <BankingTabs active="internal-transfers" />
 
@@ -120,19 +115,9 @@ export default function InternalTransfersPage() {
         </Alert>
       )}
 
-      {/* Summary cards — same grid layout as other Banking tabs. */}
-      <Box
-        sx={{
-          display: "grid",
-          gap: 2,
-          gridTemplateColumns: {
-            xs: "1fr",
-            sm: "repeat(2, 1fr)",
-            lg: "repeat(4, 1fr)",
-          },
-        }}
-      >
-        {/* <SummaryCard
+      {/* Summary cards, hidden for now. To show them, put them in a
+          <SummaryPanel> with cardGrid, as on the other Banking tabs.
+        <SummaryCard
           label="Total transferred"
           value={money(transfers.data?.totalAmount ?? 0)}
           caption="Sum of all internal transfers"
@@ -145,55 +130,48 @@ export default function InternalTransfersPage() {
           caption="Number of account transfers recorded"
           icon={<AccountBalanceWalletOutlinedIcon fontSize="small" />}
         /> */}
-      </Box>
 
-      <Paper
-        sx={{
-          p: 1.5,
-          border: "1px solid",
-          borderColor: "divider",
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 1.5,
-          alignItems: "center",
-          ...compactFiltersSx,
-        }}
-      >
-        <TextField
-          size="small"
-          placeholder="Search account, number or notes"
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(0);
-          }}
-          slotProps={{
-            input: {
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon fontSize="small" />
-                </InputAdornment>
-              ),
-            },
-          }}
-          sx={{ width: 280 }}
-        />
-        <FormControlLabel
-          control={
-            <Switch
+      {/* Title, filters and the list in one card, since the filters only scope this list. */}
+      <Paper sx={historyTableSx}>
+        <TableCardHeader
+          title="Transfers"
+          caption={`${transfers.data?.total ?? 0} listed${showDeleted ? " · deleted only" : ""}`}
+        >
+          <Stack direction="row" spacing={1.5} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
+            <TextField
               size="small"
-              checked={showDeleted}
+              placeholder="Search account, number or notes"
+              value={search}
               onChange={(e) => {
-                setShowDeleted(e.target.checked);
+                setSearch(e.target.value);
                 setPage(0);
               }}
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon fontSize="small" />
+                    </InputAdornment>
+                  ),
+                },
+              }}
+              sx={{ width: 280 }}
             />
-          }
-          label="Deleted only"
-        />
-      </Paper>
-
-      <Paper sx={historyTableSx}>
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={showDeleted}
+                  onChange={(e) => {
+                    setShowDeleted(e.target.checked);
+                    setPage(0);
+                  }}
+                />
+              }
+              label="Deleted only"
+            />
+          </Stack>
+        </TableCardHeader>
         <TableContainer>
           <Table size="small" sx={{ "& th, & td": { px: 1.25 } }}>
             <TableHead>

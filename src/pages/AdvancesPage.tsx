@@ -31,7 +31,7 @@ import { useDebounced } from '../hooks/useDebounced';
 import BankingTabs from '../components/BankingTabs';
 import SummaryCard from '../components/SummaryCard';
 import { historyTableSx } from '../components/historyTableSx';
-import { compactFiltersSx, compactToolbarSx } from '../components/compactSx';
+import { PageHeader, SummaryPanel, TableCardHeader, cardGrid } from '../components/PageLayout';
 import AccountSide from '../components/AccountSide';
 import { DeletedChip, deletedRowSx } from '../components/DeletedMark';
 import AdvanceDetailDialog from '../components/AdvanceDetailDialog';
@@ -45,6 +45,13 @@ import { BANK_ADVANCE_STATUS_LABELS, type BankAdvanceStatus } from '@shared/doma
 import type { BankAdvance } from '@shared/api';
 
 type StatusFilter = BankAdvanceStatus | 'ALL' | 'DELETED';
+
+const STATUS_FILTER_LABELS: Record<StatusFilter, string> = {
+  OPEN: BANK_ADVANCE_STATUS_LABELS.OPEN,
+  SETTLED: BANK_ADVANCE_STATUS_LABELS.SETTLED,
+  ALL: 'All advances',
+  DELETED: 'Deleted',
+};
 
 /**
  * Customer advances — money a customer leaves with the shop to collect later,
@@ -123,17 +130,22 @@ export default function AdvancesPage() {
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'center', flexWrap: 'wrap', ...compactToolbarSx }}>
-        <Box sx={{ flexGrow: 1 }} />
-        <Button variant="outlined" startIcon={<PendingActionsOutlinedIcon />} onClick={() => setPayableOpen(true)}>
-          Payable
-        </Button>
-        {canManage && (
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setOpening(true)}>
-            New Advance
-          </Button>
-        )}
-      </Stack>
+      <PageHeader
+        title="Advances from customers"
+        subtitle="Money a customer leaves with the shop to collect later, all at once or in parts"
+        actions={
+          <>
+            <Button variant="outlined" startIcon={<PendingActionsOutlinedIcon />} onClick={() => setPayableOpen(true)}>
+              Payable
+            </Button>
+            {canManage && (
+              <Button variant="contained" disableElevation startIcon={<AddIcon />} onClick={() => setOpening(true)}>
+                New Advance
+              </Button>
+            )}
+          </>
+        }
+      />
 
       <BankingTabs active="advances" />
 
@@ -145,72 +157,72 @@ export default function AdvancesPage() {
         </Alert>
       )}
 
-      {/* The same grid as the Transactions strip, so the cards line up across tabs. */}
-      <Box
-        sx={{
-          display: 'grid',
-          gap: 1.5,
-          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' },
-        }}
-      >
-        <SummaryCard
-          label="Held for customers"
-          value={money(advances.data?.heldTotal ?? 0)}
-          caption="Still to be collected, every open advance"
-          icon={<SavingsOutlinedIcon fontSize="small" />}
-          tone="warning"
-        />
-        <SummaryCard
-          label="Open advances"
-          value={String(advances.data?.openCount ?? 0)}
-          caption="Customers with money still to collect"
-          icon={<PeopleOutlinedIcon fontSize="small" />}
-        />
-      </Box>
-
-      <Paper sx={{ p: 1.5, border: '1px solid', borderColor: 'divider', ...compactFiltersSx }}>
-        {/* Fixed widths, as on the Transactions tab: left to flex, the select
-            stretched across the whole row and the search was clipped. */}
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ alignItems: 'center' }}>
-          <TextField
-            size="small"
-            placeholder="Search customer, number or note"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(0);
-            }}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon fontSize="small" />
-                  </InputAdornment>
-                ),
-              },
-            }}
-            sx={{ width: 280 }}
+      {/* The same panel and grid as Shop advances, so the cards line up across the tabs. */}
+      <SummaryPanel tint title="What the shop is holding" caption="Every open advance, all time — not the shop's money">
+        <Box sx={{ ...cardGrid, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' } }}>
+          <SummaryCard
+            label="Held for customers"
+            value={money(advances.data?.heldTotal ?? 0)}
+            caption="Still to be collected, every open advance"
+            icon={<SavingsOutlinedIcon fontSize="small" />}
+            tone="warning"
           />
-          <TextField
-            select
-            size="small"
-            label="Status"
-            value={status}
-            onChange={(e) => {
-              setStatus(e.target.value as StatusFilter);
-              setPage(0);
-            }}
-            sx={{ width: 150 }}
-          >
-            <MenuItem value="OPEN">{BANK_ADVANCE_STATUS_LABELS.OPEN}</MenuItem>
-            <MenuItem value="SETTLED">{BANK_ADVANCE_STATUS_LABELS.SETTLED}</MenuItem>
-            <MenuItem value="ALL">All advances</MenuItem>
-            <MenuItem value="DELETED">Deleted</MenuItem>
-          </TextField>
-        </Stack>
-      </Paper>
+          <SummaryCard
+            label="Open advances"
+            value={String(advances.data?.openCount ?? 0)}
+            caption="Customers with money still to collect"
+            icon={<PeopleOutlinedIcon fontSize="small" />}
+          />
+        </Box>
+      </SummaryPanel>
 
+      {/* Title, filters and the list in one card, since the filters only scope this list. */}
       <Paper sx={historyTableSx}>
+        <TableCardHeader
+          title="Advances"
+          caption={`${advances.data?.total ?? 0} listed · ${STATUS_FILTER_LABELS[status]} · click a row for its history`}
+        >
+          {/* Fixed widths, as on the Transactions tab: left to flex, the select
+              stretched across the whole row and the search was clipped. */}
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ alignItems: 'center' }}>
+            <TextField
+              size="small"
+              placeholder="Search customer, number or note"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(0);
+              }}
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon fontSize="small" />
+                    </InputAdornment>
+                  ),
+                },
+              }}
+              sx={{ width: 280 }}
+            />
+            <TextField
+              select
+              size="small"
+              label="Status"
+              value={status}
+              onChange={(e) => {
+                setStatus(e.target.value as StatusFilter);
+                setPage(0);
+              }}
+              sx={{ width: 150 }}
+            >
+              {(Object.keys(STATUS_FILTER_LABELS) as StatusFilter[]).map((option) => (
+                <MenuItem key={option} value={option}>
+                  {STATUS_FILTER_LABELS[option]}
+                </MenuItem>
+              ))}
+            </TextField>
+          </Stack>
+        </TableCardHeader>
         <TableContainer>
           <Table size="small" sx={{ '& th, & td': { px: 1.25 } }}>
             <TableHead>

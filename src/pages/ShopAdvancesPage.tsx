@@ -36,7 +36,7 @@ import { useDebounced } from '../hooks/useDebounced';
 import BankingTabs from '../components/BankingTabs';
 import SummaryCard from '../components/SummaryCard';
 import { historyTableSx } from '../components/historyTableSx';
-import { compactFiltersSx, compactToolbarSx } from '../components/compactSx';
+import { PageHeader, SummaryPanel, TableCardHeader, cardGrid } from '../components/PageLayout';
 import { DeletedChip, deletedRowSx } from '../components/DeletedMark';
 import ShopAdvanceDialog from '../components/ShopAdvanceDialog';
 import ShopAdvanceReceiveDialog from '../components/ShopAdvanceReceiveDialog';
@@ -48,6 +48,13 @@ import { SHOP_ADVANCE_STATUS_LABELS, type ShopAdvanceStatus } from '@shared/doma
 import type { ShopAdvance } from '@shared/api';
 
 type StatusFilter = ShopAdvanceStatus | 'ALL' | 'DELETED';
+
+const STATUS_FILTER_LABELS: Record<StatusFilter, string> = {
+  OPEN: 'Open (Outstanding)',
+  SETTLED: 'Settled',
+  ALL: 'All Advances',
+  DELETED: 'Deleted',
+};
 
 export default function ShopAdvancesPage() {
   const { can } = useAuth();
@@ -108,25 +115,26 @@ export default function ShopAdvancesPage() {
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'center', flexWrap: 'wrap', ...compactToolbarSx }}>
-        <Box sx={{ flexGrow: 1 }} />
-        <Button
-          variant="outlined"
-          startIcon={<PendingActionsOutlinedIcon />}
-          onClick={() => setCollectableOpen(true)}
-        >
-          Collectable
-        </Button>
-        {canManage && (
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setOpening(true)}
-          >
-            New Advance
-          </Button>
-        )}
-      </Stack>
+      <PageHeader
+        title="Advances paid by the shop"
+        subtitle="Shop money paid out ahead, to be received back later"
+        actions={
+          <>
+            <Button
+              variant="outlined"
+              startIcon={<PendingActionsOutlinedIcon />}
+              onClick={() => setCollectableOpen(true)}
+            >
+              Collectable
+            </Button>
+            {canManage && (
+              <Button variant="contained" disableElevation startIcon={<AddIcon />} onClick={() => setOpening(true)}>
+                New Advance
+              </Button>
+            )}
+          </>
+        }
+      />
 
       <BankingTabs active="shop-advances" />
 
@@ -138,86 +146,84 @@ export default function ShopAdvancesPage() {
         </Alert>
       )}
 
-      {/* Summary Cards */}
-      <Box
-        sx={{
-          display: 'grid',
-          gap: 1.5,
-          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' },
-        }}
-      >
-        <SummaryCard
-          label="Outstanding to Collect"
-          value={money(advances.data?.outstandingTotal ?? 0)}
-          caption="Uncollected advance balance"
-          icon={<PendingActionsOutlinedIcon fontSize="small" />}
-          tone="warning"
-        />
-        <SummaryCard
-          label="Total Advanced"
-          value={money(advances.data?.totalAdvanced ?? 0)}
-          caption="Total shop funds advanced"
-          icon={<TrendingUpIcon fontSize="small" />}
-        />
-        <SummaryCard
-          label="Total Received Back"
-          value={money(advances.data?.totalReceived ?? 0)}
-          caption="Repayments collected so far"
-          icon={<AssignmentReturnOutlinedIcon fontSize="small" />}
-          tone="success"
-        />
-        <SummaryCard
-          label="Open Advances"
-          value={String(advances.data?.openCount ?? 0)}
-          caption="Advances currently awaiting settlement"
-          icon={<CheckCircleOutlineIcon fontSize="small" />}
-        />
-      </Box>
-
-      {/* Filter and Search Bar */}
-      <Paper sx={{ p: 1.5, border: '1px solid', borderColor: 'divider', ...compactFiltersSx }}>
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ alignItems: 'center' }}>
-          <TextField
-            size="small"
-            placeholder="Search recipient, number, bank or note"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(0);
-            }}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon fontSize="small" />
-                  </InputAdornment>
-                ),
-              },
-            }}
-            sx={{ width: { xs: '100%', md: 300 } }}
+      {/* The same panel and grid as Customer advances, so the cards line up across the tabs. */}
+      <SummaryPanel tint title="What the shop is owed" caption="Every shop advance, all time">
+        <Box sx={{ ...cardGrid, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' } }}>
+          <SummaryCard
+            label="Outstanding to Collect"
+            value={money(advances.data?.outstandingTotal ?? 0)}
+            caption="Uncollected advance balance"
+            icon={<PendingActionsOutlinedIcon fontSize="small" />}
+            tone="warning"
           />
+          <SummaryCard
+            label="Total Advanced"
+            value={money(advances.data?.totalAdvanced ?? 0)}
+            caption="Total shop funds advanced"
+            icon={<TrendingUpIcon fontSize="small" />}
+          />
+          <SummaryCard
+            label="Total Received Back"
+            value={money(advances.data?.totalReceived ?? 0)}
+            caption="Repayments collected so far"
+            icon={<AssignmentReturnOutlinedIcon fontSize="small" />}
+            tone="success"
+          />
+          <SummaryCard
+            label="Open Advances"
+            value={String(advances.data?.openCount ?? 0)}
+            caption="Advances currently awaiting settlement"
+            icon={<CheckCircleOutlineIcon fontSize="small" />}
+          />
+        </Box>
+      </SummaryPanel>
 
-          <TextField
-            select
-            size="small"
-            label="Status"
-            value={status}
-            onChange={(e) => {
-              setStatus(e.target.value as StatusFilter);
-              setPage(0);
-            }}
-            sx={{ width: { xs: '100%', md: 150 } }}
-          >
-            <MenuItem value="OPEN">Open (Outstanding)</MenuItem>
-            <MenuItem value="SETTLED">Settled</MenuItem>
-            <MenuItem value="ALL">All Advances</MenuItem>
-            <MenuItem value="DELETED">Deleted</MenuItem>
-          </TextField>
-        </Stack>
-      </Paper>
-
-      {/* Main Table */}
+      {/* Title, filters and the list in one card, since the filters only scope this list. */}
       <Paper sx={historyTableSx}>
+        <TableCardHeader
+          title="Shop advances"
+          caption={`${advances.data?.total ?? 0} listed · ${STATUS_FILTER_LABELS[status]} · click a row for its history`}
+        >
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ alignItems: 'center' }}>
+            <TextField
+              size="small"
+              placeholder="Search recipient, number, bank or note"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(0);
+              }}
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon fontSize="small" />
+                    </InputAdornment>
+                  ),
+                },
+              }}
+              sx={{ width: { xs: '100%', md: 300 } }}
+            />
+
+            <TextField
+              select
+              size="small"
+              label="Status"
+              value={status}
+              onChange={(e) => {
+                setStatus(e.target.value as StatusFilter);
+                setPage(0);
+              }}
+              sx={{ width: { xs: '100%', md: 170 } }}
+            >
+              {(Object.keys(STATUS_FILTER_LABELS) as StatusFilter[]).map((option) => (
+                <MenuItem key={option} value={option}>
+                  {STATUS_FILTER_LABELS[option]}
+                </MenuItem>
+              ))}
+            </TextField>
+          </Stack>
+        </TableCardHeader>
         <TableContainer>
           <Table size="small">
             <TableHead>

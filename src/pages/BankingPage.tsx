@@ -59,7 +59,8 @@ import NetPositionHistoryDialog from "../components/NetPositionHistoryDialog";
 import BankBalanceDialog from "../components/BankBalanceDialog";
 import SummaryCard from "../components/SummaryCard";
 import { historyTableSx } from "../components/historyTableSx";
-import { compactFiltersSx, compactToolbarSx } from "../components/compactSx";
+import { compactFiltersSx } from "../components/compactSx";
+import { PageHeader, SummaryPanel, TableCardHeader, cardGrid } from "../components/PageLayout";
 import DeleteReasonDialog from "../components/DeleteReasonDialog";
 import BankingTabs from "../components/BankingTabs";
 import AccountSide from "../components/AccountSide";
@@ -230,43 +231,37 @@ export default function BankingPage() {
   const signed = (minor: number) =>
     minor < 0 ? `−${money(Math.abs(minor))}` : money(minor);
 
+  const netPosition =
+    (overview.data?.bankBalance ?? 0) +
+    (cash?.amount ?? 0) +
+    (shopAdvances.data?.outstandingTotal ?? 0) -
+    (customerAdvances.data?.heldTotal ?? 0);
+
   return (
     <Stack spacing={2}>
-      <Stack
-        direction="row"
-        spacing={2}
-        sx={{
-          alignItems: "center",
-          flexWrap: "wrap",
-          ...compactToolbarSx,
-        }}
-      >
-        <Box sx={{ flexGrow: 1 }} />
-        <ExportMenu target={{ dataset: "BANK_TRANSACTION_LIST", query }} />
-        {can("banking.manage") && (
-          <>
-            <Button
-              startIcon={<AccountBalanceIcon />}
-              onClick={() => setAccountsOpen(true)}
-            >
+      <PageHeader
+        title="Banking"
+        subtitle="Money moved between the shop, its banks and mobile wallets"
+        actions={
+          can("banking.manage") && (
+            <>
+            <Button variant="outlined" startIcon={<AccountBalanceIcon />} onClick={() => setAccountsOpen(true)}>
               Banks &amp; Payments
             </Button>
             <Button
+              variant="outlined"
               startIcon={<AccountBalanceWalletIcon />}
               onClick={() => setRegisterAccountsOpen(true)}
             >
               Shop Accounts
             </Button>
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={() => setNewTransactionOpen(true)}
-            >
+            <Button variant="contained" disableElevation startIcon={<AddIcon />} onClick={() => setNewTransactionOpen(true)}>
               New Transaction
             </Button>
-          </>
-        )}
-      </Stack>
+            </>
+          )
+        }
+      />
 
       <BankingTabs active="transactions" />
 
@@ -293,174 +288,204 @@ export default function BankingPage() {
       )}
 
       {/*
-        Period totals and what the shop holds.
+        Two panels, because they answer different questions (see the note at the
+        top): what the shop holds ignores the period; what moved follows it.
 
-        A fixed grid so every card is the same size. Three rows of three on a
-        desktop: what moved this period, the fees on it, and what the shop holds.
+        Every card is the same size. On a wide screen the panels sit 1 : 2 and the
+        right one runs two columns with a gap equal to the panel padding, so all
+        nine cards share one width and line up in three rows.
       */}
-      <Box
-        sx={{
-          display: "grid",
-          gap: 1.5,
-          gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "repeat(3, 1fr)" },
-        }}
-      >
-        <SummaryCard
-          label="Transferred out (Cash In)"
-          value={signed(overview.data?.totals.transferred ?? 0)}
-          caption={`${formatBusinessDay(range.from)} to ${formatBusinessDay(range.to)}`}
-          icon={<CallMadeIcon fontSize="small" />}
-          tone="error"
-        />
-        <SummaryCard
-          label="Received in (Cash Out)"
-          value={signed(overview.data?.totals.received ?? 0)}
-          caption={`${overview.data?.totals.count ?? 0} transaction(s) in this period`}
-          icon={<CallReceivedIcon fontSize="small" />}
-          tone="success"
-        />
-        <SummaryCard
-          label="Sales"
-          value={money(sales.data?.totals.total ?? 0)}
-          caption={
-            sales.data
-              ? `Cash ${money(sales.data.totals.cash)} · Bank ${money(sales.data.totals.bank)}` +
-                (sales.data.totals.unpaid > 0 ? ` · Unpaid ${money(sales.data.totals.unpaid)}` : "")
-              : `${formatBusinessDay(range.from)} to ${formatBusinessDay(range.to)}`
-          }
-          icon={<PointOfSaleIcon fontSize="small" />}
-          action={
-            <Tooltip title="History: every sale in this period">
-              <IconButton size="small" aria-label="Sales history" onClick={() => setSalesHistoryOpen(true)}>
-                <HistoryIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          }
-        />
-        {/*
-          Fees are split by the direction of the FEE, not by the type of the
-          movement carrying it: a commission earned on a transfer belongs with
-          the money the shop made, not with the money it sent.
-        */}
-        <SummaryCard
-          label="Fees received"
-          value={signed(overview.data?.totals.feeReceived ?? 0)}
-          caption="Commission the shop earned this period"
-          icon={<PercentIcon fontSize="small" />}
-          tone="success"
-          action={
-            <Tooltip title="Fees received history">
-              <IconButton size="small" aria-label="Fees received history" onClick={() => setFeeHistory("RECEIVE")}>
-                <HistoryIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          }
-        />
-        <SummaryCard
-          label="Fees paid"
-          value={signed(overview.data?.totals.feePaid ?? 0)}
-          caption="Charges taken by the banks and wallets"
-          icon={<PercentIcon fontSize="small" />}
-          tone="error"
-          action={
-            <Tooltip title="Fees paid history">
-              <IconButton size="small" aria-label="Fees paid history" onClick={() => setFeeHistory("PAY")}>
-                <HistoryIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          }
-        />
-        <SummaryCard
-          label="Bank charges"
-          value={signed(overview.data?.totals.bankCharges ?? 0)}
-          caption="Transactions, advances and internal transfers"
-          icon={<AccountBalanceIcon fontSize="small" />}
-          tone="error"
-        />
+      <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", lg: "1fr 2fr" } }}>
+        <SummaryPanel tint title="What the shop holds" caption="All time — the period does not change these">
+          <Box sx={{ ...cardGrid, gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)", lg: "1fr" } }}>
+            <SummaryCard
+              label="Net position"
+              value={signed(netPosition)}
+              caption="Banks + cash + shop advances to collect − held for customers"
+              icon={<AccountBalanceWalletIcon fontSize="small" />}
+              tone={netPosition < 0 ? "error" : undefined}
+              action={
+                <Tooltip title="Day-by-day history">
+                  <IconButton size="small" aria-label="Net position history" onClick={() => setNetHistoryOpen(true)}>
+                    <HistoryIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              }
+            />
+            <SummaryCard
+              label="In the banks"
+              value={signed(overview.data?.bankBalance ?? 0)}
+              caption="Received less transferred, all time"
+              icon={<AccountBalanceIcon fontSize="small" />}
+              action={
+                <Stack direction="row" spacing={0.5}>
+                  <Tooltip title="History: every movement in and out of the banks">
+                    <IconButton size="small" aria-label="Bank history" onClick={() => setBankHistoryOpen(true)}>
+                      <HistoryIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  {can("banking.edit") && (
+                    <Tooltip title="Update bank balances">
+                      <IconButton size="small" aria-label="Update bank balances" onClick={() => setBankBalanceOpen(true)}>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                </Stack>
+              }
+            />
+            <SummaryCard
+              label="Cash in hand"
+              value={cash?.recorded ? signed(cash.amount) : "Not recorded"}
+              caption={
+                cash?.recorded
+                  ? `Counted ${formatInstant(cash.countedAt)}${cash.countedByName ? ` by ${cash.countedByName}` : ""}`
+                  : "A figure you count and save"
+              }
+              icon={<PaymentsIcon fontSize="small" />}
+              action={
+                <Stack direction="row" spacing={0.5}>
+                  <Tooltip title="History: every cash in and out">
+                    <IconButton size="small" aria-label="Cash in hand history" onClick={() => setCashHistoryOpen(true)}>
+                      <HistoryIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  {can("banking.edit") && cash && (
+                    <Tooltip title={cash.recorded ? "Update the counted figure" : "Record a count"}>
+                      <IconButton size="small" aria-label="Update cash in hand" onClick={() => setCashOpen(true)}>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                </Stack>
+              }
+            />
+          </Box>
+        </SummaryPanel>
 
-        <SummaryCard
-          label="In the banks"
-          value={signed(overview.data?.bankBalance ?? 0)}
-          caption="Received less transferred, all time"
-          icon={<AccountBalanceIcon fontSize="small" />}
+        {/* One period control above everything it scopes: these figures and the history below. */}
+        <SummaryPanel
+          title="This period"
+          caption={`${formatBusinessDay(range.from)} — ${formatBusinessDay(range.to)} · ${overview.data?.totals.count ?? 0} transaction(s)`}
           action={
-            <Stack direction="row" spacing={0.5}>
-              <Tooltip title="History: every movement in and out of the banks">
-                <IconButton
-                  size="small"
-                  aria-label="Bank history"
-                  onClick={() => setBankHistoryOpen(true)}
-                >
-                  <HistoryIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-              {can("banking.edit") && (
-                <Tooltip title="Update bank balances">
-                  <IconButton
+            <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", alignItems: "center", ...compactFiltersSx }}>
+              <TextField
+                select
+                size="small"
+                label="Period"
+                value={preset}
+                onChange={(e) => {
+                  setPreset(e.target.value as DatePreset);
+                  setPage(0);
+                }}
+                sx={{ width: 150 }}
+              >
+                {DATE_PRESETS.map((option) => (
+                  <MenuItem key={option} value={option}>
+                    {DATE_PRESET_LABELS[option]}
+                  </MenuItem>
+                ))}
+              </TextField>
+              {preset === "CUSTOM" && (
+                <>
+                  <TextField
                     size="small"
-                    onClick={() => setBankBalanceOpen(true)}
-                  >
-                    <EditIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
+                    label="From"
+                    type="date"
+                    value={customFrom}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                    slotProps={{ inputLabel: { shrink: true } }}
+                    sx={{ width: 145 }}
+                  />
+                  <TextField
+                    size="small"
+                    label="To"
+                    type="date"
+                    value={customTo}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                    slotProps={{ inputLabel: { shrink: true } }}
+                    sx={{ width: 145 }}
+                  />
+                </>
               )}
             </Stack>
           }
-        />
-        <SummaryCard
-          label="Cash in hand"
-          value={cash?.recorded ? signed(cash.amount) : "Not recorded"}
-          caption={
-            cash?.recorded
-              ? `Counted ${formatInstant(cash.countedAt)}${cash.countedByName ? ` by ${cash.countedByName}` : ""}`
-              : "A figure you count and save"
-          }
-          icon={<PaymentsIcon fontSize="small" />}
-          action={
-            <Stack direction="row" spacing={0.5}>
-              <Tooltip title="History: every cash in and out">
-                <IconButton
-                  size="small"
-                  aria-label="Cash in hand history"
-                  onClick={() => setCashHistoryOpen(true)}
-                >
-                  <HistoryIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-              {can("banking.edit") && cash && (
-                <Tooltip
-                  title={
-                    cash.recorded
-                      ? "Update the counted figure"
-                      : "Record a count"
-                  }
-                >
-                  <IconButton size="small" onClick={() => setCashOpen(true)}>
-                    <EditIcon fontSize="small" />
+        >
+          <Box sx={{ ...cardGrid, gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)", lg: "repeat(2, 1fr)" } }}>
+            <SummaryCard
+              label="Transferred out (Cash In)"
+              value={signed(overview.data?.totals.transferred ?? 0)}
+              caption="Money sent from the accounts"
+              icon={<CallMadeIcon fontSize="small" />}
+              tone="error"
+            />
+            <SummaryCard
+              label="Received in (Cash Out)"
+              value={signed(overview.data?.totals.received ?? 0)}
+              caption="Money arrived in the accounts"
+              icon={<CallReceivedIcon fontSize="small" />}
+              tone="success"
+            />
+            <SummaryCard
+              label="Sales"
+              value={money(sales.data?.totals.total ?? 0)}
+              caption={
+                sales.data
+                  ? `Cash ${money(sales.data.totals.cash)} · Bank ${money(sales.data.totals.bank)}` +
+                    (sales.data.totals.unpaid > 0 ? ` · Unpaid ${money(sales.data.totals.unpaid)}` : "")
+                  : "Every sale in this period"
+              }
+              icon={<PointOfSaleIcon fontSize="small" />}
+              action={
+                <Tooltip title="History: every sale in this period">
+                  <IconButton size="small" aria-label="Sales history" onClick={() => setSalesHistoryOpen(true)}>
+                    <HistoryIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
-              )}
-            </Stack>
-          }
-        />
-        <SummaryCard
-          label="Net position"
-          value={signed(
-            (overview.data?.bankBalance ?? 0) +
-              (cash?.amount ?? 0) +
-              (shopAdvances.data?.outstandingTotal ?? 0) -
-              (customerAdvances.data?.heldTotal ?? 0),
-          )}
-          caption="Banks + cash + shop advances to collect − held for customers"
-          icon={<AccountBalanceWalletIcon fontSize="small" />}
-          action={
-            <Tooltip title="Day-by-day history">
-              <IconButton size="small" aria-label="Net position history" onClick={() => setNetHistoryOpen(true)}>
-                <HistoryIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          }
-        />
+              }
+            />
+            {/*
+              Fees are split by the direction of the FEE, not by the type of the
+              movement carrying it: a commission earned on a transfer belongs with
+              the money the shop made, not with the money it sent.
+            */}
+            <SummaryCard
+              label="Fees received"
+              value={signed(overview.data?.totals.feeReceived ?? 0)}
+              caption="Commission the shop earned"
+              icon={<PercentIcon fontSize="small" />}
+              tone="success"
+              action={
+                <Tooltip title="Fees received history">
+                  <IconButton size="small" aria-label="Fees received history" onClick={() => setFeeHistory("RECEIVE")}>
+                    <HistoryIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              }
+            />
+            <SummaryCard
+              label="Fees paid"
+              value={signed(overview.data?.totals.feePaid ?? 0)}
+              caption="Charges taken by the banks and wallets"
+              icon={<PercentIcon fontSize="small" />}
+              tone="error"
+              action={
+                <Tooltip title="Fees paid history">
+                  <IconButton size="small" aria-label="Fees paid history" onClick={() => setFeeHistory("PAY")}>
+                    <HistoryIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              }
+            />
+            <SummaryCard
+              label="Bank charges"
+              value={signed(overview.data?.totals.bankCharges ?? 0)}
+              caption="Transactions, advances and internal transfers"
+              icon={<AccountBalanceIcon fontSize="small" />}
+              tone="error"
+            />
+          </Box>
+        </SummaryPanel>
       </Box>
 
       {/* Per-account position. */}
@@ -538,15 +563,16 @@ export default function BankingPage() {
         </Accordion>
       )}
 
-      {/* Filters. */}
-      <Paper
-        sx={{
-          p: 1.5,
-          border: "1px solid",
-          borderColor: "divider",
-          ...compactFiltersSx,
-        }}
-      >
+      {/* Transactions: title, filters and history in one card, since the filters only scope this list. */}
+      <Paper sx={historyTableSx}>
+        <TableCardHeader
+          title="Transactions"
+          caption={
+            `${transactions.data?.total ?? 0} listed · ${formatBusinessDay(range.from)} — ${formatBusinessDay(range.to)}` +
+            (accountId ? ` · ${positions.find((a) => a.accountId === accountId)?.name ?? "one account"}` : "")
+          }
+          action={<ExportMenu target={{ dataset: "BANK_TRANSACTION_LIST", query }} />}
+        >
         <Stack
           direction="row"
           spacing={1.5}
@@ -575,47 +601,6 @@ export default function BankingPage() {
             }}
             sx={{ flex: "1 1 180px", minWidth: 160 }}
           />
-          <TextField
-            select
-            size="small"
-            label="Period"
-            value={preset}
-            onChange={(e) => {
-              setPreset(e.target.value as DatePreset);
-              setPage(0);
-            }}
-            sx={{ width: 140, flexShrink: 0 }}
-          >
-            {DATE_PRESETS.map((option) => (
-              <MenuItem key={option} value={option}>
-                {DATE_PRESET_LABELS[option]}
-              </MenuItem>
-            ))}
-          </TextField>
-
-          {preset === "CUSTOM" && (
-            <>
-              <TextField
-                size="small"
-                label="From"
-                type="date"
-                value={customFrom}
-                onChange={(e) => setCustomFrom(e.target.value)}
-                slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ width: 145, flexShrink: 0 }}
-              />
-              <TextField
-                size="small"
-                label="To"
-                type="date"
-                value={customTo}
-                onChange={(e) => setCustomTo(e.target.value)}
-                slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ width: 145, flexShrink: 0 }}
-              />
-            </>
-          )}
-
           <TextField
             select
             size="small"
@@ -682,10 +667,8 @@ export default function BankingPage() {
             label="Deleted only"
           />
         </Stack>
-      </Paper>
+        </TableCardHeader>
 
-      {/* History. */}
-      <Paper sx={historyTableSx}>
         <TableContainer>
           {/*
             Twelve columns, so the padding is tightened rather than a column
@@ -1107,6 +1090,7 @@ function AccountRow({
     </TableRow>
   );
 }
+
 
 /**
  * One side of a movement.

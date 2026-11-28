@@ -50,6 +50,7 @@ import ProductCategoriesDialog from '../components/ProductCategoriesDialog';
 import BarcodePrintDialog from '../components/BarcodePrintDialog';
 import ExportMenu from '../components/ExportMenu';
 import { historyTableSx } from '../components/historyTableSx';
+import { PageHeader, TableCardHeader, pillTabsPaperSx, pillTabsSx } from '../components/PageLayout';
 import CategoryTree, { type StockSelection } from './stocks/CategoryTree';
 import ProductDetail from './stocks/ProductDetail';
 import { LowStock, MovementLedger, StockFigures } from './stocks/InventoryParts';
@@ -222,27 +223,31 @@ export default function StocksPage() {
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', rowGap: 1 }}>
-        {/* Exports the whole filtered set, not the page on screen (spec §56). */}
-        <ExportMenu target={{ dataset: 'PRODUCT_LIST', query }} label="Export products" />
-        {/* The stock-on-hand sheet, which is what a stock-take is done against. */}
-        <ExportMenu target={{ dataset: 'INVENTORY_LIST' }} label="Export stock sheet" />
-        {can('products.manage') && (
-          <Button startIcon={<AccountTreeIcon />} onClick={() => setManagingCategories(true)}>
-            Categories
-          </Button>
-        )}
-        {can('products.import') && (
-          <Button startIcon={<UploadFileIcon />} onClick={() => setImporting(true)}>
-            Import Excel
-          </Button>
-        )}
-        {can('products.manage') && (
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setEditing(null)}>
-            Add Product
-          </Button>
-        )}
-      </Stack>
+      <PageHeader
+        title="Stocks"
+        subtitle="Products, what is on the shelf, and every movement in and out"
+        actions={
+          <>
+            {/* The stock-on-hand sheet, which is what a stock-take is done against. */}
+            <ExportMenu target={{ dataset: 'INVENTORY_LIST' }} label="Export stock sheet" />
+            {can('products.manage') && (
+              <Button variant="outlined" startIcon={<AccountTreeIcon />} onClick={() => setManagingCategories(true)}>
+                Categories
+              </Button>
+            )}
+            {can('products.import') && (
+              <Button variant="outlined" startIcon={<UploadFileIcon />} onClick={() => setImporting(true)}>
+                Import Excel
+              </Button>
+            )}
+            {can('products.manage') && (
+              <Button variant="contained" disableElevation startIcon={<AddIcon />} onClick={() => setEditing(null)}>
+                Add Product
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {error && (
         <Alert severity="info" onClose={() => setError(null)}>
@@ -255,10 +260,16 @@ export default function StocksPage() {
         </Alert>
       )}
 
-      <StockFigures data={summary.data} lowStock={lowStock.data} />
+      <StockFigures data={summary.data} lowStock={lowStock.data} onShowLow={() => navigate('/stocks/low')} />
 
-      <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
-        <Tabs value={active} onChange={(_e, next) => navigate(`/stocks/${next as TabValue}`)}>
+      <Paper sx={pillTabsPaperSx}>
+        <Tabs
+          value={active}
+          onChange={(_e, next) => navigate(`/stocks/${next as TabValue}`)}
+          sx={pillTabsSx}
+          variant="scrollable"
+          scrollButtons="auto"
+        >
           {TABS.map((entry) => (
             <Tab
               key={entry.value}
@@ -315,7 +326,25 @@ export default function StocksPage() {
               <ProductDetail productId={selection.productId} actions={actions} />
             ) : (
               <>
-                <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
+                {products.isError && (
+                  <Alert severity="error">
+                    {products.error instanceof PosApiError ? products.error.message : 'Unable to load products.'}
+                  </Alert>
+                )}
+
+                {/* Title, filters and the list in one card, since the filters only scope this list. */}
+                <Paper sx={historyTableSx}>
+                  <TableCardHeader
+                    title={selection.brandName ?? selection.categoryName ?? 'All products'}
+                    caption={
+                      `${products.data?.total ?? 0} product(s)` +
+                      (lowStockOnly ? ' · low stock only' : '') +
+                      (includeInactive ? ' · including inactive' : '') +
+                      ' · click a row for its details'
+                    }
+                    // Exports the whole filtered set, not the page on screen (spec §56).
+                    action={<ExportMenu target={{ dataset: 'PRODUCT_LIST', query }} label="Export products" />}
+                  >
                   <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ alignItems: { md: 'center' } }}>
                     <TextField
                       placeholder="Search name, SKU/Code, barcode or IMEI"
@@ -360,23 +389,17 @@ export default function StocksPage() {
                       label="Show inactive"
                     />
                   </Stack>
-                </Paper>
-
-                {products.isError && (
-                  <Alert severity="error">
-                    {products.error instanceof PosApiError ? products.error.message : 'Unable to load products.'}
-                  </Alert>
-                )}
+                  </TableCardHeader>
 
                 {!ready || products.isLoading ? (
-                  <Paper sx={{ border: 1, borderColor: 'divider', py: 8, display: 'grid', placeItems: 'center', gap: 1.5 }}>
+                  <Box sx={{ py: 8, display: 'grid', placeItems: 'center', gap: 1.5 }}>
                     <CircularProgress size={30} />
                     <Typography variant="body2" color="text.secondary">
                       Loading products…
                     </Typography>
-                  </Paper>
+                  </Box>
                 ) : (
-                <Paper sx={historyTableSx}>
+                <>
                   {products.isFetching && <LinearProgress sx={{ height: 2 }} />}
                   <TableContainer sx={{ maxHeight: 620 }}>
                     <Table size="small" stickyHeader>
@@ -496,8 +519,9 @@ export default function StocksPage() {
                     }}
                     rowsPerPageOptions={[25, 50, 100]}
                   />
-                </Paper>
+                </>
                 )}
+                </Paper>
               </>
             )}
           </Stack>

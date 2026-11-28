@@ -65,6 +65,7 @@ export default function SummaryCard({
           overflow: "hidden",
           px: 1.5,
           py: 0.75,
+          height: "100%",
           border: "1px solid",
           borderColor: "divider",
           borderRadius: 2.5,
