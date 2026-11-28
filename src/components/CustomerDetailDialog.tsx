@@ -1,13 +1,13 @@
+import { MovementDialog } from './MovementParts';
+import PersonOutlineIcon from '@mui/icons-material/PersonOutlined';
 import { useState } from 'react';
 import {
   Alert,
   Box,
   Button,
   Chip,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Paper,
   Stack,
   Tab,
@@ -53,8 +53,14 @@ export default function CustomerDetailDialog({
   const customer = data?.customer;
 
   return (
-    <Dialog open fullWidth maxWidth="lg" onClose={onClose}>
-      <DialogTitle>{customer ? customer.name : 'Customer'}</DialogTitle>
+    <MovementDialog
+      maxWidth="lg"
+      onClose={onClose}
+      icon={<PersonOutlineIcon />}
+      title={customer ? customer.name : 'Customer'}
+      subtitle={customer ? [customer.customerCode, customer.phone].filter(Boolean).join(' · ') : undefined}
+      badges={customer?.isActive === 0 && <Chip size="small" label="Inactive" />}
+    >
       <DialogContent dividers>
         {history.isLoading && <Typography color="text.secondary">Loading…</Typography>}
 
@@ -248,7 +254,7 @@ export default function CustomerDetailDialog({
           onChanged={() => void history.refetch()}
         />
       )}
-    </Dialog>
+    </MovementDialog>
   );
 }
 

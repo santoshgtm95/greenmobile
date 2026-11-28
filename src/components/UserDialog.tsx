@@ -1,10 +1,11 @@
+import { MovementDialog } from './MovementParts';
+import PersonAddAltOutlinedIcon from '@mui/icons-material/PersonAddAltOutlined';
+import ManageAccountsOutlinedIcon from '@mui/icons-material/ManageAccountsOutlined';
 import {
   Alert,
   Button,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   FormControlLabel,
   MenuItem,
   Stack,
@@ -118,8 +119,13 @@ function CreateUser({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
   const role = watch('role');
 
   return (
-    <Dialog open onClose={isSubmitting ? undefined : onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Add a staff account</DialogTitle>
+    <MovementDialog
+      maxWidth="sm"
+      onClose={isSubmitting ? undefined : onClose}
+      icon={<PersonAddAltOutlinedIcon />}
+      title="Add a staff account"
+      subtitle="Their sign-in name, password and what they may do"
+    >
       <Stack
         component="form"
         onSubmit={handleSubmit((values) => create.mutate(values))}
@@ -210,7 +216,7 @@ function CreateUser({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
           </Button>
         </DialogActions>
       </Stack>
-    </Dialog>
+    </MovementDialog>
   );
 }
 
@@ -264,8 +270,13 @@ function EditUser({
   const activeLocked = isLastActiveAdmin || isSelf;
 
   return (
-    <Dialog open onClose={isSubmitting ? undefined : onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{user.fullName}</DialogTitle>
+    <MovementDialog
+      maxWidth="sm"
+      onClose={isSubmitting ? undefined : onClose}
+      icon={<ManageAccountsOutlinedIcon />}
+      title={user.fullName}
+      subtitle={`Signs in as ${user.username}`}
+    >
       <Stack
         component="form"
         onSubmit={handleSubmit((values) => update.mutate(values))}
@@ -360,6 +371,6 @@ function EditUser({
           </Button>
         </DialogActions>
       </Stack>
-    </Dialog>
+    </MovementDialog>
   );
 }

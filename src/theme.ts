@@ -29,8 +29,8 @@ const shadows = Array.from({ length: 25 }, (_, i) => {
 /**
  * Desktop POS theme (spec §71).
  *
- * Calm, neutral surfaces with one indigo accent; hairline borders instead of
- * heavy shadows. Motion stays short so a cashier never waits on an animation.
+ * Calm, neutral surfaces with one indigo accent. Soft and rounded: pill
+ * buttons and chips, gently lifted cards, an indigo-washed table head. Motion stays short so a cashier never waits on an animation.
  */
 export const theme = createTheme({
   palette: {
@@ -46,7 +46,7 @@ export const theme = createTheme({
     divider: LINE,
     action: { hover: alpha(INK, 0.04), selected: alpha('#4f46e5', 0.08) },
   },
-  shape: { borderRadius: 8 },
+  shape: { borderRadius: 10 },
   shadows,
   typography: {
     fontFamily: '"Inter Variable", "Segoe UI", system-ui, -apple-system, "Noto Sans Thai", sans-serif',
@@ -100,16 +100,22 @@ export const theme = createTheme({
         root: {
           minHeight: 34,
           fontSize: '0.8rem',
-          borderRadius: 8,
-          paddingInline: 14,
+          // Pill buttons: the clearest change of look, same colours.
+          borderRadius: 999,
+          paddingInline: 16,
           transition: `background-color 150ms, border-color 150ms, box-shadow 150ms, transform 120ms ${EASE}`,
           '&:active': { transform: 'scale(.98)' },
           '@media (prefers-reduced-motion: reduce)': { '&:active': { transform: 'none' } },
         },
-        contained: ({ theme }) => ({
-          boxShadow: `0 1px 2px ${alpha(INK, 0.12)}, inset 0 1px 0 ${alpha('#fff', 0.14)}`,
-          '&:hover': { boxShadow: `0 2px 6px ${alpha(theme.palette.primary.main, 0.28)}, inset 0 1px 0 ${alpha('#fff', 0.14)}` },
-        }),
+        contained: ({ theme, ownerState }) => {
+          const tone = theme.palette[ownerState.color && ownerState.color !== 'inherit' ? ownerState.color : 'primary'];
+          return {
+            backgroundImage: `linear-gradient(180deg, ${alpha('#fff', 0.12)}, transparent)`,
+            boxShadow: `0 2px 8px ${alpha(tone.main, 0.28)}, inset 0 1px 0 ${alpha('#fff', 0.18)}`,
+            '&:hover': { boxShadow: `0 4px 14px ${alpha(tone.main, 0.36)}, inset 0 1px 0 ${alpha('#fff', 0.18)}` },
+            '&.Mui-disabled': { backgroundImage: 'none', boxShadow: 'none' },
+          };
+        },
         outlined: ({ ownerState }) => ({
           borderColor: LINE_STRONG,
           backgroundColor: '#fff',
@@ -121,7 +127,7 @@ export const theme = createTheme({
     },
     MuiIconButton: {
       styleOverrides: {
-        root: { borderRadius: 8, transition: 'background-color 150ms, color 150ms', '&:hover': { backgroundColor: alpha(INK, 0.06) } },
+        root: { borderRadius: 10, transition: 'background-color 150ms, color 150ms', '&:hover': { backgroundColor: alpha('#4f46e5', 0.08), color: '#4f46e5' } },
       },
     },
     MuiTextField: { defaultProps: { size: 'small', fullWidth: true } },
@@ -129,7 +135,7 @@ export const theme = createTheme({
     MuiOutlinedInput: {
       styleOverrides: {
         root: ({ theme }) => ({
-          borderRadius: 8,
+          borderRadius: 10,
           backgroundColor: '#fff',
           transition: 'box-shadow 150ms',
           '& .MuiOutlinedInput-notchedOutline': { borderColor: LINE_STRONG, transition: 'border-color 150ms' },
@@ -148,11 +154,13 @@ export const theme = createTheme({
       styleOverrides: {
         root: { backgroundImage: 'none' },
         outlined: { borderColor: LINE },
+        // Bordered cards also float a little, instead of sitting flat on the page.
+        elevation0: { boxShadow: `0 1px 2px ${alpha(INK, 0.04)}, 0 4px 16px -8px ${alpha(INK, 0.08)}` },
       },
     },
-    MuiCard: { defaultProps: { variant: 'outlined' }, styleOverrides: { root: { borderRadius: 12 } } },
+    MuiCard: { defaultProps: { variant: 'outlined' }, styleOverrides: { root: { borderRadius: 16 } } },
     MuiPopover: {
-      styleOverrides: { paper: { border: `1px solid ${LINE}`, borderRadius: 10, marginTop: 4 } },
+      styleOverrides: { paper: { border: `1px solid ${LINE}`, borderRadius: 14, marginTop: 6 } },
     },
     MuiMenu: {
       styleOverrides: { list: { padding: 4 } },
@@ -160,7 +168,7 @@ export const theme = createTheme({
     MuiMenuItem: {
       styleOverrides: {
         root: {
-          borderRadius: 6,
+          borderRadius: 8,
           fontSize: "0.875rem",
           minHeight: 34,
           '&.Mui-selected': { backgroundColor: alpha('#4f46e5', 0.08) },
@@ -170,22 +178,25 @@ export const theme = createTheme({
     MuiTableCell: {
       styleOverrides: {
         root: { borderColor: LINE },
+        // Small capitals on a faint indigo wash: the header reads as a band, not a row.
         head: {
-          fontWeight: 600,
-          fontSize: "0.7188rem",
-          color: MUTED,
+          fontWeight: 700,
+          fontSize: "0.6875rem",
+          color: '#4b4f73',
           whiteSpace: 'nowrap',
-          backgroundColor: '#fafbfc',
-          letterSpacing: '0.01em',
+          backgroundColor: '#f5f5fe',
+          letterSpacing: '0.05em',
+          textTransform: 'uppercase',
+          borderBottomColor: alpha('#4f46e5', 0.14),
         },
-        stickyHeader: { backgroundColor: '#fafbfc' },
+        stickyHeader: { backgroundColor: '#f5f5fe' },
       },
     },
     MuiTableRow: {
       styleOverrides: {
         root: {
           transition: 'background-color 120ms',
-          '&.MuiTableRow-hover:hover': { backgroundColor: alpha('#4f46e5', 0.035) },
+          '&.MuiTableRow-hover:hover': { backgroundColor: alpha('#4f46e5', 0.045) },
           '&:last-of-type > .MuiTableCell-body': { borderBottom: 0 },
         },
       },
@@ -204,8 +215,8 @@ export const theme = createTheme({
         root: ({ theme, ownerState }) => {
           const tone = ownerState.color && ownerState.color !== 'default' ? theme.palette[ownerState.color] : null;
           return {
-            borderRadius: 6,
-            fontWeight: 550,
+            borderRadius: 999,
+            fontWeight: 600,
             ...(ownerState.variant !== 'outlined' && tone && { backgroundColor: alpha(tone.main, 0.12), color: tone.dark }),
             ...(ownerState.variant !== 'outlined' && !tone && { backgroundColor: alpha(INK, 0.06), color: INK }),
             ...(ownerState.variant === 'outlined' && !tone && { borderColor: LINE_STRONG }),
@@ -219,22 +230,22 @@ export const theme = createTheme({
         root: ({ theme, ownerState }) => {
           const tone = theme.palette[ownerState.severity ?? 'info'];
           return ownerState.variant === 'standard' || !ownerState.variant
-            ? { borderRadius: 10, border: `1px solid ${alpha(tone.main, 0.25)}`, backgroundColor: alpha(tone.main, 0.06) }
-            : { borderRadius: 10 };
+            ? { borderRadius: 12, border: `1px solid ${alpha(tone.main, 0.25)}`, borderLeft: `4px solid ${tone.main}`, backgroundColor: alpha(tone.main, 0.06) }
+            : { borderRadius: 12 };
         },
       },
     },
     MuiTooltip: {
       defaultProps: { enterDelay: 400, arrow: true },
       styleOverrides: {
-        tooltip: { backgroundColor: INK, fontSize: "0.75rem", fontWeight: 500, borderRadius: 6, padding: '6px 10px' },
+        tooltip: { backgroundColor: INK, fontSize: "0.75rem", fontWeight: 500, borderRadius: 8, padding: '6px 10px' },
         arrow: { color: INK },
       },
     },
     MuiLinearProgress: {
       styleOverrides: { root: { borderRadius: 99, backgroundColor: alpha(INK, 0.07) }, bar: { borderRadius: 99 } },
     },
-    MuiListItemButton: { styleOverrides: { root: { borderRadius: 8 } } },
+    MuiListItemButton: { styleOverrides: { root: { borderRadius: 10 } } },
     MuiDivider: { styleOverrides: { root: { borderColor: LINE } } },
     MuiSwitch: {
       styleOverrides: {
@@ -284,7 +295,7 @@ export const theme = createTheme({
         root: ({ theme }) => ({
           '& .MuiBackdrop-root': { backdropFilter: 'blur(4px)', backgroundColor: alpha(INK, 0.32) },
           '& .MuiDialog-paper': {
-            borderRadius: 14,
+            borderRadius: 20,
             overflow: 'hidden',
             border: `1px solid ${alpha(INK, 0.08)}`,
             animation: `${dialogIn} 220ms ${EASE} both`,

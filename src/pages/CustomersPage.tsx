@@ -36,6 +36,18 @@ import { PosApiError } from '@shared/errors';
 import ExportMenu from '../components/ExportMenu';
 import { formatInstant } from '@shared/datetime';
 import type { Customer } from '@shared/api';
+import { historyTableSx } from '../components/historyTableSx';
+import { PageHeader, TableCardHeader } from '../components/PageLayout';
+
+/** "today", "3 days ago", "2 months ago": how long since the customer last bought. */
+function ago(instant: string): string {
+  const days = Math.floor((Date.now() - Date.parse(instant)) / 86_400_000);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 30) return `${days} days ago`;
+  const months = Math.floor(days / 30);
+  return months < 12 ? `${months} month${months === 1 ? '' : 's'} ago` : `${Math.floor(months / 12)}+ years ago`;
+}
 
 /** Customer management (spec §41). */
 export default function CustomersPage() {
@@ -71,6 +83,18 @@ export default function CustomersPage() {
 
   return (
     <Stack spacing={2}>
+      <PageHeader
+        title="Customers"
+        subtitle="The people who buy from the shop: what they spent and when they last came in"
+        actions={
+          can('customers.manage') && (
+            <Button variant="contained" startIcon={<PersonAddIcon />} onClick={() => setEditing(null)}>
+              Add Customer
+            </Button>
+          )
+        }
+      />
+
       {customers.isError && (
         <Alert severity="error">
           {customers.error instanceof PosApiError
@@ -79,49 +103,45 @@ export default function CustomersPage() {
         </Alert>
       )}
 
-      <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
-        <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}>
-          <TextField
-            placeholder="Search name, phone or customer code"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(0);
-            }}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon fontSize="small" />
-                  </InputAdornment>
-                ),
-              },
-            }}
-            sx={{ flex: '1 1 260px', maxWidth: 420 }}
-          />
-          <FormControlLabel
-            control={
-              <Switch
-                checked={includeInactive}
-                onChange={(e) => {
-                  setIncludeInactive(e.target.checked);
-                  setPage(0);
-                }}
-              />
-            }
-            label="Show inactive"
-          />
-          <Box sx={{ flexGrow: 1 }} />
-          <ExportMenu target={{ dataset: 'CUSTOMER_LIST', query }} />
-          {can('customers.manage') && (
-            <Button variant="contained" startIcon={<PersonAddIcon />} onClick={() => setEditing(null)}>
-              Add Customer
-            </Button>
-          )}
-        </Stack>
-      </Paper>
-
-      <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
+      <Paper sx={historyTableSx}>
+        <TableCardHeader
+          title="Customers"
+          caption={`${customers.data?.total ?? 0} ${includeInactive ? 'customers, inactive included' : 'active customers'}${debouncedSearch ? ` · matching “${debouncedSearch}”` : ''}`}
+          action={<ExportMenu target={{ dataset: 'CUSTOMER_LIST', query }} />}
+        >
+          <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}>
+            <TextField
+              placeholder="Search name, phone or customer code"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(0);
+              }}
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon fontSize="small" />
+                    </InputAdornment>
+                  ),
+                },
+              }}
+              sx={{ flex: '1 1 260px', maxWidth: 480 }}
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={includeInactive}
+                  onChange={(e) => {
+                    setIncludeInactive(e.target.checked);
+                    setPage(0);
+                  }}
+                />
+              }
+              label="Show inactive"
+            />
+          </Stack>
+        </TableCardHeader>
         <TableContainer>
           <Table size="small" stickyHeader>
             <TableHead>
@@ -149,9 +169,12 @@ export default function CustomersPage() {
               {!customers.isLoading && rows.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={8} align="center" sx={{ py: 5, color: 'text.secondary' }}>
-                    {search
-                      ? 'No customers match that search.'
-                      : 'No customers yet. They can also be added straight from the till.'}
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {search ? 'No customers match that search.' : 'No customers yet.'}
+                    </Typography>
+                    <Typography variant="caption">
+                      {search ? 'Try part of the name or the last digits of the phone.' : 'Add one here, or straight from the till while selling.'}
+                    </Typography>
                   </TableCell>
                 </TableRow>
               )}
@@ -168,9 +191,7 @@ export default function CustomersPage() {
                   </TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>
                     {customer.name}
-                    {customer.isActive === 0 && (
-                      <Chip size="small" label="Inactive" sx={{ ml: 1 }} />
-                    )}
+                    {customer.isActive === 0 && <Chip size="small" label="Inactive" sx={{ ml: 1 }} />}
                   </TableCell>
                   <TableCell>{customer.phone ?? '—'}</TableCell>
                   <TableCell sx={{ color: 'text.secondary', display: { xs: 'none', lg: 'table-cell' } }}>{customer.email ?? '—'}</TableCell>
@@ -183,17 +204,22 @@ export default function CustomersPage() {
                   </TableCell>
                   <TableCell sx={{ whiteSpace: 'nowrap', color: 'text.secondary' }}>
                     {customer.lastPurchaseAt ? formatInstant(customer.lastPurchaseAt) : '—'}
+                    {customer.lastPurchaseAt && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                        {ago(customer.lastPurchaseAt)}
+                      </Typography>
+                    )}
                   </TableCell>
                   <TableCell align="right" onClick={(e) => e.stopPropagation()}>
                     <Stack direction="row" spacing={0.5} sx={{ justifyContent: 'flex-end' }}>
                       <Tooltip title="History">
-                        <IconButton size="small" onClick={() => setDetailId(customer.id)}>
+                        <IconButton size="small" aria-label={`History of ${customer.name}`} onClick={() => setDetailId(customer.id)}>
                           <HistoryIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
                       {can('customers.edit') && (
                         <Tooltip title="Edit">
-                          <IconButton size="small" onClick={() => setEditing(customer)}>
+                          <IconButton size="small" aria-label={`Edit ${customer.name}`} onClick={() => setEditing(customer)}>
                             <EditIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>

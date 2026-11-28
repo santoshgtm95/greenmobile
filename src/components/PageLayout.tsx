@@ -10,7 +10,8 @@ import { compactFiltersSx, compactToolbarSx } from "./compactSx";
 
 /** Pill tabs: the selected section reads as a filled segment, not a thin underline. Put on <Tabs>. */
 export const pillTabsSx = (theme: Theme) => ({
-  minHeight: 34,
+  // Doubled class beats a page's "& .MuiTabs-root" height (compactPageSx on Reports), which left a gap under the pills.
+  "&.MuiTabs-root": { minHeight: 34 },
   "& .MuiTabs-indicator": { display: "none" },
   "& .MuiTab-root": {
     minHeight: 34,
@@ -48,8 +49,14 @@ export function PageHeader({
       spacing={1.5}
       sx={{ alignItems: { md: "center" }, justifyContent: "space-between" }}
     >
-      <Box>
-        <Typography sx={{ fontWeight: 800, fontSize: "1.25rem", letterSpacing: "-0.02em" }}>{title}</Typography>
+      <Box
+        sx={(theme) => ({
+          pl: 1.5,
+          borderLeft: "4px solid",
+          borderImage: `linear-gradient(180deg, ${theme.palette.primary.light}, ${theme.palette.primary.dark}) 1`,
+        })}
+      >
+        <Typography sx={{ fontWeight: 800, fontSize: "1.35rem", letterSpacing: "-0.025em", lineHeight: 1.25 }}>{title}</Typography>
         <Typography variant="body2" color="text.secondary">
           {subtitle}
         </Typography>

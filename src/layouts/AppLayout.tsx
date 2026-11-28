@@ -136,13 +136,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 transition: "background-color 150ms, color 150ms",
                 "& .MuiListItemIcon-root": { color: "text.disabled", minWidth: 30, transition: "color 150ms" },
                 "& .MuiSvgIcon-root": { fontSize: "1.0625rem" },
-                "&:hover": { bgcolor: alpha(theme.palette.text.primary, 0.05), color: "text.primary" },
-                "&:hover .MuiListItemIcon-root": { color: "text.secondary" },
+                "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.06), color: "primary.main" },
+                "&:hover .MuiListItemIcon-root": { color: "primary.main" },
                 "&.active": {
-                  bgcolor: "background.paper",
-                  color: "text.primary",
-                  boxShadow: `0 1px 2px ${alpha(theme.palette.text.primary, 0.08)}, 0 0 0 1px ${theme.palette.divider}`,
-                  "& .MuiListItemIcon-root": { color: "primary.main" },
+                  color: "#fff",
+                  background: `linear-gradient(135deg, ${theme.palette.primary.light}, ${theme.palette.primary.main} 60%, ${theme.palette.primary.dark})`,
+                  boxShadow: `0 6px 16px -6px ${alpha(theme.palette.primary.main, 0.6)}`,
+                  "& .MuiListItemIcon-root": { color: "#fff" },
                   "& .MuiListItemText-primary": { fontWeight: 600 },
                 },
                 "&.Mui-focusVisible": { outline: `2px solid ${alpha(theme.palette.primary.main, 0.5)}`, outlineOffset: 1 },
@@ -170,6 +170,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         display: "flex",
         minHeight: "100vh",
         bgcolor: "background.default",
+        backgroundImage: `radial-gradient(1200px 360px at 70% -120px, ${alpha(theme.palette.primary.main, 0.07)}, transparent 70%)`,
         "@media (prefers-reduced-motion: reduce)": { "& *": { animation: "none !important" } },
       }}
     >
@@ -187,6 +188,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             boxSizing: "border-box",
             bgcolor: "#f3f4f7",
             borderRight: `1px solid ${theme.palette.divider}`,
+            boxShadow: `4px 0 24px -12px ${alpha(theme.palette.text.primary, 0.12)}`,
           },
         }}
       >

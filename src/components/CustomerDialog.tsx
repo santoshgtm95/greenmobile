@@ -1,11 +1,12 @@
+import { MovementDialog } from './MovementParts';
+import PersonAddAltOutlinedIcon from '@mui/icons-material/PersonAddAltOutlined';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import { useState } from 'react';
 import {
   Alert,
   Button,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   FormControlLabel,
   Stack,
   Switch,
@@ -67,10 +68,13 @@ export default function CustomerDialog({
   });
 
   return (
-    <Dialog open fullWidth maxWidth="sm" onClose={onClose}>
-      <DialogTitle>
-        {isEdit ? `Edit ${customer.name}` : 'Add customer'}
-      </DialogTitle>
+    <MovementDialog
+      maxWidth="sm"
+      onClose={onClose}
+      icon={isEdit ? <EditOutlinedIcon /> : <PersonAddAltOutlinedIcon />}
+      title={isEdit ? `Edit ${customer.name}` : 'Add customer'}
+      subtitle={isEdit ? `Customer ${customer.customerCode}` : 'Name and phone are enough to start; the rest is optional'}
+    >
       <DialogContent dividers>
         <Stack spacing={2.5} sx={{ pt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -151,6 +155,6 @@ export default function CustomerDialog({
           {save.isPending ? 'Saving…' : 'Save'}
         </Button>
       </DialogActions>
-    </Dialog>
+    </MovementDialog>
   );
 }

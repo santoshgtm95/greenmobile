@@ -1,11 +1,11 @@
+import { MovementDialog } from './MovementParts';
+import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import { useState } from 'react';
 import {
   Alert,
   Button,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Stack,
   TextField,
   Typography,
@@ -76,8 +76,14 @@ export default function ResetPasswordDialog({
   });
 
   return (
-    <Dialog open onClose={isSubmitting ? undefined : onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Reset the password for {user.fullName}</DialogTitle>
+    <MovementDialog
+      maxWidth="xs"
+      onClose={isSubmitting ? undefined : onClose}
+      tone="warning"
+      icon={<KeyOutlinedIcon />}
+      title={`Reset the password for ${user.fullName}`}
+      subtitle={`Signs in as ${user.username}`}
+    >
       <Stack component="form" onSubmit={handleSubmit((values) => reset.mutate(values))} noValidate>
         <DialogContent dividers>
           <Stack spacing={2}>
@@ -132,6 +138,6 @@ export default function ResetPasswordDialog({
           </Button>
         </DialogActions>
       </Stack>
-    </Dialog>
+    </MovementDialog>
   );
 }

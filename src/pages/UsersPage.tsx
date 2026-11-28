@@ -6,11 +6,9 @@ import {
   Button,
   Chip,
   CircularProgress,
-  Dialog,
   DialogActions,
   DialogContent,
   DialogContentText,
-  DialogTitle,
   FormControlLabel,
   IconButton,
   Paper,
@@ -31,6 +29,10 @@ import EditIcon from '@mui/icons-material/Edit';
 import KeyIcon from '@mui/icons-material/Key';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import ShieldIcon from '@mui/icons-material/Shield';
+import PersonRemoveOutlinedIcon from '@mui/icons-material/PersonRemoveOutlined';
+import { historyTableSx } from '../components/historyTableSx';
+import { MovementDialog } from '../components/MovementParts';
+import { PageHeader, TableCardHeader } from '../components/PageLayout';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
@@ -102,24 +104,17 @@ export default function UsersPage() {
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-        <Box sx={{ flexGrow: 1 }} />
-        <FormControlLabel
-          control={
-            <Switch
-              size="small"
-              checked={includeInactive}
-              onChange={(e) => setIncludeInactive(e.target.checked)}
-            />
-          }
-          label="Show deactivated"
-        />
-        {can('users.manage') && (
-          <Button variant="contained" startIcon={<PersonAddIcon />} onClick={() => setEditing(null)}>
-            Add User
-          </Button>
-        )}
-      </Stack>
+      <PageHeader
+        title="Users"
+        subtitle="Staff accounts, and what each one may see and do"
+        actions={
+          can('users.manage') && (
+            <Button variant="contained" startIcon={<PersonAddIcon />} onClick={() => setEditing(null)}>
+              Add User
+            </Button>
+          )
+        }
+      />
 
       {error && (
         <Alert severity="error" onClose={() => setError(null)}>
@@ -140,7 +135,18 @@ export default function UsersPage() {
         </Alert>
       )}
 
-      <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
+      <Paper sx={historyTableSx}>
+        <TableCardHeader
+          title="Staff accounts"
+          caption={`${rows.length} ${includeInactive ? 'accounts, deactivated included' : 'active accounts'}`}
+        >
+          <FormControlLabel
+            control={
+              <Switch size="small" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} />
+            }
+            label="Show deactivated"
+          />
+        </TableCardHeader>
         {users.isLoading ? (
           <Box sx={{ p: 4, display: 'grid', placeItems: 'center' }}>
             <CircularProgress size={26} />
@@ -239,12 +245,12 @@ export default function UsersPage() {
                         <TableCell align="right">
                           <Stack direction="row" spacing={0.5} sx={{ justifyContent: 'flex-end' }}>
                             <Tooltip title="Edit name, role and access">
-                              <IconButton size="small" onClick={() => setEditing(row)}>
+                              <IconButton size="small" aria-label={`Edit ${row.username}`} onClick={() => setEditing(row)}>
                                 <EditIcon fontSize="small" />
                               </IconButton>
                             </Tooltip>
                             <Tooltip title="Reset this password (spec §30)">
-                              <IconButton size="small" onClick={() => setResetting(row)}>
+                              <IconButton size="small" aria-label={`Reset password of ${row.username}`} onClick={() => setResetting(row)}>
                                 <KeyIcon fontSize="small" />
                               </IconButton>
                             </Tooltip>
@@ -260,6 +266,7 @@ export default function UsersPage() {
                               <span>
                                 <IconButton
                                   size="small"
+                                  aria-label={`Remove ${row.username}`}
                                   disabled={isSelf || loadBearing}
                                   onClick={() => setRemoving(row)}
                                 >
@@ -276,8 +283,8 @@ export default function UsersPage() {
 
                 {rows.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={9}>
-                      <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+                    <TableCell colSpan={9} align="center">
+                      <Typography variant="body2" color="text.secondary" sx={{ py: 4 }}>
                         No staff accounts to show.
                       </Typography>
                     </TableCell>
@@ -323,8 +330,15 @@ export default function UsersPage() {
         />
       )}
 
-      <Dialog open={Boolean(removing)} onClose={() => setRemoving(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>Remove this account?</DialogTitle>
+      {removing && (
+      <MovementDialog
+        maxWidth="xs"
+        onClose={remove.isPending ? undefined : () => setRemoving(null)}
+        tone="error"
+        icon={<PersonRemoveOutlinedIcon />}
+        title="Remove this account?"
+        subtitle={`${removing.fullName} · ${removing.username}`}
+      >
         <DialogContent>
           <DialogContentText component="div">
             <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
@@ -356,7 +370,8 @@ export default function UsersPage() {
             {remove.isPending ? 'Removing…' : 'Remove'}
           </Button>
         </DialogActions>
-      </Dialog>
+      </MovementDialog>
+      )}
 
       <Snackbar
         open={Boolean(toast)}
